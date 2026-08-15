@@ -469,8 +469,22 @@ class InstalledBundleSmoke {
           + `expected ${this.bundle.manifest.version}`,
         )
       }
+      const desktopBin = resolve(consumerRoot, 'node_modules/@deepseek-ai/dsh-desktop/lib/bin.js')
+      assertPathWithin(consumerRoot, desktopBin, 'installed desktop bin')
+      const desktopVersion = this.runner.capture(
+        process.execPath,
+        [desktopBin, '--version'],
+        consumerRoot,
+        environment,
+      )
+      if (desktopVersion !== this.bundle.manifest.version) {
+        throw new Error(
+          `installed dsh-desktop --version returned ${JSON.stringify(desktopVersion)}; `
+          + `expected ${this.bundle.manifest.version}`,
+        )
+      }
       this.probeWeb(bin, consumerRoot, environment)
-      console.log('publish-npm-baseline: installed dsh entry and Web startup probes passed')
+      console.log('publish-npm-baseline: installed CLI and desktop entries and Web startup probes passed')
     } finally {
       rmSync(consumerRoot, { recursive: true, force: true })
     }

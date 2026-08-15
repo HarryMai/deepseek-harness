@@ -37,7 +37,7 @@ import { assertNever } from '@deepseek-ai/dsh-llm'
 import { SandboxProvider, SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, ConfinedSandboxMode, RunnerFailureRule, SandboxEnforcement, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { AclWriteGrant, assertTempRootOutsideWorkspace, tempWriteSid, workspaceWriteSid } from '@deepseek-ai/dsh-sandbox-windows-acl'
+import { AclWriteGrant, ACL_RUNNER_DEBUG_LOG_ENV, assertTempRootOutsideWorkspace, tempWriteSid, workspaceWriteSid } from '@deepseek-ai/dsh-sandbox-windows-acl'
 import { bwrapProfileArgs, landlockProfileArgs, seatbeltProfileArgs } from './profiles.ts'
 
 /** Plugin config. All optional — `static Config` supplies the defaults. */
@@ -356,6 +356,11 @@ export class LocalSandboxProvider extends SandboxProvider {
    * @returns the runner invocation.
    */
   private windowsAclRunnerArgv(policy: SandboxPolicy): string[] {
+    // The host's forensic-log opt-in travels on the runner ARGV: an env
+    // entry would not survive the subprocess service's `DSH_*` scrub between
+    // this process and the runner.
+    const debugLog = process.env[ACL_RUNNER_DEBUG_LOG_ENV]?.trim()
+    const debugArgv = debugLog === undefined || debugLog === '' ? [] : ['--debug-log', debugLog]
     const sessionId = policy.sessionId
     if (sessionId === undefined || policy.mode === 'read-only') {
       return [
@@ -363,6 +368,7 @@ export class LocalSandboxProvider extends SandboxProvider {
         '--workspace', policy.workspaceRoot,
         '--temp', tmpdir(),
         '--mode', policy.mode,
+        ...debugArgv,
       ]
     }
     const temp = this.materializeAclGrant(sessionId, policy.workspaceRoot)
@@ -373,6 +379,7 @@ export class LocalSandboxProvider extends SandboxProvider {
       '--mode', policy.mode,
       '--write-sid', workspaceWriteSid(policy.workspaceRoot),
       '--temp-write-sid', temp.writeSid,
+      ...debugArgv,
     ]
   }
 

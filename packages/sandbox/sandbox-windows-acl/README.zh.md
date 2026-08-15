@@ -47,10 +47,14 @@ rmSync(tempDir, { recursive: true, force: true })
 面向 seam 的形态是 **runner 入口**（`./runner`）：`@deepseek-ai/dsh-sandbox-local` 在调用者命令的位置 spawn 的 argv 前缀包装——与 bwrap/landlock-run/sandbox-exec 同一架构，因此沙盒 seam 的 `confine()` 契约无需改动。稳定的 argv 契约：
 
 ```sh
-node runner.js --workspace <dir> --temp <dir> --mode <read-only|workspace-write> [--write-sid <S-1-4-…> --temp-write-sid <S-1-4-…>] -- <argv...>
+node runner.js --workspace <dir> --temp <dir> --mode <read-only|workspace-write> [--write-sid <S-1-4-…> --temp-write-sid <S-1-4-…>] [--debug-log <path>] -- <argv...>
 ```
 
 runner 创建受限令牌，在它之下 spawn 包装后的 argv，调用者的 stdio 直接透传（调用者的管道在 spawn 前后被设为可继承——Node 在启动时清除 stdio 可继承性，裸 spawn 必须补偿这一点），把子进程包进 `KILL_ON_JOB_CLOSE` job（runner 死亡则子进程死亡），忽略自身的控制台 Ctrl+C 让子进程自行处理，镜像子进程的退出码，并在退出时撤销其自行管理的临时授权（工作区 ACE 常驻）。每个 runner 侧失败都会向 stderr 打印 `windows-acl-run: <detail>` 并以 127 退出——seam 的 `RUNNER_FAILURE_RULES` 匹配该签名，因此 runner 拒绝永远不会被误判为拒绝授权。
+
+**硬错误弹窗抑制**：runner 启动时安装进程错误模式 `SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX`（`0x8003`），每个子进程在 `CreateProcess` 时继承——与令牌、桌面相互正交。在 loader 初始化阶段死亡（`0xC0000142` 一类）的受限进程因此把 NTSTATUS 作为普通退出码经工具结果上报，而不再弹出模态"应用程序错误"对话框（System 日志 Event 26）。隐藏桌面 pin 仍是首要机制；错误模式则无论根因如何都消灭用户可见的症状类别。
+
+**取证 debug 日志**：`--debug-log <path>` 追加写入尽力而为的 JSONL 轨迹（`start` 携带 mode/console/原错误模式，`init`，`desktop` 携带 pin 定的 `lpDesktop`，`spawn`，`spawn-fail`，`exit` 携带子进程退出码），上限 512 KiB、单次轮转到 `<path>.1`。未设置该标志或路径不可写时静默禁用。Host 侧的启用方式是 `DSH_ACL_DEBUG_LOG` 环境变量：`sandbox-local` 在 Host 进程内读取它，并以 `--debug-log` 形式转发到 runner argv（runner 继承的环境会清除所有 `DSH_*` 变量，env 永远到不了它）。桌面外壳把它设为 `<userData>/logs/acl-runner.log`，因此现场若再发，日志自描述。
 
 **工作区复用与临时隔离**：seam 先把确定性工作区 SID 的 ACE **常驻**物化（每个工作区每服务器生命周期一次，绝不撤销——它就是复用缓存），再为每个活跃的会话/工作区对创建随机私有临时目录和不同的可回收 SID。它把两种身份作为必须成对出现的 `--write-sid`/`--temp-write-sid` 传入；runner 对照各自所属路径验证二者，既不授权也不撤销（`manageDacls: false`）。fork 获得不同的临时能力；即使恢复的是同一会话，新的提供方也会给出新的路径和 SID，因此崩溃残留只是失效垃圾，而非冲突或继承的能力。如果不带这一对标志，`--temp` 指定的是根目录：无 agent（智能体）/独立的 workspace-write runner 会创建随机私有子目录，自行管理其临时 SID，重写 TMP/TEMP，并在退出时移除该子目录。工作区若等于或包含该根目录，会在任何授权前被拒绝，因为否则其可继承的工作区 ACE 会向每个私有子目录授权；直接 API 同样拒绝任何可写根目录与实际私有临时目录重叠。重启后重新授权常驻工作区 ACE 是幂等的：`grantWrite` 读取当前 DACL，当完全相同的 ACE 已存在时跳过 `SetNamedSecurityInfoW`（应用该 ACE 会把相同的 ACE 急切地重新传播到整棵树——大型工作区上以分钟计）。已知代价：大型工作区树的首次授权会阻塞整次急切传播，每台机器每个工作区一次。
 
@@ -78,6 +82,7 @@ koffi 结构体定义在模块加载时对照探针断言其大小，因此头�
 - **硬链接是文件对象别名，而非路径别名。** 传播到已有 NTFS 硬链接上的可继承工作区 ACE 会修改底层同一文件的安全描述符，因此同一对象也可通过外部别名写入。拒绝工作区中的所有多链接文件不具可行性，因为普通 pnpm 安装会使用硬链接指向其内容寻址存储；原生 runner 套件钉住该缺口，提供方的部分强制执行报告则点明其后果。
 - **写入受限；读取、网络与进程可见性不受限。** `WRITE_RESTRICTED` 只交叉检查写访问，因此受限子进程可以读取调用者可读的任何文件并打开套接字。`read-only` 模式因而不能仅靠该机制表达；将其与读侧策略或 AppContainer/`S-1-15-2` capability 令牌配对以获得更强隔离。
 - **控制台隔离不可用。** 在受限令牌下，以 `CREATE_NO_WINDOW` / `CREATE_NEW_CONSOLE` 创建的子进程在 DLL 初始化期间以 `STATUS_DLL_INIT_FAILED`（`0xC0000142`）死亡。POC 尝试把控制台登录 SID（`S-1-2-1`）加入 restricting 列表来修复；在 Windows 11 26200 上 `CreateWellKnownSid(WinLocalLogonSid)` 以 `ERROR_INVALID_PARAMETER`（87）失败，正确的 `WinConsoleLogonSid` 能产出合法 `S-1-2-1` 但子进程仍然死亡，POC 的最终修订同时移除了该 SID 与控制台隔离。子进程因此共享宿主控制台；stdio 重定向走管道，不受影响。
+- **无控制台宿主的子进程钉在专用隐藏桌面上。** 当 runner 自身没有控制台（`GetConsoleWindow` 为 NULL——桌面外壳的 `windowsHide` 进程树）时，受限的控制台子系统子进程无法共享宿主控制台，Windows 只能让它对着 `WinSta0\Default` 初始化——其 DACL 对受限令牌只能靠登录 SID 的兜底 ACE 放行，且全机进程共享同一块桌面堆。2026-08-15 现场证实：沙盒内 `git.exe`/`node.exe` 孙进程间歇性弹出 `STATUS_DLL_INIT_FAILED`（`0xC0000142`）应用程序错误对话框（System 日志 Event 26），集中出现在带 stderr 重定向（`2>$null`）的 PowerShell 原生命令调用上。runner 因此在其窗口站上创建专用隐藏桌面 `dsh-acl-<pid>-<rand>`——DACL 显式授予 SYSTEM、Administrators、Everyone、登录 SID 以及工作区/临时 capability SID——并钉为 `STARTUPINFOW.lpDesktop`，于是所有后代进程都在显式授权、堆独立的桌面上确定性初始化，conhost 窗口不会在用户屏幕上闪烁，受限进程也失去了对用户桌面对象的兜底访问（这本身就是隔离性的增强，不只是修复）。桌面创建与 init 其他步骤一样失败即拒绝。有控制台（终端）的 runner 保持上文共享控制台形态不变；该桌面只为无控制台场景创建。
 - **ACL 授权是对真实目录的驻留改动。** 进程中途死亡会留下授权；工作区 ACE **按设计**常驻（绝不撤销——复用缓存），临时 ACE 由 `dispose()` 撤销（后续步骤失败时 `init()` 也会撤销已应用的临时授权）。POC 注释里的手工清理命令（`icacls <dir> /remove '*S-1-4-…'`）在本平台实测失败（`ERROR_NONE_MAPPED` 1332）——请通过本模块回收。工作区 ACE 在异常关闭后无需自愈：派生 SID 在下一次供给时重新命中常驻 ACE（跳过应用）；写入 SID ACE 不会因每次重启而累积第二个身份，因为身份**就是**工作区。
 - **被授权目录必须由调用者拥有。** 所有者的隐式 `WRITE_DAC` 是沙盒无需提权即可编辑 DACL 的原因。
 - **环境临时根目录绝不会被隐式授权。** 直接使用 `AclSandbox` 的 workspace-write 调用方必须提供一个已存在的私有 `tempDir` 及其不同的 `tempWriteSid`，或通过 `tempDir: null` 显式禁用临时写入。实际临时目录不得与任何可写根目录重叠。seam 会创建随机私有目录；无 agent runner 调用把 `--temp` 视为父根目录并自行创建随机子目录，但如果工作区等于或包含该父根目录，就会在任何 ACL 改动前拒绝调用。

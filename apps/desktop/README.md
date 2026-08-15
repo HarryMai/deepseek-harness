@@ -1,0 +1,39 @@
+# `@deepseek-ai/dsh-desktop`
+
+English | [中文](README.zh.md)
+
+Electron desktop application for the shipped DeepSeek Harness Web profile. The Electron main process owns only the window and process lifecycle; an ordinary Node child starts the existing profile, HTTP routes, WebSocket routes, and frontend unchanged.
+
+## Run
+
+This application is launched from the repository workspace; the build does not install `@deepseek-ai/dsh-desktop` from a registry. After the workspace dependencies and repository artifacts are present, run `pnpm desktop`. Launcher flags keep the `dsh web` ordering: place repeatable `--patch <path>` options before the first Web option, for example `pnpm desktop --patch ./extra.yml --port 3080`. The desktop defaults are `--host 127.0.0.1 --port 0`; the operating system selects a free loopback port and Electron opens it automatically.
+
+## Build the unsigned Windows installer
+
+[`desktop-build.config.json`](desktop-build.config.json) is the single editable input for Windows application metadata and installer behavior. It owns the display and executable names, publisher, description, copyright, Windows x64 target, Squirrel package and output names, shortcuts, optional `.ico` paths, and the ordinary Node version copied from the builder. `null` icon fields retain Electron's default icon; configured icon paths are relative to this directory.
+
+The builder requires Windows x64, Node 24.9.0, and the repository's pnpm 11.7.0. From the repository root, install the workspace dependencies once with `pnpm install`; this links `@deepseek-ai/dsh-desktop` from `apps/desktop` and does not request that package from a registry. Packaging reads the pinned Electron ZIP from `electron_config_cache`, `ELECTRON_CACHE`, or Electron's standard local cache and fails instead of downloading it when the archive is absent. Then build the installer:
+
+```sh
+pnpm desktop:make:win:x64
+```
+
+The command builds repository artifacts, deploys the existing `@deepseek-ai/dsh` Host closure from the local workspace, and writes the packaged application under `apps/desktop/out/package/` and Squirrel artifacts under `apps/desktop/out/make/squirrel.windows/x64/`. Distribute the configured `Setup.exe`; the `.nupkg` and `RELEASES` files are update metadata. The installer is per-user, does not require administrator access, bundles its ordinary Node runtime, works offline after installation, and does not enable automatic updates or delete Harness user data during uninstall.
+
+The configuration intentionally accepts only the current unsigned Windows x64 route. Unsupported changes such as enabling signing, automatic updates, machine-wide installation, or another architecture fail before packaging instead of being ignored. An unsigned installer displays an unknown-publisher or SmartScreen warning on some Windows systems.
+
+## Process ownership
+
+The Node launcher starts Electron and passes its own Node executable path to the Electron main process. Electron starts [`host.ts`](src/host.ts) with that ordinary Node executable, and the Host child boots the public `@deepseek-ai/dsh/desktop-host` adapter. Keeping the Harness runtime outside Electron preserves the Node ABI and `process.execPath` assumptions of native and subprocess providers.
+
+Window closure requests bounded Harness shutdown through process IPC. On POSIX, Electron retains the exact Host and descendant process identities before sending that request; Windows delegates tree ownership to `taskkill /T /F`. If graceful shutdown does not finish within six seconds, Electron forcibly terminates the retained tree and waits for the process handle to close before quitting. A termination failure keeps Electron open and reports the error. Startup readiness is also delivered through IPC, and Electron accepts only an HTTP URL with a loopback host and an explicit port.
+
+## Renderer security
+
+The renderer uses context isolation, Chromium sandboxing, and no Node integration or WebView. Permission requests are denied, navigation stays on the application origin, and HTTP or HTTPS links outside that origin open in the system browser. IPC carries lifecycle messages only; product API calls continue through the existing HTTP and WebSocket implementation.
+
+## Known limitations
+
+- The Windows installer is unsigned and may require the user to choose **More info** and **Run anyway** in SmartScreen.
+- The native installer build is workspace-local and does not fetch `@deepseek-ai/dsh-desktop` from npm.
+- A custom non-loopback `--host` is rejected by the desktop shell because its renderer accepts loopback application URLs only; use `dsh web` for deliberate network exposure.

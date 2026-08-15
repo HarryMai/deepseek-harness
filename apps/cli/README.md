@@ -45,3 +45,5 @@ The [CLI behavior reference](reference/README.md) owns exact layer precedence, f
 ## Development
 
 Production runs require built package and frontend artifacts. From the repository root, run `pnpm run build` separately, then use `pnpm dsh <args...>` to run the TypeScript entry and forward every argument; the [source-execution reference](reference/README.md#source-execution) owns the module-resolution contract.
+
+The `./desktop-host` export lets a product launcher boot the shipped Web profile in a separate ordinary Node process. It resolves launcher `--patch` options through the same `dsh web` parser, then uses the same profile composition, environment loading, Web arguments, and shutdown controller; presentation and process ownership remain in the consuming application.

@@ -66,7 +66,7 @@ function packedDependencies(directories: readonly string[]): Map<string, { url: 
   return dependencies
 }
 
-/** Install every tarball under `--from` and drive the `--family` entry. */
+/** Install every tarball under `--from` and drive the `--family` entries. */
 function main(): void {
   const { values } = parseArgs({
     options: { family: { type: 'string' }, from: { type: 'string', multiple: true } },
@@ -77,16 +77,16 @@ function main(): void {
   }
 
   const family = releaseFamily(values.family)
-  const entry = family.installedEntry
-  if (entry === undefined) {
+  if (family.installedEntries.length === 0) {
     console.log(`release verify-packed-install: family ${family.id} publishes no executable, nothing to drive`)
     return
   }
 
   const root = process.cwd()
   const packed = packedDependencies(values.from.map(directory => resolve(root, directory)))
-  const expected = packed.get(entry.packageName)
-  if (expected === undefined) throw new Error(`${entry.packageName} is not among the packed tarballs`)
+  for (const entry of family.installedEntries) {
+    if (!packed.has(entry.packageName)) throw new Error(`${entry.packageName} is not among the packed tarballs`)
+  }
 
   const consumerRoot = mkdtempSync(join(tmpdir(), `dsh-packed-${family.id}-`))
   try {
@@ -107,12 +107,16 @@ function main(): void {
     capture('npm', ['install', '--no-audit', '--no-fund', '--package-lock=false', '--omit=optional'],
       { cwd: consumerRoot, env: environment })
 
-    const bin = join(consumerRoot, 'node_modules', ...entry.packageName.split('/'), entry.binPath)
-    const version = capture(process.execPath, [bin, '--version'], { cwd: consumerRoot, env: environment })
-    if (version !== expected.version) {
-      throw new Error(`installed ${entry.packageName} --version reported ${JSON.stringify(version)}, expected ${expected.version}`)
+    for (const entry of family.installedEntries) {
+      const expected = packed.get(entry.packageName)
+      if (expected === undefined) throw new Error(`${entry.packageName} is not among the packed tarballs`)
+      const bin = join(consumerRoot, 'node_modules', ...entry.packageName.split('/'), entry.binPath)
+      const version = capture(process.execPath, [bin, '--version'], { cwd: consumerRoot, env: environment })
+      if (version !== expected.version) {
+        throw new Error(`installed ${entry.packageName} --version reported ${JSON.stringify(version)}, expected ${expected.version}`)
+      }
+      console.log(`release verify-packed-install: installed ${entry.packageName} reports ${version}`)
     }
-    console.log(`release verify-packed-install: installed ${entry.packageName} reports ${version}`)
   } finally {
     rmSync(consumerRoot, { recursive: true, force: true })
   }

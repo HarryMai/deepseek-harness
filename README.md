@@ -22,6 +22,14 @@ npx @deepseek-ai/dsh web
 
 The command starts the Web UI, served at `http://127.0.0.1:3080` by default. See [Web UI guide](docs/user/guide/index.md).
 
+To open the same UI directly in an Electron window, run:
+
+```sh
+npx @deepseek-ai/dsh-desktop
+```
+
+The desktop launcher starts the existing Web profile on an OS-assigned loopback port and opens it automatically; there is no URL to copy.
+
 ### Run from source
 
 To run from a repository checkout:
@@ -31,6 +39,8 @@ git clone https://github.com/deepseek-ai/deepseek-harness.git
 cd deepseek-harness
 pnpm install
 pnpm run build
+pnpm desktop
+# or keep the browser workflow:
 pnpm dsh web
 ```
 

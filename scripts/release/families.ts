@@ -186,11 +186,8 @@ export abstract class ReleaseFamily {
    */
   abstract validatePayload(member: ReleaseMember, files: readonly string[]): void
 
-  /**
-   * The executable that proves this family's artifacts install and run, or
-   * `undefined` for a family that publishes no executable.
-   */
-  abstract readonly installedEntry: InstalledEntry | undefined
+  /** Executables that prove this family's artifacts install and run. */
+  abstract readonly installedEntries: readonly InstalledEntry[]
 }
 
 /** `packages/*` and `apps/*`: one shared version across the whole family. */
@@ -228,7 +225,10 @@ class DshFamily extends ReleaseFamily {
     validateTarballPayload(files, member.name)
   }
 
-  readonly installedEntry = { packageName: '@deepseek-ai/dsh', binPath: 'lib/bin.js' }
+  readonly installedEntries = [
+    { packageName: '@deepseek-ai/dsh', binPath: 'lib/bin.js' },
+    { packageName: '@deepseek-ai/dsh-desktop', binPath: 'lib/bin.js' },
+  ]
 }
 
 /** `vendor/*`: every package keeps its own version line, so every package has its own tag. */
@@ -274,8 +274,8 @@ class VendorFamily extends ReleaseFamily {
     if (files.length === 0) throw new Error(`${member.name} packed an empty tarball`)
   }
 
-  /** No installed-entry probe: these are libraries a consumer imports, with no executable. */
-  readonly installedEntry = undefined
+  /** No installed-entry probes: these packages are libraries. */
+  readonly installedEntries = []
 }
 
 /** Every release family this module owns, in workflow order. */

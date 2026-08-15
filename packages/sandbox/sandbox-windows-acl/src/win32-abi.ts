@@ -19,7 +19,13 @@
  *    CREATE_NO_WINDOW / CREATE_NEW_CONSOLE is used.
  *  - Console isolation: under this restriction scheme a hidden console is not
  *    attainable, so children share the host console (stdio redirection is
- *    pipe-based and unaffected).
+ *    pipe-based and unaffected). When the host HAS no console (the desktop
+ *    shell's console-less process tree), console-subsystem descendants
+ *    instead initialized against WinSta0\Default — which intermittently died
+ *    with the same 0xC0000142 under load (field-verified 2026-08-15, System
+ *    log Event 26). desktop.ts closes that hole: console-less spawns are
+ *    pinned to a dedicated hidden desktop whose DACL names the restricting
+ *    SIDs explicitly, with a fresh desktop heap per runner.
  * @module @deepseek-ai/dsh-sandbox-windows-acl/win32-abi
  */
 
@@ -163,6 +169,19 @@ export const FORMAT_MESSAGE_FROM_SYSTEM = 0x00001000
 /** FORMAT_MESSAGE_IGNORE_INSERTS: skip insert-sequence substitution. */
 export const FORMAT_MESSAGE_IGNORE_INSERTS = 0x00000200
 
+// SetErrorMode flags (winbase.h lines ~206-211). The process error mode is
+// INHERITED by child processes at CreateProcess — orthogonally to tokens and
+// desktops — so the runner installs these once and the whole confined tree
+// (pwsh, then git/node grandchildren) reports hard errors as exit codes
+// instead of raising the modal "Application Popup" dialog (System log Event
+// 26), which a console-less host tree can neither show usefully nor dismiss.
+/** SEM_FAILCRITICALERRORS: hard errors return to the caller instead of showing the critical-error-handler dialog. */
+export const SEM_FAILCRITICALERRORS = 0x0001
+/** SEM_NOGPFAULTERRORBOX: no Windows Error Reporting dialog on an unhandled fault. */
+export const SEM_NOGPFAULTERRORBOX = 0x0002
+/** SEM_NOOPENFILEERRORBOX: no retry dialog when a file or device is not found. */
+export const SEM_NOOPENFILEERRORBOX = 0x8000
+
 // ---- error codes -----------------------------------------------------------
 
 /** ERROR_SUCCESS: the operation succeeded. */
@@ -184,6 +203,8 @@ export const ERROR_LOCK_VIOLATION = 33
 export const GENERIC_READ = 0x80000000
 /** GENERIC_WRITE: generic write access (winnt.h line ~3029). */
 export const GENERIC_WRITE = 0x40000000
+/** GENERIC_ALL: generic all-access (winnt.h line ~3030) — the sandbox desktop's handle access and DACL ACE mask. */
+export const GENERIC_ALL = 0x10000000
 // CreateFileW dwShareMode: the lock file is shared for read/write but NOT
 // for delete — if a locked file could be deleted and recreated underneath the
 // lock holder, two processes could hold "the same" lock on different files.
@@ -237,6 +258,20 @@ export const JOBOBJECT_EXTENDED_LIMIT_SIZE = 144
  * PerJobUserTimeLimit@8), verified by abi-probe.
  */
 export const JOBOBJECT_EXTENDED_LIMIT_FLAGS_OFFSET = 16
+
+// ---- user objects / SDDL (winuser.h / sddl.h) -------------------------------
+
+// winuser.h: GetUserObjectInformationW nIndex values (UOI_FLAGS=1, UOI_NAME=2).
+/** UOI_NAME: GetUserObjectInformationW class returning the object's name string (e.g. "WinSta0"). */
+export const UOI_NAME = 2
+// sddl.h line ~45: SDDL_REVISION_1 is the only defined SDDL revision.
+/** SDDL_REVISION_1: the SDDL revision ConvertStringSecurityDescriptorToSecurityDescriptorW accepts. */
+export const SDDL_REVISION_1 = 1
+/**
+ * sizeof(SECURITY_ATTRIBUTES) on x64: nLength@0 (4 + 4 pad),
+ * lpSecurityDescriptor@8 (8), bInheritHandle@16 (4 + 4 pad) = 24.
+ */
+export const SECURITY_ATTRIBUTES_SIZE = 24
 
 // ---- ABI layout, verified by verify/abi-probe.cpp (x64) --------------------
 

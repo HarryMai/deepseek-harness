@@ -1,0 +1,39 @@
+# `@deepseek-ai/dsh-desktop`
+
+[English](README.md) | 中文
+
+随附 DeepSeek Harness Web profile 的 Electron 桌面应用。Electron 主进程只负责窗口与进程生命周期；独立的普通 Node 子进程原样启动现有 profile、HTTP route、WebSocket route 和前端。
+
+## 运行
+
+该应用从仓库 workspace 启动；构建过程不会从 registry 安装 `@deepseek-ai/dsh-desktop`。workspace 依赖和仓库产物就绪后，运行 `pnpm desktop`。启动器参数保持 `dsh web` 的顺序要求：可重复的 `--patch <path>` 必须放在首个 Web 选项之前，例如 `pnpm desktop --patch ./extra.yml --port 3080`。桌面默认参数为 `--host 127.0.0.1 --port 0`；OS 会选择空闲的回环端口，Electron 随后自动打开该地址。
+
+## 构建无签名 Windows 安装程序
+
+[`desktop-build.config.json`](desktop-build.config.json) 是 Windows 应用元数据和安装行为的唯一可编辑输入。它管理显示名和可执行文件名、发布者、描述、版权、Windows x64 目标、Squirrel 包名和输出名、快捷方式、可选 `.ico` 路径，以及从构建机复制的普通 Node 版本。图标字段为 `null` 时保留 Electron 默认图标；配置的图标路径相对于当前目录。
+
+构建机必须是 Windows x64，并使用 Node 24.9.0 和仓库声明的 pnpm 11.7.0。先在仓库根目录执行一次 `pnpm install` 安装 workspace 依赖；该命令会把 `apps/desktop` 作为本地 `@deepseek-ai/dsh-desktop` 链接，不会从 registry 请求这个包。打包过程从 `electron_config_cache`、`ELECTRON_CACHE` 或 Electron 标准本地缓存读取固定版本的 Electron ZIP；归档不存在时直接失败，不会在构建期间下载。然后构建安装程序：
+
+```sh
+pnpm desktop:make:win:x64
+```
+
+该命令先构建仓库产物，再从本地 workspace 部署现有 `@deepseek-ai/dsh` Host 闭包；打包后的应用写入 `apps/desktop/out/package/`，Squirrel 产物写入 `apps/desktop/out/make/squirrel.windows/x64/`。分发配置指定的 `Setup.exe`；`.nupkg` 和 `RELEASES` 是更新元数据。安装程序按当前用户安装，不要求管理员权限，随包携带普通 Node，安装后可离线运行，不启用自动更新，卸载时也不删除 Harness 用户数据。
+
+配置有意只接受当前的无签名 Windows x64 路径。启用签名、自动更新、全机安装或其他架构等未支持修改会在打包前失败，不会被静默忽略。无签名安装程序可能在部分 Windows 系统上显示未知发布者或 SmartScreen 警告。
+
+## 进程所有权
+
+Node 启动器启动 Electron，并把自身的 Node 可执行文件路径交给 Electron 主进程。Electron 使用该普通 Node 可执行文件启动 [`host.ts`](src/host.ts)，Host 子进程再启动公开的 `@deepseek-ai/dsh/desktop-host` 适配器。把 Harness 运行时保留在 Electron 外部，可以维持原生与子进程提供方对 Node ABI 和 `process.execPath` 的既有假设。
+
+关闭窗口时会通过进程 IPC 请求有界的 Harness 关闭流程。在 POSIX 上，Electron 会在发送该请求前保留 Host 及其后代进程的精确身份；Windows 则把进程树所有权交给 `taskkill /T /F`。如果优雅关闭在六秒内未完成，Electron 会强制终止已保留的进程树，并等待进程句柄关闭后再退出。终止失败时 Electron 保持打开并报告错误。启动就绪状态也通过 IPC 传递，Electron 只接受使用回环宿主且显式包含端口的 HTTP URL。
+
+## Renderer 安全
+
+renderer 启用 context isolation 和 Chromium sandbox，不启用 Node integration 或 WebView。权限请求会被拒绝；导航限于应用 origin；指向该 origin 外部的 HTTP 或 HTTPS 链接在系统浏览器中打开。IPC 只承载生命周期消息；产品 API 调用继续使用现有 HTTP 与 WebSocket 实现。
+
+## 已知限制
+
+- Windows 安装程序未签名，用户可能需要在 SmartScreen 中选择**更多信息**和**仍要运行**。
+- 原生安装程序只在 workspace 内构建，不会从 npm 获取 `@deepseek-ai/dsh-desktop`。
+- 桌面壳只接受回环应用 URL，因此会拒绝自定义的非回环 `--host`；如需有意向网络开放，请使用 `dsh web`。

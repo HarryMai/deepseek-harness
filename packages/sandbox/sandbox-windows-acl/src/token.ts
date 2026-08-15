@@ -7,7 +7,7 @@
  * @module @deepseek-ai/dsh-sandbox-windows-acl/token
  */
 
-import { allocBytes, allocPtrSlot, allocUint32, decodePtr, decodePtrAt, decodeUint32, encodeUint32, isNullPtr, ptrAddress, throwLastError, throwWin32 } from './ffi.ts'
+import { allocBytes, allocPtrSlot, allocUint32, decodePtr, decodePtrAt, decodeString16, decodeUint32, encodeUint32, isNullPtr, ptrAddress, throwLastError, throwWin32 } from './ffi.ts'
 import type { NativePtr, Win32Bindings } from './ffi.ts'
 import { buildExplicitAccess } from './acl.ts'
 import * as abi from './win32-abi.ts'
@@ -74,6 +74,25 @@ export function findLogonSid(api: Win32Bindings, token: NativePtr): NativePtr {
     return copy
   }
   throw new Error(`CreateRestrictedToken prerequisite failed: no logon SID found among ${groupCount} token groups`)
+}
+
+/**
+ * Convert a binary SID to its SDDL string form (ConvertSidToStringSidW),
+ * freeing the native string. The confinement desktop's SDDL names the logon
+ * SID, which only exists as a binary copy at runtime (findLogonSid).
+ * @param api - the binding table.
+ * @param sidPtr - the binary SID to convert.
+ * @returns the "S-1-…" string.
+ */
+export function sidToString(api: Win32Bindings, sidPtr: NativePtr): string {
+  const stringSlot = allocPtrSlot()
+  if (api.convertSidToStringSidW(sidPtr, stringSlot) === 0) throwLastError(api, 'ConvertSidToStringSidW')
+  const stringPtr = decodePtr(stringSlot)
+  if (stringPtr === null) throwWin32(api, 'ConvertSidToStringSidW', api.getLastError(), 'null string SID')
+  const value = decodeString16(stringPtr)
+  const freed = api.localFree(stringPtr)
+  if (!isNullPtr(freed)) throwLastError(api, 'LocalFree', 'string SID')
+  return value
 }
 
 /**

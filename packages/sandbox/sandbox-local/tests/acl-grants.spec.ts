@@ -51,6 +51,7 @@ vi.mock('@deepseek-ai/dsh-sandbox-windows-acl', () => {
   }
   return {
     AclWriteGrant: MockAclWriteGrant,
+    ACL_RUNNER_DEBUG_LOG_ENV: 'DSH_ACL_DEBUG_LOG',
     assertTempRootOutsideWorkspace: (workspaceRoot: string, tempRoot: string) => {
       const workspace = realpathSync.native(workspaceRoot)
       const temp = realpathSync.native(tempRoot)
@@ -139,6 +140,33 @@ describe('windows-acl write grants (LocalSandboxProvider)', () => {
       expect(mockState.grants.every(grant => grant.disposed)).toBe(true)
       expect(existsSync(tempDir ?? '')).toBe(false)
     } finally {
+      cleanup()
+    }
+  })
+
+  it('forwards the host debug-log opt-in onto the runner argv in both modes, and omits it unset', async () => {
+    const previous = process.env.DSH_ACL_DEBUG_LOG
+    const logPath = join(tmpdir(), 'dsh-acl-debug-forward.log')
+    process.env.DSH_ACL_DEBUG_LOG = logPath
+    try {
+      const { sandbox, fiber } = await setup()
+      const ws = workspaceRoot()
+      scratch.push(ws)
+      const readOnly = sandbox.confine(['true'], { mode: 'read-only', workspaceRoot: ws })
+      expect(flag(readOnly.argv, '--debug-log')).toBe(logPath)
+      const write = sandbox.confine(['true'], { mode: 'workspace-write', workspaceRoot: ws, sessionId: SessionId('sess-debug') })
+      expect(flag(write.argv, '--debug-log')).toBe(logPath)
+
+      // Unset (and blank) means no flag at all — the runner's log stays off.
+      delete process.env.DSH_ACL_DEBUG_LOG
+      expect(flag(sandbox.confine(['true'], { mode: 'read-only', workspaceRoot: ws }).argv, '--debug-log')).toBeUndefined()
+      process.env.DSH_ACL_DEBUG_LOG = '  '
+      expect(flag(sandbox.confine(['true'], { mode: 'read-only', workspaceRoot: ws }).argv, '--debug-log')).toBeUndefined()
+
+      await fiber.dispose()
+    } finally {
+      if (previous === undefined) delete process.env.DSH_ACL_DEBUG_LOG
+      else process.env.DSH_ACL_DEBUG_LOG = previous
       cleanup()
     }
   })

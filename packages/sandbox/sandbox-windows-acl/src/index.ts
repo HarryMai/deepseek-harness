@@ -25,7 +25,14 @@
  *    (WRITE_RESTRICTED intersects only write accesses);
  *  - console isolation is unavailable — children share the host console
  *    (CREATE_NO_WINDOW / CREATE_NEW_CONSOLE children die with
- *    STATUS_DLL_INIT_FAILED under the restriction);
+ *    STATUS_DLL_INIT_FAILED under the restriction). When the host HAS no
+ *    console (the desktop shell's windowsHide tree), children are instead
+ *    pinned to a dedicated hidden desktop (desktop.ts) whose DACL names the
+ *    restricting SIDs: console/GUI initialization is deterministic there,
+ *    and confined processes lose ambient access to the user's desktop
+ *    objects (a confinement improvement). The flip side: a confined process
+ *    cannot interact with the user's desktop — invisible to the user either
+ *    way, since the host tree is console-less;
  *  - the private temp directory and every writable directory must be owned by the
  *    caller (owner-implicit WRITE_DAC);
  *  - grants are standing ACE mutations on real directories. WORKSPACE grants
@@ -44,12 +51,15 @@ import { existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { grantWrite, revokeWrite } from './acl.ts'
+import { DebugLog } from './debug-log.ts'
+import { closeSandboxDesktop, createSandboxDesktop, hasConsole } from './desktop.ts'
+import type { SandboxDesktop } from './desktop.ts'
 import { Win32Error } from './errors.ts'
 import { allocPtrSlot, decodePtr, isNullPtr, throwLastError, win32 } from './ffi.ts'
 import type { NativePtr, Win32Bindings } from './ffi.ts'
 import { assertPrivateTempDisjoint } from './path-boundary.ts'
 import { drainPipe, spawnSandboxed, spawnSandboxedInherited, waitForExit } from './spawn.ts'
-import { createRestrictedToken, findLogonSid, makeWellKnownSid, openCurrentProcessToken, setTokenDefaultDaclGrant } from './token.ts'
+import { createRestrictedToken, findLogonSid, makeWellKnownSid, openCurrentProcessToken, setTokenDefaultDaclGrant, sidToString } from './token.ts'
 import * as abi from './win32-abi.ts'
 
 export { quoteArg } from './spawn.ts'
@@ -57,6 +67,14 @@ export { AclWriteGrant } from './grant.ts'
 export { assertTempRootOutsideWorkspace } from './path-boundary.ts'
 export { tempWriteSid, workspaceWriteSid } from './workspace-sid.ts'
 export { Win32Error } from './errors.ts'
+
+/**
+ * Host-environment opt-in for the runner's forensic log (`--debug-log`). The
+ * sandbox seam reads this name in the HOST process and forwards it on the
+ * runner argv (env would not survive the subprocess service's `DSH_*` scrub);
+ * the desktop shell sets it so a packaged app's confined spawns always log.
+ */
+export const ACL_RUNNER_DEBUG_LOG_ENV = 'DSH_ACL_DEBUG_LOG'
 
 /** Construction options: the workspace/temp allowlists and their distinct SID identities. */
 export interface AclSandboxOptions {
@@ -98,6 +116,12 @@ export interface AclSandboxOptions {
    * the caller holds the grants for its own lifetime and revokes them.
    */
   manageDacls?: boolean
+  /**
+   * Optional forensic JSONL log path (the runner's `--debug-log`; see
+   * debug-log.ts). When set, init/desktop/spawn decisions are appended
+   * best-effort; when absent, logging is a no-op.
+   */
+  debugLog?: string
 }
 
 /** Per-spawn options: the program, its argv/cwd, and the stdio shape. */
@@ -176,10 +200,15 @@ export class AclSandbox {
   /** The well-known/logon SID allocations init() makes; freed by dispose() alongside the write SIDs. */
   private sidAllocations: NativePtr[] = []
   private grantedPaths: Array<{ path: string; sidPtr: NativePtr }> = []
+  /** The console-less confinement desktop (desktop.ts); undefined when the host has a console. */
+  private desktop: SandboxDesktop | undefined
+  /** The forensic JSONL sink (debug-log.ts); a no-op unless the runner passed --debug-log. */
+  private readonly debug: DebugLog
 
   constructor(options: AclSandboxOptions) {
     this.mode = options.mode
     this.manageDacls = options.manageDacls ?? true
+    this.debug = new DebugLog(options.debugLog)
     this.writableDirs = options.writableDirs.map((directory) => {
       const absolute = resolve(directory)
       if (!existsSync(absolute) || !statSync(absolute).isDirectory()) {
@@ -295,6 +324,31 @@ export class AclSandbox {
       // objects in one session's temp tree from acquiring the shared
       // workspace capability.
       setTokenDefaultDaclGrant(api, restrictedToken, this.tempWriteSidPtr ?? this.writeSidPtr ?? worldSid)
+      // Console-less host (the desktop shell's windowsHide tree): a confined
+      // console-subsystem child cannot share a host console, so Windows would
+      // initialize it against WinSta0\Default — whose DACL the restricted
+      // token only clears via ambient logon-SID ACEs, and whose desktop heap
+      // every process on the machine shares. Field-verified 2026-08-15 as
+      // intermittent STATUS_DLL_INIT_FAILED (0xC0000142) popups for git.exe /
+      // node.exe grandchildren. Pin children to a dedicated hidden desktop
+      // whose DACL names the restricting SIDs explicitly (SYSTEM and
+      // Administrators join for csrss/kernel and same-session management
+      // paths — neither is in the confined token, so those ACEs widen nothing
+      // the child reaches). Console-present (terminal) runners keep sharing
+      // the host console: the long-standing known-good path stays untouched.
+      // Fails closed like every other init step.
+      const consolePresent = hasConsole(api)
+      this.debug.record('init', { mode: this.mode, console: consolePresent })
+      if (!consolePresent) {
+        this.desktop = createSandboxDesktop(api, [
+          'S-1-5-18', // SYSTEM
+          'S-1-5-32-544', // Administrators
+          'S-1-1-0', // Everyone
+          sidToString(api, logonSid),
+          ...[this.writeSid, this.tempWriteSid].filter((sid): sid is string => sid !== undefined),
+        ])
+        this.debug.record('desktop', { lpDesktop: this.desktop.lpDesktop })
+      }
       if (api.closeHandle(currentToken) === 0) throwLastError(api, 'CloseHandle', 'current process token')
       currentTokenOpen = false
       this.api = api
@@ -304,6 +358,14 @@ export class AclSandbox {
       // revoked — they are the intended end state (the reuse cache), not an
       // error artifact.
       const cleanupFailures: unknown[] = []
+      if (this.desktop !== undefined) {
+        try {
+          closeSandboxDesktop(api, this.desktop)
+        } catch (cleanupError) {
+          cleanupFailures.push(cleanupError)
+        }
+        this.desktop = undefined
+      }
       if (currentTokenOpen && api.closeHandle(currentToken) === 0) {
         cleanupFailures.push(new Win32Error('CloseHandle', api.getLastError(), 'current process token after init failure'))
       }
@@ -356,7 +418,8 @@ export class AclSandbox {
     const cwd = options.cwd ?? process.cwd()
 
     if (options.stdio === 'inherit') {
-      const native = spawnSandboxedInherited(api, token, { command: options.command, args, cwd })
+      const native = this.spawnRecording(options.command, () =>
+        spawnSandboxedInherited(api, token, { command: options.command, args, cwd, desktop: this.desktop?.lpDesktop }))
       let exitCodePromise: Promise<number> | undefined
       return {
         pid: native.pid,
@@ -369,7 +432,8 @@ export class AclSandbox {
       }
     }
 
-    const native = spawnSandboxed(api, token, { command: options.command, args, cwd })
+    const native = this.spawnRecording(options.command, () =>
+      spawnSandboxed(api, token, { command: options.command, args, cwd, desktop: this.desktop?.lpDesktop }))
     const stdout = drainPipe(api, native.stdoutRead)
     const stderr = drainPipe(api, native.stderrRead)
     // waitForExit is deliberately NOT started here: WaitForSingleObject blocks
@@ -389,6 +453,24 @@ export class AclSandbox {
   }
 
   /**
+   * Run one native spawn with forensic recording. Failures rethrow unchanged
+   * (fail-closed); the record only explains which spawn attempt failed.
+   * @param command - the program being spawned (for the log line).
+   * @param thunk - the native spawn call.
+   * @returns the native child handle set.
+   */
+  private spawnRecording<T extends { pid: number }>(command: string, thunk: () => T): T {
+    try {
+      const native = thunk()
+      this.debug.record('spawn', { command, pid: native.pid, desktop: this.desktop?.lpDesktop ?? null })
+      return native
+    } catch (error) {
+      this.debug.record('spawn-fail', { command, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  /**
    * Revoke the revocable (temp) grants, free the SID, close the token; the
    * standing workspace ACEs stay (the reuse cache). Reports every cleanup
    * failure.
@@ -397,6 +479,14 @@ export class AclSandbox {
     const api = this.api
     if (api === undefined) return
     const failures: unknown[] = []
+    if (this.desktop !== undefined) {
+      try {
+        closeSandboxDesktop(api, this.desktop)
+      } catch (error) {
+        failures.push(error)
+      }
+      this.desktop = undefined
+    }
     if (this.manageDacls) {
       for (const grant of this.grantedPaths) {
         try {

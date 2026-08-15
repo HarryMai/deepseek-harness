@@ -46,6 +46,13 @@ export interface StartupInfoInput {
   hStdInput: NativePtr
   hStdOutput: NativePtr
   hStdError: NativePtr
+  /**
+   * Optional lpDesktop ("WinSta0\\<desktop>") as a caller-owned UTF-16LE
+   * NUL-terminated Buffer — encoded as its raw address. The Buffer MUST stay
+   * referenced until CreateProcessAsUserW returns; koffi's 'str16' struct-field
+   * encode does not pin the JS string, which is why the struct member is PVOID.
+   */
+  lpDesktop?: Buffer | null
 }
 
 /** Decoded PROCESS_INFORMATION (layout verified: size 24). */
@@ -133,6 +140,25 @@ export interface Win32Bindings {
   // runner can clean up grants after the child exits.
   setConsoleCtrlHandler(handler: null, add: number): number
   getStdHandle(stdHandle: number): NativePtr
+  // ---- process error mode (hard-error popup suppression, error-mode.ts) ----
+  /** SetErrorMode: install the process error mode children inherit; returns the previous mode. */
+  setErrorMode(mode: number): number
+  /** GetErrorMode: the current process error mode (diagnostics and tests). */
+  getErrorMode(): number
+  // ---- window station / desktop (console-less confinement, desktop.ts) -----
+  /** GetConsoleWindow: NULL when this process has no console — the console-less desktop-shell condition. */
+  getConsoleWindow(): NativePtr | null
+  getProcessWindowStation(): NativePtr
+  getUserObjectInformationW(handle: NativePtr, index: number, info: Buffer | null, length: number, needed: NativePtr): number
+  createDesktopW(
+    desktop: string, device: null, devmode: null, flags: number, desiredAccess: number, attributes: Buffer | null,
+  ): NativePtr | null
+  closeDesktop(desktop: NativePtr): number
+  // ---- SDDL -----------------------------------------------------------------
+  convertSidToStringSidW(sid: NativePtr, stringSid: NativePtr): number
+  convertStringSecurityDescriptorToSecurityDescriptorW(
+    sddl: string, revision: number, descriptor: NativePtr, descriptorLength: null,
+  ): number
 }
 
 const PVOID: Ptr = koffi.pointer('void')
@@ -142,7 +168,9 @@ const PPVOID: Ptr = koffi.pointer(PVOID)
 export const STARTUPINFOW = koffi.struct('STARTUPINFOW', {
   cb: 'uint32',
   lpReserved: 'str16',
-  lpDesktop: 'str16',
+  // PVOID, not 'str16': the desktop-name Buffer's address is written verbatim
+  // so its lifetime is caller-controlled (see StartupInfoInput.lpDesktop).
+  lpDesktop: PVOID,
   lpTitle: 'str16',
   dwX: 'uint32',
   dwY: 'uint32',
@@ -223,6 +251,26 @@ export function decodePtr(slot: NativePtr): NativePtr | null {
 export function decodeUint32(slot: NativePtr): number {
   const value: unknown = koffi.decode(slot, 'uint32')
   return value as number
+}
+
+/**
+ * Decode a NUL-terminated UTF-16 string AT a native pointer (the out-string
+ * ConvertSidToStringSidW / GetUserObjectInformationW hand back). Reads one
+ * code unit at a time via the (pointer, offset, type) form — decoding the
+ * pointer AS 'str16' instead treats the string's first code units as a nested
+ * pointer and dereferences garbage (STATUS_ACCESS_VIOLATION, verified
+ * empirically); the per-unit loop never reads past the terminator.
+ * @param ptr - the pointer to the first UTF-16 code unit.
+ * @returns the decoded string (without the terminator).
+ */
+export function decodeString16(ptr: NativePtr): string {
+  const units: number[] = []
+  for (let offset = 0; offset < 512; offset += 2) {
+    const unit: unknown = koffi.decode(ptr, offset, 'uint16')
+    if ((unit as number) === 0) return String.fromCharCode(...units)
+    units.push(unit as number)
+  }
+  throw new Error('decodeString16: unterminated UTF-16 string (256 code units read)')
 }
 
 /**
@@ -374,6 +422,7 @@ function bindings(): Win32Bindings {
   if (cached !== undefined) return cached
   const kernel32 = koffi.load('kernel32.dll')
   const advapi32 = koffi.load('advapi32.dll')
+  const user32 = koffi.load('user32.dll')
 
   // Each binding shape is verified by verify/abi-probe.cpp against the real
   // Windows headers and exercised end-to-end by tests/probe.spec.ts; the
@@ -427,6 +476,15 @@ function bindings(): Win32Bindings {
     terminateProcess: bind(kernel32, 'TerminateProcess', 'int', [PVOID, 'uint32']),
     setConsoleCtrlHandler: bind(kernel32, 'SetConsoleCtrlHandler', 'int', [PVOID, 'int']),
     getStdHandle: bind(kernel32, 'GetStdHandle', PVOID, ['int']),
+    setErrorMode: bind(kernel32, 'SetErrorMode', 'uint32', ['uint32']),
+    getErrorMode: bind(kernel32, 'GetErrorMode', 'uint32', []),
+    getConsoleWindow: bind(kernel32, 'GetConsoleWindow', PVOID, []),
+    getProcessWindowStation: bind(user32, 'GetProcessWindowStation', PVOID, []),
+    getUserObjectInformationW: bind(user32, 'GetUserObjectInformationW', 'int', [PVOID, 'int', PVOID, 'uint32', koffi.pointer('uint32')]),
+    createDesktopW: bind(user32, 'CreateDesktopW', PVOID, ['str16', PVOID, PVOID, 'uint32', 'uint32', PVOID]),
+    closeDesktop: bind(user32, 'CloseDesktop', 'int', [PVOID]),
+    convertSidToStringSidW: bind(advapi32, 'ConvertSidToStringSidW', 'int', [PVOID, PPVOID]),
+    convertStringSecurityDescriptorToSecurityDescriptorW: bind(advapi32, 'ConvertStringSecurityDescriptorToSecurityDescriptorW', 'int', ['str16', 'uint32', PPVOID, PVOID]),
   } as unknown as Win32Bindings
   return cached
 }

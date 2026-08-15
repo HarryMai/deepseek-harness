@@ -22,6 +22,14 @@ npx @deepseek-ai/dsh web
 
 该命令会启动 Web UI，默认地址为 `http://127.0.0.1:3080`。详见 [Web UI 指南](docs/user/guide/index.md)。
 
+如需在 Electron 窗口中直接打开同一套 UI，请运行：
+
+```sh
+npx @deepseek-ai/dsh-desktop
+```
+
+桌面启动器会在由操作系统分配的本机回环端口上启动现有 Web profile，并自动打开窗口，无需复制 URL。
+
 ### 从源码运行
 
 如需从仓库源码运行：
@@ -31,6 +39,8 @@ git clone https://github.com/deepseek-ai/deepseek-harness.git
 cd deepseek-harness
 pnpm install
 pnpm run build
+pnpm desktop
+# or keep the browser workflow:
 pnpm dsh web
 ```
 

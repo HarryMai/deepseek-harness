@@ -5,7 +5,11 @@
  * (CREATE_NO_WINDOW / CREATE_NEW_CONSOLE) is intentionally absent: under this
  * restriction scheme hidden-console children die with STATUS_DLL_INIT_FAILED
  * (0xC0000142) — verified empirically, see win32-abi.ts. Stdio redirection is
- * pipe-based and unaffected; the child shares the host console.
+ * pipe-based and unaffected; the child shares the host console. When the host
+ * has NO console (the desktop shell), the caller passes options.desktop — the
+ * dedicated hidden confinement desktop from desktop.ts — which is pinned as
+ * STARTUPINFOW.lpDesktop so console-subsystem descendants initialize
+ * deterministically instead of dying intermittently against WinSta0\Default.
  * @module @deepseek-ai/dsh-sandbox-windows-acl/spawn
  */
 
@@ -100,7 +104,7 @@ export interface SpawnedNative {
 export function spawnSandboxed(
   api: Win32Bindings,
   token: NativePtr,
-  options: { command: string; args: readonly string[]; cwd: string },
+  options: { command: string; args: readonly string[]; cwd: string; desktop?: string | undefined },
 ): SpawnedNative {
   const stdIn = createPipe(api)
   const stdOut = createPipe(api)
@@ -110,6 +114,9 @@ export function spawnSandboxed(
   setInheritable(api, stdOut.write, 'stdout write end')
   setInheritable(api, stdErr.write, 'stderr write end')
 
+  // Kept referenced through CreateProcessAsUserW: the raw address is encoded
+  // into STARTUPINFOW (see StartupInfoInput.lpDesktop).
+  const desktopBuffer = options.desktop === undefined ? null : Buffer.from(`${options.desktop}\0`, 'utf16le')
   const startupInfo = allocStartupInfo()
   encodeStartupInfo(startupInfo, {
     cb: abi.STARTUPINFOW_SIZE,
@@ -117,6 +124,7 @@ export function spawnSandboxed(
     hStdInput: stdIn.read,
     hStdOutput: stdOut.write,
     hStdError: stdErr.write,
+    lpDesktop: desktopBuffer,
   })
 
   const processInfo = allocProcessInfo()
@@ -142,6 +150,10 @@ export function spawnSandboxed(
     api.closeHandle(stdErr.write)
     throwWin32(api, 'CreateProcessAsUserW', win32Code, `command: ${options.command}, cwd: ${options.cwd}`)
   }
+  // GC pin: the desktop buffer's raw address was handed to
+  // CreateProcessAsUserW above; this reference keeps its backing store alive
+  // across the call (precise GC could otherwise collect it in between).
+  void desktopBuffer
 
   const info = decodeProcessInfo(processInfo)
   const processHandle = info.hProcess
@@ -269,7 +281,7 @@ export interface SpawnedInherited {
 export function spawnSandboxedInherited(
   api: Win32Bindings,
   token: NativePtr,
-  options: { command: string; args: readonly string[]; cwd: string },
+  options: { command: string; args: readonly string[]; cwd: string; desktop?: string | undefined },
 ): SpawnedInherited {
   const job = createKillOnCloseJob(api)
   const stdIn = api.getStdHandle(abi.STD_INPUT_HANDLE)
@@ -294,6 +306,9 @@ export function spawnSandboxedInherited(
   makeInheritable(stdOut, 'stdout')
   makeInheritable(stdErr, 'stderr')
 
+  // Kept referenced through CreateProcessAsUserW: the raw address is encoded
+  // into STARTUPINFOW (see StartupInfoInput.lpDesktop).
+  const desktopBuffer = options.desktop === undefined ? null : Buffer.from(`${options.desktop}\0`, 'utf16le')
   const startupInfo = allocStartupInfo()
   encodeStartupInfo(startupInfo, {
     cb: abi.STARTUPINFOW_SIZE,
@@ -301,6 +316,7 @@ export function spawnSandboxedInherited(
     hStdInput: stdIn,
     hStdOutput: stdOut,
     hStdError: stdErr,
+    lpDesktop: desktopBuffer,
   })
 
   const processInfo = allocProcessInfo()
@@ -321,6 +337,10 @@ export function spawnSandboxedInherited(
     api.closeHandle(job)
     throwWin32(api, 'CreateProcessAsUserW', win32Code, `command: ${options.command}, cwd: ${options.cwd}`)
   }
+  // GC pin: the desktop buffer's raw address was handed to
+  // CreateProcessAsUserW above; this reference keeps its backing store alive
+  // across the call (precise GC could otherwise collect it in between).
+  void desktopBuffer
 
   const info = decodeProcessInfo(processInfo)
   const processHandle = info.hProcess

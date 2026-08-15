@@ -151,6 +151,10 @@ function happyStubs(): HappyStubs {
   const closeHandle = vi.fn(() => 1)
   const getLastError = vi.fn(() => abi.ERROR_BROKEN_PIPE) // the drains' clean EOF
   const formatMessageW = vi.fn(() => 0)
+  // Console-present: the dedicated-desktop branch (desktop.ts) stays out of
+  // these failure-path scenarios; it is covered live by desktop.spec.ts and
+  // console-less.spec.ts.
+  const getConsoleWindow = vi.fn(() => fresh())
 
   const api = {
     openProcess, openProcessToken, convertStringSidToSidW, getTempPathW, createFileW,
@@ -160,7 +164,7 @@ function happyStubs(): HappyStubs {
     setTokenInformation, createPipe, setHandleInformation, createProcessAsUserW,
     peekNamedPipe, readFile, waitForSingleObject, getExitCodeProcess, createJobObjectW,
     setInformationJobObject, assignProcessToJobObject, resumeThread, getStdHandle,
-    localFree, closeHandle, getLastError, formatMessageW,
+    localFree, closeHandle, getLastError, formatMessageW, getConsoleWindow,
   } as unknown as Win32Bindings
   return {
     api, setNamedSecurityInfoW, convertStringSidToSidW, closeHandle, localFree,

@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "lib/types",
+    "resolveJsonModule": true
+  },
+  "include": [
+    "src",
+    "tests",
+    "scripts",
+    "desktop-build.config.json"
+  ],
+  "references": [
+    {
+      "path": "../cli"
+    },
+    {
+      "path": "../../packages/host/webserver"
+    },
+    {
+      "path": "../../packages/subprocess/subprocess-local"
+    }
+  ]
+}

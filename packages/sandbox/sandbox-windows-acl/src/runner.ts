@@ -11,7 +11,20 @@
  *   [node, runner.js, '--workspace', <dir>, '--temp', <dir>,
  *    '--mode', <read-only|workspace-write>,
  *    ['--write-sid', <S-1-4-…>,
- *     '--temp-write-sid', <S-1-4-…>], '--', <argv...>]
+ *     '--temp-write-sid', <S-1-4-…>],
+ *    ['--debug-log', <path>], '--', <argv...>]
+ *
+ * `--debug-log`: optional forensic JSONL sink (debug-log.ts) recording the
+ * console/desktop gate decision, each spawn and its desktop pin, and the
+ * child's exit — the data a field 0xC0000142 report needs. The seam forwards
+ * it from the host's DSH_ACL_DEBUG_LOG opt-in (ACL_RUNNER_DEBUG_LOG_ENV).
+ *
+ * Before anything spawns, the runner installs the popup-suppressing process
+ * error mode (error-mode.ts): children inherit it at CreateProcess, so a
+ * confined process dying in loader initialization reports its NTSTATUS exit
+ * code through the normal tool-result channel instead of raising the modal
+ * "Application Popup" dialog that a console-less host tree cannot usefully
+ * show or dismiss.
  *
  * Modes:
  *  - workspace-write: the workspace and temp directories carry distinct
@@ -47,6 +60,8 @@
 import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { DebugLog } from './debug-log.ts'
+import { suppressHardErrorPopups } from './error-mode.ts'
 import { win32 } from './ffi.ts'
 import { AclSandbox, assertTempRootOutsideWorkspace } from './index.ts'
 import { tempWriteSid, workspaceWriteSid } from './workspace-sid.ts'
@@ -68,6 +83,7 @@ interface ParsedArgs {
   mode: 'read-only' | 'workspace-write'
   writeSid: string | undefined
   tempWriteSid: string | undefined
+  debugLog: string | undefined
   command: string
   args: string[]
 }
@@ -78,6 +94,7 @@ function parseArgs(raw: string[]): ParsedArgs {
   let mode: string | undefined
   let writeSid: string | undefined
   let parsedTempWriteSid: string | undefined
+  let debugLog: string | undefined
   let index = 0
   for (; index < raw.length; index++) {
     const token = raw[index]
@@ -94,6 +111,7 @@ function parseArgs(raw: string[]): ParsedArgs {
       case '--mode': mode = value; break
       case '--write-sid': writeSid = value; break
       case '--temp-write-sid': parsedTempWriteSid = value; break
+      case '--debug-log': debugLog = value; break
       default: fail(`unknown argument: ${token}`)
     }
   }
@@ -103,7 +121,7 @@ function parseArgs(raw: string[]): ParsedArgs {
   const argv = raw.slice(index)
   const command = argv[0]
   if (command === undefined) fail('missing command after --')
-  return { workspace, temp, mode, writeSid, tempWriteSid: parsedTempWriteSid, command, args: argv.slice(1) }
+  return { workspace, temp, mode, writeSid, tempWriteSid: parsedTempWriteSid, debugLog, command, args: argv.slice(1) }
 }
 
 function requireDirectory(label: string, path: string): void {
@@ -131,6 +149,15 @@ async function main(): Promise<number> {
   }
 
   const api = await win32()
+  const debug = new DebugLog(parsed.debugLog)
+  // Suppress hard-error popups for the whole confined tree (children inherit
+  // the process error mode) BEFORE anything spawns — a grandchild dying in
+  // loader init then reports its NTSTATUS as an exit code through the tool
+  // result instead of raising the modal Application Popup dialog.
+  const previousErrorMode = suppressHardErrorPopups(api)
+  debug.record('start', {
+    mode: parsed.mode, workspace: parsed.workspace, temp: parsed.temp, seamManaged, previousErrorMode,
+  })
   // Ignore this process's own CTRL+C: the confined child (same console) keeps
   // handling its own; the runner must survive to revoke grants and mirror the
   // child's exit code.
@@ -165,6 +192,7 @@ async function main(): Promise<number> {
       ...writeSid === undefined ? {} : { writeSid },
       ...privateTempSid === undefined ? {} : { tempWriteSid: privateTempSid },
       manageDacls: !seamManaged,
+      ...parsed.debugLog === undefined ? {} : { debugLog: parsed.debugLog },
     })
     await sandbox.init()
     initialized = true
@@ -184,6 +212,7 @@ async function main(): Promise<number> {
       stdio: 'inherit',
     })
     const result = await child.wait()
+    debug.record('exit', { exitCode: result.exitCode })
     return result.exitCode
   } finally {
     // Cleanup failures must not mask the child's exit code: report and keep going.

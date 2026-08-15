@@ -1,0 +1,39 @@
+{
+  "name": "@deepseek-ai/dsh-desktop",
+  "description": "Electron desktop launcher for the DeepSeek Harness Web profile",
+  "version": "0.1.0-rc.6",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "apps/desktop"
+  },
+  "type": "module",
+  "main": "lib/main.js",
+  "bin": {
+    "dsh-desktop": "lib/bin.js"
+  },
+  "files": [
+    "lib/bin.js",
+    "lib/host.js",
+    "lib/main.js"
+  ],
+  "scripts": {
+    "start": "node lib/bin.js",
+    "make:win:x64": "node --experimental-strip-types scripts/build-windows.ts"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh": "workspace:^",
+    "@deepseek-ai/dsh-subprocess-local": "workspace:^",
+    "electron": "43.4.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-host-webserver": "workspace:^",
+    "@electron/packager": "20.3.0",
+    "@types/node": "^22.20.0",
+    "electron-winstaller": "5.4.4"
+  }
+}

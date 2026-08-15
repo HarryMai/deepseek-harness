@@ -45,3 +45,5 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 ## 开发
 
 生产运行需要已构建的包与前端产物。请在仓库根目录单独运行 `pnpm run build`，然后使用 `pnpm dsh <args...>` 运行 TypeScript 入口并转发所有参数；模块解析约定以[源码执行参考](reference/README.md#source-execution)为准。
+
+`./desktop-host` 导出允许产品启动器在独立的普通 Node 进程中启动随附的 Web profile。它通过与 `dsh web` 相同的解析器处理启动器 `--patch` 选项，然后使用同一套 profile 组合、环境加载、Web 参数和关闭控制器；呈现方式与进程所有权仍由消费应用负责。

@@ -14,12 +14,20 @@
   "bin": {
     "dsh": "lib/bin.js"
   },
+  "exports": {
+    "./desktop-host": {
+      "types": "./lib/types/desktop-host.d.ts",
+      "default": "./lib/desktop-host.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "lib/*.js",
     "config"
   ],
   "license": "MIT",
   "dependencies": {
+    "@deepseek-ai/cordis-plugin-group": "workspace:^",
     "@deepseek-ai/cordis-plugin-hmr": "workspace:^",
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",

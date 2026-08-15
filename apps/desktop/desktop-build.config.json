@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "product": {
+    "displayName": "DeepSeek Harness",
+    "internalName": "deepseek-harness",
+    "executableName": "DeepSeekHarness",
+    "publisher": "DeepSeek AI",
+    "description": "Desktop application for the DeepSeek Harness Web profile",
+    "copyright": "Copyright (c) 2026 DeepSeek AI",
+    "versionSource": "packageJson"
+  },
+  "windows": {
+    "architecture": "x64",
+    "installer": {
+      "format": "squirrel",
+      "scope": "currentUser",
+      "packageName": "DeepSeekHarness",
+      "outputFileName": "DeepSeek Harness Setup.exe",
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "launchAfterInstall": true,
+      "autoUpdate": false,
+      "preserveUserDataOnUninstall": true,
+      "unsigned": true
+    },
+    "icons": {
+      "application": null,
+      "setup": null
+    }
+  },
+  "runtime": {
+    "node": {
+      "source": "builder",
+      "version": "24.9.0"
+    },
+    "offlineAfterInstall": true
+  }
+}
