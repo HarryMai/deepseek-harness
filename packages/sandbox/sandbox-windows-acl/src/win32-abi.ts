@@ -88,8 +88,16 @@ export const FILE_ALL_ACCESS = 0x1F01FF
 // CreateRestrictedToken flags (winnt.h lines ~4284)
 /** DISABLE_MAX_PRIVILEGE: strip the token's maximum-privilege elevation so the confined child cannot escalate. */
 export const DISABLE_MAX_PRIVILEGE = 0x1
-/** LUA_TOKEN: produce a limited-user (filtered admin) token. */
-export const LUA_TOKEN = 0x4
+// LUA_TOKEN (0x4) is intentionally excluded. Limited tokens derive
+// anonymous-pipe security descriptors from a fixed template that names no
+// restricting SID, so CreatePipe fails with ERROR_ACCESS_DENIED (5) and the
+// confined process cannot capture child output (PowerShell pipelines, .NET
+// redirection) — field-verified on Windows 11 build 22621 (22H2). Without the
+// limited flag the pipe SD follows the token's default DACL, which
+// setTokenDefaultDaclGrant extends with a full-access restricting-SID ACE.
+// The write boundary is unchanged: WRITE_RESTRICTED still intersects every
+// write through the restricting SIDs (the runner suite pins ambient, Public,
+// and C-root denials without the flag).
 /** WRITE_RESTRICTED: intersect write access with the restricting SIDs' ACL grants — the sandbox's core mechanism. */
 export const WRITE_RESTRICTED = 0x8
 

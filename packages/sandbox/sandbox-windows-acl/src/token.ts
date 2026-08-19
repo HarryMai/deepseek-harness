@@ -225,9 +225,20 @@ export function createRestrictedToken(
       ? (() => { throw new Error('createRestrictedToken: workspace-write restricting list requires at least one write SID') })()
       : [logonSid, known.world, ...writeSids])
   const tokenSlot = allocPtrSlot()
+  // LUA_TOKEN is deliberately absent: limited tokens derive anonymous-pipe
+  // security descriptors from a fixed template that names NO restricting SID,
+  // so CreatePipe fails ERROR_ACCESS_DENIED and the confined process cannot
+  // capture any child output (PowerShell pipelines, .NET redirection) on
+  // Windows 11 22H2 (build 22621). Without the limited flag the pipe SD
+  // follows the token's default DACL per the documented contract, which
+  // setTokenDefaultDaclGrant has already extended with a full-access
+  // restricting-SID ACE. The write boundary is unaffected: WRITE_RESTRICTED
+  // still intersects every write through the restricting SIDs, and the
+  // runner suite pins workspace/temp grants plus ambient/Public/C-root
+  // denials with this flag set absent.
   const created = api.createRestrictedToken(
     currentToken,
-    abi.DISABLE_MAX_PRIVILEGE | abi.LUA_TOKEN | abi.WRITE_RESTRICTED,
+    abi.DISABLE_MAX_PRIVILEGE | abi.WRITE_RESTRICTED,
     0, null, // no SIDs disabled
     0, null, // no privileges deleted
     restrictingSids.length / abi.SID_AND_ATTRIBUTES_SIZE,

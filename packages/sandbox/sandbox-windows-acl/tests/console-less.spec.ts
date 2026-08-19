@@ -61,6 +61,13 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl console-less runner',
       "$cmd = cmd /c ver 2>$null; 'CMD-GRANDCHILD: rc=' + $LASTEXITCODE + ' out=[' + ($cmd -join ' ') + ']';",
       `$node = & '${process.execPath}' --version 2>$null; 'NODE-GRANDCHILD: rc=' + $LASTEXITCODE + ' out=[' + ($node -join ' ') + ']';`,
       gitProbe,
+      // The pipe-capture boundary: .NET's ProcessStartInfo redirection drives
+      // CreatePipe under the confined token. A LIMITED token (LUA_TOKEN)
+      // derives the anonymous-pipe security descriptor from a fixed template
+      // that names no restricting SID, so this fails with ERROR_ACCESS_DENIED
+      // (5) — the regression discriminator for the flag's exclusion (see
+      // win32-abi.ts).
+      "$psi = New-Object System.Diagnostics.ProcessStartInfo; $psi.FileName='cmd'; $psi.Arguments='/c ver'; $psi.UseShellExecute=$false; $psi.RedirectStandardOutput=$true; $p=[System.Diagnostics.Process]::Start($psi); $p.WaitForExit(10000) | Out-Null; 'PSI-REDIRECT: rc=' + $p.ExitCode;",
       // Repetition: the field failure was intermittent, so one clean pass
       // says little; ten consecutive grandchild spawns must ALL succeed.
       "$fail = 0; 1..10 | ForEach-Object { & cmd /c ver 2>$null | Out-Null; if ($LASTEXITCODE -ne 0) { $fail++ } }; 'REPEAT-FAILURES: ' + $fail",
@@ -88,5 +95,6 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl console-less runner',
       expect(result.stdout).toMatch(/GIT-GRANDCHILD: rc=0 out=\[git version /u)
     }
     expect(result.stdout).toContain('REPEAT-FAILURES: 0')
+    expect(result.stdout).toContain('PSI-REDIRECT: rc=0')
   }, 60_000)
 })
