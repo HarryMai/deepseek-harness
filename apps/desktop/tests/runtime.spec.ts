@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import {
   DESKTOP_NODE_EXECUTABLE,
+  desktopHostLogPaths,
   desktopArguments,
   isApplicationNavigation,
+  isDesktopPermissionAllowed,
   isDesktopHostShutdown,
   isExternalWebUrl,
+  isUnexpectedDesktopHostExit,
   packagedHostEntry,
   packagedNodeExecutable,
   parseDesktopHostMessage,
   resolveDesktopWebServer,
+  resolveDesktopHostCwd,
   resolveNodeExecutable,
   webServerUrl,
 } from '../src/runtime.ts'
@@ -17,6 +21,13 @@ describe('desktop runtime decisions', () => {
   it('separates Electron launcher arguments', () => {
     expect(desktopArguments(['electron', '.', '--port', '3080'], true)).toEqual(['--port', '3080'])
     expect(desktopArguments(['dsh-desktop', '--port', '3080'], false)).toEqual(['--port', '3080'])
+  })
+
+  it('uses the user home as the packaged Host cwd', () => {
+    expect(resolveDesktopHostCwd(true, 'C:\\Users\\test', 'C:\\Windows\\System32'))
+      .toBe('C:\\Users\\test')
+    expect(resolveDesktopHostCwd(false, 'C:\\Users\\test', 'D:\\Project'))
+      .toBe('D:\\Project')
   })
 
   it('uses the exact Node launcher passed across the Electron process boundary', () => {
@@ -34,6 +45,14 @@ describe('desktop runtime decisions', () => {
       .toBe('C:\\application\\resources\\h\\desktop-host-child.js')
     expect(() => packagedNodeExecutable('/application/resources', 'linux'))
       .toThrow(/packaged Node is unavailable on linux/)
+  })
+
+  it('keeps Host logs under the Electron user-data logs directory', () => {
+    expect(desktopHostLogPaths('C:\\Users\\test\\AppData\\Roaming\\Harness'))
+      .toEqual({
+        stdout: 'C:\\Users\\test\\AppData\\Roaming\\Harness\\logs\\host.stdout.log',
+        stderr: 'C:\\Users\\test\\AppData\\Roaming\\Harness\\logs\\host.stderr.log',
+      })
   })
 
   it('maps wildcard listeners to a reachable loopback URL and validates ports', () => {
@@ -63,6 +82,23 @@ describe('desktop runtime decisions', () => {
     expect(parseDesktopHostMessage({ type: 'error', message: '' })).toBeUndefined()
     expect(isDesktopHostShutdown({ type: 'shutdown' })).toBe(true)
     expect(isDesktopHostShutdown({ type: 'ready' })).toBe(false)
+  })
+
+  it('allows clipboard writes only from the loaded application origin', () => {
+    const application = 'http://127.0.0.1:43123/'
+    expect(isDesktopPermissionAllowed('clipboard-sanitized-write', application, application)).toBe(true)
+    expect(isDesktopPermissionAllowed('clipboard-sanitized-write', application, 'http://127.0.0.1:43124/'))
+      .toBe(false)
+    expect(isDesktopPermissionAllowed('clipboard-read', application, application)).toBe(false)
+    expect(isDesktopPermissionAllowed('notifications', application, application)).toBe(false)
+  })
+
+  it('reports non-zero and signalled exits after startup', () => {
+    expect(isUnexpectedDesktopHostExit(true, false, 0, null)).toBe(false)
+    expect(isUnexpectedDesktopHostExit(true, false, 1, null)).toBe(true)
+    expect(isUnexpectedDesktopHostExit(true, false, null, 'SIGTERM')).toBe(true)
+    expect(isUnexpectedDesktopHostExit(false, false, 1, null)).toBe(false)
+    expect(isUnexpectedDesktopHostExit(true, true, 1, null)).toBe(false)
   })
 
   it('keeps renderer navigation on one origin and filters external protocols', () => {

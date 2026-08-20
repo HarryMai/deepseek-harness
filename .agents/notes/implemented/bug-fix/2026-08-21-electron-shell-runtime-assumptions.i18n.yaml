@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-21-electron-shell-runtime-assumptions.md
+2026-08-21-electron-shell-runtime-assumptions.md: aec26eb53f67417ae64014df942a64bcb8b6a8ea
+2026-08-21-electron-shell-runtime-assumptions.zh.md: cedbe1b682d14d604e127bc89c16bb8ff1e3ef6f

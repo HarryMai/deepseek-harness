@@ -28,12 +28,17 @@ Node 启动器启动 Electron，并把自身的 Node 可执行文件路径交给
 
 关闭窗口时会通过进程 IPC 请求有界的 Harness 关闭流程。在 POSIX 上，Electron 会在发送该请求前保留 Host 及其后代进程的精确身份；Windows 则把进程树所有权交给 `taskkill /T /F`。如果优雅关闭在六秒内未完成，Electron 会强制终止已保留的进程树，并等待进程句柄关闭后再退出。终止失败时 Electron 保持打开并报告错误。启动就绪状态也通过 IPC 传递，Electron 只接受使用回环宿主且显式包含端口的 HTTP URL。
 
+打包启动会把 Host 的 cwd 固定为当前用户 Home，因此没有绑定 workspace 的会话不会继承 `System32` 或安装目录。会话提供持久化 workspace cwd 时，该值仍然优先。打包 Host 还会把 stdout 追加到 `userData/logs/host.stdout.log`，把 stderr 追加到 `userData/logs/host.stderr.log`；默认 Harness home 的 `.env` 仍是受支持的用户级环境层，项目目录中的 `.env` 需要从该项目目录进行 CLI 或开发态启动。
+
+Host 在启动完成后以退出码 `0` 且没有 signal 退出时，桌面应用会将其视为正常退出。其他未被关闭流程接管的退出仍会显示现有错误对话框并结束 Electron 壳。
+
 ## Renderer 安全
 
-renderer 启用 context isolation 和 Chromium sandbox，不启用 Node integration 或 WebView。权限请求会被拒绝；导航限于应用 origin；指向该 origin 外部的 HTTP 或 HTTPS 链接在系统浏览器中打开。IPC 只承载生命周期消息；产品 API 调用继续使用现有 HTTP 与 WebSocket 实现。
+renderer 启用 context isolation 和 Chromium sandbox，不启用 Node integration 或 WebView。只允许加载的应用 origin 使用 `clipboard-sanitized-write`；其他权限请求仍会被拒绝。导航限于应用 origin；指向该 origin 外部的 HTTP 或 HTTPS 链接在系统浏览器中打开。IPC 只承载生命周期消息；产品 API 调用继续使用现有 HTTP 与 WebSocket 实现。
 
 ## 已知限制
 
 - Windows 安装程序未签名，用户可能需要在 SmartScreen 中选择**更多信息**和**仍要运行**。
 - 原生安装程序只在 workspace 内构建，不会从 npm 获取 `@deepseek-ai/dsh-desktop`。
+- 打包 Host 的输出位于 Electron 当前用户 `userData/logs/` 目录下；Harness home 之外的项目 `.env` 不会成为打包启动输入。
 - 桌面壳只接受回环应用 URL，因此会拒绝自定义的非回环 `--host`；如需有意向网络开放，请使用 `dsh web`。

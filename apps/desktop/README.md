@@ -28,12 +28,17 @@ The Node launcher starts Electron and passes its own Node executable path to the
 
 Window closure requests bounded Harness shutdown through process IPC. On POSIX, Electron retains the exact Host and descendant process identities before sending that request; Windows delegates tree ownership to `taskkill /T /F`. If graceful shutdown does not finish within six seconds, Electron forcibly terminates the retained tree and waits for the process handle to close before quitting. A termination failure keeps Electron open and reports the error. Startup readiness is also delivered through IPC, and Electron accepts only an HTTP URL with a loopback host and an explicit port.
 
+Packaged launches start the Host with the current user's home directory as its cwd, so an unbound session does not inherit `System32` or the installation directory. A persisted workspace cwd remains authoritative for sessions that provide one. The packaged Host also appends stdout to `userData/logs/host.stdout.log` and stderr to `userData/logs/host.stderr.log`; the default Harness-home `.env` remains the supported user-level environment layer, while a project `.env` requires a CLI or development launch from that project directory.
+
+After startup, a Host exit with code `0` and no signal is treated as a normal application exit. Other unsupervised exits show the existing error dialog and terminate the Electron shell.
+
 ## Renderer security
 
-The renderer uses context isolation, Chromium sandboxing, and no Node integration or WebView. Permission requests are denied, navigation stays on the application origin, and HTTP or HTTPS links outside that origin open in the system browser. IPC carries lifecycle messages only; product API calls continue through the existing HTTP and WebSocket implementation.
+The renderer uses context isolation, Chromium sandboxing, and no Node integration or WebView. Only `clipboard-sanitized-write` from the loaded application origin is allowed; all other permission requests remain denied. Navigation stays on the application origin, and HTTP or HTTPS links outside that origin open in the system browser. IPC carries lifecycle messages only; product API calls continue through the existing HTTP and WebSocket implementation.
 
 ## Known limitations
 
 - The Windows installer is unsigned and may require the user to choose **More info** and **Run anyway** in SmartScreen.
 - The native installer build is workspace-local and does not fetch `@deepseek-ai/dsh-desktop` from npm.
+- Packaged Host output is available below Electron's per-user `userData/logs/` directory; a project `.env` outside the Harness home is not a packaged-launch input.
 - A custom non-loopback `--host` is rejected by the desktop shell because its renderer accepts loopback application URLs only; use `dsh web` for deliberate network exposure.

@@ -56,6 +56,21 @@ export function desktopArguments(argv: readonly string[], defaultApp: boolean): 
 }
 
 /**
+ * Resolve the directory inherited by the ordinary-Node Host.
+ * @param packaged - Whether the Electron application is packaged.
+ * @param homeDirectory - The current user's home directory.
+ * @param currentDirectory - The launcher's current working directory.
+ * @returns The user's home for packaged launches, otherwise the launcher's cwd.
+ */
+export function resolveDesktopHostCwd(
+  packaged: boolean,
+  homeDirectory: string,
+  currentDirectory: string,
+): string {
+  return packaged ? homeDirectory : currentDirectory
+}
+
+/**
  * Resolve the ordinary Node executable used for the Host child.
  * @param environment - Electron main-process environment.
  * @returns The launcher-provided executable, npm's Node executable, or `node` from PATH.
@@ -86,6 +101,27 @@ export function packagedNodeExecutable(resourcesPath: string, platform: NodeJS.P
  */
 export function packagedHostEntry(resourcesPath: string): string {
   return join(resourcesPath, 'h', 'desktop-host-child.js')
+}
+
+/** Paths where the desktop shell persists Host process output. */
+export interface DesktopHostLogPaths {
+  /** Host stdout log path. */
+  readonly stdout: string
+  /** Host stderr log path. */
+  readonly stderr: string
+}
+
+/**
+ * Resolve the persistent Host output files below Electron's user data path.
+ * @param userDataPath - Electron's per-user application data directory.
+ * @returns Separate append-only paths for Host stdout and stderr.
+ */
+export function desktopHostLogPaths(userDataPath: string): DesktopHostLogPaths {
+  const logs = join(userDataPath, 'logs')
+  return {
+    stdout: join(logs, 'host.stdout.log'),
+    stderr: join(logs, 'host.stderr.log'),
+  }
 }
 
 /**
@@ -148,6 +184,39 @@ export function parseDesktopHostMessage(value: unknown): DesktopHostMessage | un
   } catch {
     return undefined
   }
+}
+
+/**
+ * Decide whether one renderer permission is allowed by the desktop shell.
+ * @param permission - Electron's permission name.
+ * @param applicationUrl - The URL owned by the Host Web profile.
+ * @param requestingUrl - The URL of the frame requesting the permission.
+ * @returns Whether the request is the app's clipboard write permission.
+ */
+export function isDesktopPermissionAllowed(
+  permission: string,
+  applicationUrl: string,
+  requestingUrl: string,
+): boolean {
+  return permission === 'clipboard-sanitized-write'
+    && isApplicationNavigation(applicationUrl, requestingUrl)
+}
+
+/**
+ * Decide whether a Host exit should be presented as an unexpected stop.
+ * @param hostReady - Whether the Host completed startup.
+ * @param shutdownStarted - Whether the desktop shell owns an intentional quit.
+ * @param code - Child process exit code.
+ * @param signal - Signal that terminated the child, if any.
+ * @returns Whether the exit is an unexpected runtime failure.
+ */
+export function isUnexpectedDesktopHostExit(
+  hostReady: boolean,
+  shutdownStarted: boolean,
+  code: number | null,
+  signal: NodeJS.Signals | null,
+): boolean {
+  return hostReady && !shutdownStarted && (code !== 0 || signal !== null)
 }
 
 /**

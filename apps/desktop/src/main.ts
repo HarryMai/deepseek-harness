@@ -1,18 +1,24 @@
 /** Electron main process for the DeepSeek Harness desktop application. */
 
 import { spawn } from 'node:child_process'
-import { join } from 'node:path'
+import { createWriteStream, type WriteStream } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, dialog, session, shell, type Event as ElectronEvent } from 'electron'
 import desktopBuildConfig from '../desktop-build.config.json' with { type: 'json' }
 import {
   ACL_RUNNER_DEBUG_LOG_ENV,
+  desktopHostLogPaths,
   desktopArguments,
   isApplicationNavigation,
+  isDesktopPermissionAllowed,
   isExternalWebUrl,
+  isUnexpectedDesktopHostExit,
   packagedHostEntry,
   packagedNodeExecutable,
   resolveNodeExecutable,
+  resolveDesktopHostCwd,
 } from './runtime.ts'
 import {
   manageHostProcess,
@@ -33,6 +39,33 @@ let hostReady = false
 let applicationUrl: string | undefined
 let mainWindow: BrowserWindow | undefined
 let shutdownStarted = false
+
+interface HostLogStreams {
+  readonly stdout: WriteStream
+  readonly stderr: WriteStream
+}
+
+async function openHostLogStreams(userDataPath: string): Promise<HostLogStreams | undefined> {
+  const paths = desktopHostLogPaths(userDataPath)
+  try {
+    await mkdir(dirname(paths.stdout), { recursive: true })
+    const stdout = createWriteStream(paths.stdout, { flags: 'a', encoding: 'utf8' })
+    const stderr = createWriteStream(paths.stderr, { flags: 'a', encoding: 'utf8' })
+    stdout.on('error', (error: Error) => {
+      console.error(`desktop: Host stdout log failed: ${error.message}`)
+    })
+    stderr.on('error', (error: Error) => {
+      console.error(`desktop: Host stderr log failed: ${error.message}`)
+    })
+    return { stdout, stderr }
+  } catch (error: unknown) {
+    console.error(
+      'desktop: could not open Host logs',
+      error instanceof Error ? error.message : String(error),
+    )
+    return undefined
+  }
+}
 
 function handleSquirrelLifecycle(): boolean {
   const action = squirrelLifecycleAction(process.argv, process.execPath, process.platform, {
@@ -68,13 +101,15 @@ function openExternal(url: string): void {
 }
 
 async function startHost(args: readonly string[]): Promise<string> {
+  const userDataPath = app.getPath('userData')
+  const logs = await openHostLogStreams(userDataPath)
   const child = spawn(
     app.isPackaged
       ? packagedNodeExecutable(process.resourcesPath, process.platform)
       : resolveNodeExecutable(process.env),
     [hostEntry, ...args],
     {
-      cwd: process.cwd(),
+      cwd: resolveDesktopHostCwd(app.isPackaged, app.getPath('home'), process.cwd()),
       detached: process.platform !== 'win32',
       env: {
         ...process.env,
@@ -82,7 +117,7 @@ async function startHost(args: readonly string[]): Promise<string> {
         // sandbox seam forwards it as --debug-log), so a field recurrence of
         // the 0xC0000142 init failure is self-describing instead of a bare
         // popup. Best-effort: the runner ignores an unwritable path.
-        [ACL_RUNNER_DEBUG_LOG_ENV]: join(app.getPath('userData'), 'logs', 'acl-runner.log'),
+        [ACL_RUNNER_DEBUG_LOG_ENV]: join(userDataPath, 'logs', 'acl-runner.log'),
       },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       windowsHide: true,
@@ -92,9 +127,18 @@ async function startHost(args: readonly string[]): Promise<string> {
   hostProcess = managed
   child.stdout?.pipe(process.stdout)
   child.stderr?.pipe(process.stderr)
+  if (logs !== undefined) {
+    child.stdout?.pipe(logs.stdout)
+    child.stderr?.pipe(logs.stderr)
+  }
 
   child.once('exit', (code, signal) => {
     if (!hostReady || shutdownStarted) return
+    if (!isUnexpectedDesktopHostExit(hostReady, shutdownStarted, code, signal)) {
+      if (hostProcess === managed) hostProcess = undefined
+      app.quit()
+      return
+    }
     dialog.showErrorBox(
       'DeepSeek Harness stopped',
       `The local Host exited unexpectedly (code ${String(code)}, signal ${String(signal)}).`,
@@ -102,6 +146,8 @@ async function startHost(args: readonly string[]): Promise<string> {
     app.quit()
   })
   child.once('close', () => {
+    logs?.stdout.end()
+    logs?.stderr.end()
     if (hostProcess === managed) hostProcess = undefined
   })
 
@@ -154,12 +200,17 @@ async function createWindow(url: string): Promise<void> {
   await window.loadURL(url)
 }
 
-async function startApplication(): Promise<void> {
-  session.defaultSession.setPermissionCheckHandler(() => false)
-  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => {
-    callback(false)
+function installPermissionHandlers(applicationUrl: string): void {
+  session.defaultSession.setPermissionCheckHandler((_contents, permission, requestingOrigin) =>
+    isDesktopPermissionAllowed(permission, applicationUrl, requestingOrigin))
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
+    callback(isDesktopPermissionAllowed(permission, applicationUrl, details.requestingUrl))
   })
+}
+
+async function startApplication(): Promise<void> {
   applicationUrl = await startHost(desktopArguments(process.argv, process.defaultApp))
+  installPermissionHandlers(applicationUrl)
   hostReady = true
   await createWindow(applicationUrl)
 }
