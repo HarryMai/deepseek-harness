@@ -17,8 +17,22 @@ describe('desktop build child commands', () => {
     })
   })
 
+  it('runs native package-manager launchers directly', () => {
+    expect(pnpmBuildCommand(
+      ['run', 'build'],
+      { npm_execpath: '/Users/ming/Library/pnpm/pnpm' },
+      '/usr/local/bin/node',
+    )).toEqual({
+      command: '/Users/ming/Library/pnpm/pnpm',
+      args: [
+        'run',
+        'build',
+      ],
+    })
+  })
+
   it('rejects launchers that bypass the pnpm package script', () => {
     expect(() => pnpmBuildCommand(['run', 'build'], {}, process.execPath))
-      .toThrow(/invoke the builder through `pnpm desktop:make:win:x64`/)
+      .toThrow(/invoke the builder through `pnpm desktop:make:\*` scripts/)
   })
 })

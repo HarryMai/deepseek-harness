@@ -5,6 +5,7 @@
   ],
   "ignoreBinaries": [
     "bwrap",
+    "attrib.exe",
     "icacls",
     "musl-gcc",
     "python3",
@@ -626,6 +627,18 @@
         "react-dom"
       ]
     },
+    "apps/desktop": {
+      "entry": [
+        "src/host.ts",
+        "src/main.ts",
+        "tests/**/*.snapshot.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "scripts/**/*.ts",
+        "tests/**/*.ts"
+      ]
+    },
     "apps/cli": {
       "entry": [
         "tests/**/*.spec.ts",
@@ -638,20 +651,6 @@
       ],
       "ignoreDependencies": [
         "@deepseek-ai/.+"
-      ]
-    },
-    "apps/desktop": {
-      "entry": [
-        "src/main.ts",
-        "src/host.ts",
-        "scripts/build-windows.ts",
-        "tests/**/*.spec.ts",
-        "tests/**/*.snapshot.ts"
-      ],
-      "project": [
-        "src/**/*.ts",
-        "scripts/**/*.ts",
-        "tests/**/*.ts"
       ]
     },
     "packages/client/modules": {

@@ -159,6 +159,24 @@ describe('runnerCommand config', () => {
 })
 
 describe('the platform chains', () => {
+  it('does not load koffi when selecting a non-Windows sandbox runner', async () => {
+    vi.resetModules()
+    vi.doMock('koffi', () => {
+      throw new Error('koffi should not load')
+    })
+    try {
+      const imported = await import('@deepseek-ai/dsh-sandbox-local')
+      const ctx = new Context()
+      await ctx.plugin(imported.LocalSandboxProvider, {})
+      const sandbox = ctx.sandbox as LocalSandboxProvider
+      sandbox.internals = { platform: 'darwin' }
+      expect(sandbox.confine(['true'], RO).argv[0]).toBe('sandbox-exec')
+    } finally {
+      vi.doUnmock('koffi')
+      vi.resetModules()
+    }
+  })
+
   it('linux probes bwrap first: a passing probe wraps with the bwrap dialect at full enforcement', async () => {
     const probeBwrap = vi.fn(() => true)
     const probeLandlock = vi.fn(() => 'full' as const)

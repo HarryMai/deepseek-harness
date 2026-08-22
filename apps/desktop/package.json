@@ -22,7 +22,8 @@
   ],
   "scripts": {
     "start": "node lib/bin.js",
-    "make:win:x64": "node --experimental-strip-types scripts/build-windows.ts"
+    "make:win:x64": "node --experimental-strip-types scripts/build-windows.ts",
+    "make:mac": "node --experimental-strip-types scripts/build-mac.ts"
   },
   "license": "MIT",
   "dependencies": {
@@ -31,7 +32,6 @@
     "electron": "43.4.0"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-host-webserver": "workspace:^",
     "@electron/packager": "20.3.0",
     "@types/node": "^22.20.0",
     "electron-winstaller": "5.4.4"

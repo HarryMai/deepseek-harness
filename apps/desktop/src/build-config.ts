@@ -1,7 +1,7 @@
 /** Validation for the checked-in desktop installer configuration. */
 
-/** Product metadata embedded into the Windows application and installer. */
-export interface DesktopProductConfig {
+/** Product metadata embedded into the desktop applications and installers. */
+interface DesktopProductConfig {
   readonly displayName: string
   readonly internalName: string
   readonly executableName: string
@@ -12,7 +12,7 @@ export interface DesktopProductConfig {
 }
 
 /** Squirrel.Windows behavior supported by the desktop build. */
-export interface DesktopWindowsInstallerConfig {
+interface DesktopWindowsInstallerConfig {
   readonly format: 'squirrel'
   readonly scope: 'currentUser'
   readonly packageName: string
@@ -26,35 +26,56 @@ export interface DesktopWindowsInstallerConfig {
 }
 
 /** Optional Windows icon paths, relative to `apps/desktop`. */
-export interface DesktopWindowsIconsConfig {
+interface DesktopWindowsIconsConfig {
   readonly application: string | null
   readonly setup: string | null
 }
 
 /** Windows package target and installer settings. */
-export interface DesktopWindowsConfig {
+interface DesktopWindowsConfig {
   readonly architecture: 'x64'
   readonly installer: DesktopWindowsInstallerConfig
   readonly icons: DesktopWindowsIconsConfig
 }
 
+/** Optional macOS icon paths, relative to `apps/desktop`. */
+interface DesktopMacIconsConfig {
+  readonly application: string | null // null or a .icns filename
+}
+
+/** DMG behavior supported by the macOS desktop build. */
+interface DesktopMacInstallerConfig {
+  readonly format: 'dmg'
+  readonly outputFileName: string // must contain the `{arch}` placeholder and end in .dmg
+  readonly signing: 'none'
+}
+
+/** macOS package targets and installer settings. */
+export interface DesktopMacConfig {
+  readonly architectures: readonly ('x64' | 'arm64')[]
+  readonly bundleIdentifier: string
+  readonly installer: DesktopMacInstallerConfig
+  readonly icons: DesktopMacIconsConfig
+}
+
 /** Ordinary Node runtime copied from the Windows builder into the installer. */
-export interface DesktopNodeRuntimeConfig {
+interface DesktopNodeRuntimeConfig {
   readonly source: 'builder'
   readonly version: string
 }
 
 /** Runtime resources shipped beside the Electron application. */
-export interface DesktopRuntimeBuildConfig {
+interface DesktopRuntimeBuildConfig {
   readonly node: DesktopNodeRuntimeConfig
   readonly offlineAfterInstall: true
 }
 
-/** Complete checked-in input for the Windows desktop build. */
+/** Complete checked-in input for the desktop build. */
 export interface DesktopBuildConfig {
   readonly schemaVersion: 1
   readonly product: DesktopProductConfig
   readonly windows: DesktopWindowsConfig
+  readonly mac: DesktopMacConfig
   readonly runtime: DesktopRuntimeBuildConfig
 }
 
@@ -96,23 +117,23 @@ function literal<T extends string | number | boolean>(value: unknown, path: stri
   return expected
 }
 
-function optionalIcon(value: unknown, path: string): string | null {
+function optionalIcon(value: unknown, path: string, platform: string, extension: string): string | null {
   if (value === null) return null
   const icon = string(value, path)
-  if (!icon.toLowerCase().endsWith('.ico')) {
-    throw new Error(`desktop build config: ${path} must name a Windows .ico file`)
+  if (!icon.toLowerCase().endsWith(extension)) {
+    throw new Error(`desktop build config: ${path} must name a ${platform} ${extension} file`)
   }
   return icon
 }
 
 /**
- * Parse and validate one Windows desktop build configuration.
+ * Parse and validate one desktop build configuration.
  * @param value - Untrusted JSON value.
  * @returns The complete supported build configuration.
  */
 export function parseDesktopBuildConfig(value: unknown): DesktopBuildConfig {
   const root = record(value, 'root')
-  exactKeys(root, 'root', ['schemaVersion', 'product', 'windows', 'runtime'])
+  exactKeys(root, 'root', ['schemaVersion', 'product', 'windows', 'mac', 'runtime'])
   const schemaVersion = literal(root.schemaVersion, 'schemaVersion', 1)
 
   const product = record(root.product, 'product')
@@ -176,8 +197,58 @@ export function parseDesktopBuildConfig(value: unknown): DesktopBuildConfig {
     architecture: literal(windows.architecture, 'windows.architecture', 'x64'),
     installer: parsedInstaller,
     icons: {
-      application: optionalIcon(icons.application, 'windows.icons.application'),
-      setup: optionalIcon(icons.setup, 'windows.icons.setup'),
+      application: optionalIcon(icons.application, 'windows.icons.application', 'Windows', '.ico'),
+      setup: optionalIcon(icons.setup, 'windows.icons.setup', 'Windows', '.ico'),
+    },
+  }
+
+  const mac = record(root.mac, 'mac')
+  exactKeys(mac, 'mac', ['architectures', 'bundleIdentifier', 'installer', 'icons'])
+  const macArchitectures = mac.architectures
+  if (!Array.isArray(macArchitectures) || macArchitectures.length === 0) {
+    throw new Error('desktop build config: mac.architectures must be a non-empty array')
+  }
+  const architectures: ('x64' | 'arm64')[] = []
+  for (const [index, architecture] of (macArchitectures as unknown[]).entries()) {
+    if (architecture !== 'x64' && architecture !== 'arm64') {
+      throw new Error(`desktop build config: mac.architectures[${index}] must be "x64" or "arm64"`)
+    }
+    if (architectures.includes(architecture)) {
+      throw new Error(`desktop build config: mac.architectures[${index}] duplicates ${JSON.stringify(architecture)}`)
+    }
+    architectures.push(architecture)
+  }
+  const bundleIdentifier = string(mac.bundleIdentifier, 'mac.bundleIdentifier')
+  if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(bundleIdentifier)) {
+    throw new Error(
+      'desktop build config: mac.bundleIdentifier must be a reverse-DNS identifier such as ai.deepseek.harness',
+    )
+  }
+  const macInstaller = record(mac.installer, 'mac.installer')
+  exactKeys(macInstaller, 'mac.installer', ['format', 'outputFileName', 'signing'])
+  const macOutputFileName = string(macInstaller.outputFileName, 'mac.installer.outputFileName')
+  if (
+    !macOutputFileName.toLowerCase().endsWith('.dmg')
+    || !macOutputFileName.includes('{arch}')
+    || /[/:]/.test(macOutputFileName)
+  ) {
+    throw new Error(
+      'desktop build config: mac.installer.outputFileName must be a plain .dmg filename containing {arch}',
+    )
+  }
+  const parsedMacInstaller: DesktopMacInstallerConfig = {
+    format: literal(macInstaller.format, 'mac.installer.format', 'dmg'),
+    outputFileName: macOutputFileName,
+    signing: literal(macInstaller.signing, 'mac.installer.signing', 'none'),
+  }
+  const macIcons = record(mac.icons, 'mac.icons')
+  exactKeys(macIcons, 'mac.icons', ['application'])
+  const parsedMac: DesktopMacConfig = {
+    architectures,
+    bundleIdentifier,
+    installer: parsedMacInstaller,
+    icons: {
+      application: optionalIcon(macIcons.application, 'mac.icons.application', 'macOS', '.icns'),
     },
   }
 
@@ -194,6 +265,7 @@ export function parseDesktopBuildConfig(value: unknown): DesktopBuildConfig {
     schemaVersion,
     product: parsedProduct,
     windows: parsedWindows,
+    mac: parsedMac,
     runtime: {
       node: {
         source: literal(node.source, 'runtime.node.source', 'builder'),

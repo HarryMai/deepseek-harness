@@ -27,11 +27,21 @@ describe('desktop runtime decisions', () => {
     expect(resolveNodeExecutable({ npm_node_execpath: '/usr/bin/node' })).toBe('/usr/bin/node')
   })
 
-  it('resolves packaged Windows resources without changing the development launcher', () => {
+  it.skipIf(process.platform !== 'win32')('resolves packaged Windows resources without changing the development launcher', () => {
     expect(packagedNodeExecutable('C:\\application\\resources', 'win32'))
       .toBe('C:\\application\\resources\\n\\node.exe')
     expect(packagedHostEntry('C:\\application\\resources'))
       .toBe('C:\\application\\resources\\h\\desktop-host-child.js')
+  })
+
+  it.skipIf(process.platform !== 'darwin')('resolves packaged macOS resources without changing the development launcher', () => {
+    expect(packagedNodeExecutable('/application/resources', 'darwin'))
+      .toBe('/application/resources/n/node')
+    expect(packagedHostEntry('/application/resources'))
+      .toBe('/application/resources/h/desktop-host-child.js')
+  })
+
+  it('rejects packaged Node on platforms without a sidecar', () => {
     expect(() => packagedNodeExecutable('/application/resources', 'linux'))
       .toThrow(/packaged Node is unavailable on linux/)
   })

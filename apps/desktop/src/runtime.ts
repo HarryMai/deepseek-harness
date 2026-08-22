@@ -14,13 +14,13 @@ export const DESKTOP_NODE_EXECUTABLE = 'DSH_DESKTOP_NODE_EXECUTABLE'
 export const ACL_RUNNER_DEBUG_LOG_ENV = 'DSH_ACL_DEBUG_LOG'
 
 /** Message sent from the Host child after the Web profile is ready. */
-export interface DesktopHostReady {
+interface DesktopHostReady {
   readonly type: 'ready'
   readonly url: string
 }
 
 /** Message sent from the Host child when profile startup fails. */
-export interface DesktopHostError {
+interface DesktopHostError {
   readonly type: 'error'
   readonly message: string
 }
@@ -75,8 +75,9 @@ export function resolveNodeExecutable(environment: NodeJS.ProcessEnv): string {
  * @returns Absolute path to the ordinary Node sidecar.
  */
 export function packagedNodeExecutable(resourcesPath: string, platform: NodeJS.Platform): string {
-  if (platform !== 'win32') throw new Error(`desktop: packaged Node is unavailable on ${platform}`)
-  return join(resourcesPath, 'n', 'node.exe')
+  if (platform === 'win32') return join(resourcesPath, 'n', 'node.exe')
+  if (platform === 'darwin') return join(resourcesPath, 'n', 'node')
+  throw new Error(`desktop: packaged Node is unavailable on ${platform}`)
 }
 
 /**

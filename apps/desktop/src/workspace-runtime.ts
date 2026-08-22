@@ -4,6 +4,8 @@
 export interface WorkspaceRuntimeManifest {
   readonly name: string
   readonly files?: readonly string[]
+  readonly os?: readonly string[]
+  readonly cpu?: readonly string[]
   readonly dependencies?: Readonly<Record<string, string>>
   readonly optionalDependencies?: Readonly<Record<string, string>>
   readonly peerDependencies?: Readonly<Record<string, string>>
@@ -15,15 +17,55 @@ export interface WorkspaceRuntimePackage {
   readonly manifest: WorkspaceRuntimeManifest
 }
 
+/** One platform targeted by a native desktop package. */
+export interface WorkspaceRuntimeTarget {
+  readonly os: string
+  readonly cpu: string
+}
+
+/** Options that constrain which workspace packages can enter the runtime closure. */
+export interface WorkspaceRuntimeClosureOptions {
+  readonly targets?: readonly WorkspaceRuntimeTarget[]
+}
+
+function platformFieldAllows(entries: readonly string[] | undefined, value: string): boolean {
+  if (entries === undefined || entries.length === 0) return true
+  let hasPositive = false
+  let positiveMatch = false
+  for (const entry of entries) {
+    if (entry.startsWith('!')) {
+      if (entry.slice(1) === value) return false
+      continue
+    }
+    hasPositive = true
+    positiveMatch ||= entry === value
+  }
+  return hasPositive ? positiveMatch : true
+}
+
+function supportsTarget(manifest: WorkspaceRuntimeManifest, target: WorkspaceRuntimeTarget): boolean {
+  return platformFieldAllows(manifest.os, target.os) && platformFieldAllows(manifest.cpu, target.cpu)
+}
+
+function supportsAnyTarget(
+  manifest: WorkspaceRuntimeManifest,
+  targets: readonly WorkspaceRuntimeTarget[] | undefined,
+): boolean {
+  if (targets === undefined || targets.length === 0) return true
+  return targets.some(target => supportsTarget(manifest, target))
+}
+
 /**
  * Resolve every local package reachable through runtime and peer dependencies.
  * @param rootName - Package that owns the deployed application.
  * @param packages - Current workspace packages keyed by package name.
+ * @param options - Target platforms used to skip workspace packages excluded by npm `os` or `cpu` fields.
  * @returns Reachable packages in stable name order.
  */
 export function workspaceRuntimeClosure(
   rootName: string,
   packages: ReadonlyMap<string, WorkspaceRuntimePackage>,
+  options: WorkspaceRuntimeClosureOptions = {},
 ): WorkspaceRuntimePackage[] {
   if (!packages.has(rootName)) throw new Error(`desktop installer: workspace package is missing: ${rootName}`)
   const pending = [rootName]
@@ -41,7 +83,14 @@ export function workspaceRuntimeClosure(
       ...Object.keys(manifest.peerDependencies ?? {}),
     ]
     for (const dependency of dependencyNames) {
-      if (packages.has(dependency) && !visited.has(dependency)) pending.push(dependency)
+      const dependencyPackage = packages.get(dependency)
+      if (
+        dependencyPackage !== undefined
+        && !visited.has(dependency)
+        && supportsAnyTarget(dependencyPackage.manifest, options.targets)
+      ) {
+        pending.push(dependency)
+      }
     }
   }
   return [...visited]

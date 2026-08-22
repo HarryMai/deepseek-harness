@@ -162,7 +162,10 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // SQLite loads every statement from immutable package resources at runtime.
   '@deepseek-ai/dsh-session-persistence-sqlite': ['resources/sql/**/*.sql'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
-  '@deepseek-ai/dsh-subprocess-local': ['lib/process-inspector.js', 'scripts/ensure-spawn-helper.mjs'],
+  // The ./process-inspector entry shares rolldown-extracted code with the
+  // main entry through a hashed runtime chunk, which the files list covers by
+  // prefix glob; the spawn helper ships as a postinstall script.
+  '@deepseek-ai/dsh-subprocess-local': ['lib/process-inspector.js', 'lib/process-inspector-*.js', 'scripts/ensure-spawn-helper.mjs'],
 }
 
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {

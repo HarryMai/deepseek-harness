@@ -8,7 +8,8 @@
  * @module @deepseek-ai/dsh-sandbox-windows-acl/ffi
  */
 
-import koffi from 'koffi'
+import { createRequire } from 'node:module'
+import type koffi from 'koffi'
 import { Win32Error } from './errors.ts'
 import * as abi from './win32-abi.ts'
 
@@ -37,7 +38,33 @@ export function isInvalidHandle(handle: NativePtr | null | undefined): boolean {
   return (handle as bigint) === 0xFFFFFFFFFFFFFFFFn || (handle as bigint) === -1n
 }
 
-type Ptr = ReturnType<typeof koffi.pointer>
+type KoffiModule = typeof koffi
+type Ptr = ReturnType<KoffiModule['pointer']>
+type KoffiType = string | Ptr
+type KoffiStruct = ReturnType<KoffiModule['struct']>
+
+const requireModule = createRequire(import.meta.url)
+let cachedKoffi: KoffiModule | undefined
+
+function isKoffiModule(value: unknown): value is KoffiModule {
+  return typeof value === 'object' && value !== null
+    && typeof (value as { pointer?: unknown }).pointer === 'function'
+    && typeof (value as { struct?: unknown }).struct === 'function'
+    && typeof (value as { load?: unknown }).load === 'function'
+}
+
+function loadKoffi(): KoffiModule {
+  if (cachedKoffi !== undefined) return cachedKoffi
+  const loaded: unknown = requireModule('koffi')
+  const candidate = isKoffiModule(loaded)
+    ? loaded
+    : typeof loaded === 'object' && loaded !== null && 'default' in loaded
+      ? (loaded as { default: unknown }).default
+      : undefined
+  if (!isKoffiModule(candidate)) throw new Error('koffi did not expose the expected native API')
+  cachedKoffi = candidate
+  return candidate
+}
 
 /** Field subset written into a zeroed STARTUPINFOW (layout verified: size 104). */
 export interface StartupInfoInput {
@@ -161,55 +188,90 @@ export interface Win32Bindings {
   ): number
 }
 
-const PVOID: Ptr = koffi.pointer('void')
-const PPVOID: Ptr = koffi.pointer(PVOID)
-
-/** koffi STARTUPINFOW layout; its size is asserted against abi.STARTUPINFOW_SIZE at load. */
-export const STARTUPINFOW = koffi.struct('STARTUPINFOW', {
-  cb: 'uint32',
-  lpReserved: 'str16',
-  // PVOID, not 'str16': the desktop-name Buffer's address is written verbatim
-  // so its lifetime is caller-controlled (see StartupInfoInput.lpDesktop).
-  lpDesktop: PVOID,
-  lpTitle: 'str16',
-  dwX: 'uint32',
-  dwY: 'uint32',
-  dwXSize: 'uint32',
-  dwYSize: 'uint32',
-  dwXCountChars: 'uint32',
-  dwYCountChars: 'uint32',
-  dwFillAttribute: 'uint32',
-  dwFlags: 'uint32',
-  wShowWindow: 'uint16',
-  cbReserved2: 'uint16',
-  lpReserved2: koffi.pointer('uint8'),
-  hStdInput: PVOID,
-  hStdOutput: PVOID,
-  hStdError: PVOID,
-})
-
-/** koffi PROCESS_INFORMATION layout; its size is asserted against abi.PROCESS_INFORMATION_SIZE at load. */
-export const PROCESS_INFORMATION = koffi.struct('PROCESS_INFORMATION', {
-  hProcess: PVOID,
-  hThread: PVOID,
-  dwProcessId: 'uint32',
-  dwThreadId: 'uint32',
-})
-
-/* v8 ignore start -- layout-mismatch guards fire only on ABI breakage; verify/abi-probe.cpp pins both sizes. */
-if (STARTUPINFOW.size !== abi.STARTUPINFOW_SIZE) {
-  throw new Error(`STARTUPINFOW layout mismatch: koffi computed ${STARTUPINFOW.size}, header probe says ${abi.STARTUPINFOW_SIZE}`)
+interface NativeTypes {
+  koffi: KoffiModule
+  PVOID: Ptr
+  PPVOID: Ptr
+  STARTUPINFOW: KoffiStruct
+  PROCESS_INFORMATION: KoffiStruct
 }
-if (PROCESS_INFORMATION.size !== abi.PROCESS_INFORMATION_SIZE) {
-  throw new Error(`PROCESS_INFORMATION layout mismatch: koffi computed ${PROCESS_INFORMATION.size}, header probe says ${abi.PROCESS_INFORMATION_SIZE}`)
+
+/**
+ * Resolve the koffi pointer and struct types once on the first Win32 operation.
+ * @returns the cached native types.
+ */
+function nativeTypes(): NativeTypes {
+  if (cachedTypes !== undefined) return cachedTypes
+  const koffi = loadKoffi()
+  const PVOID: Ptr = koffi.pointer('void')
+  const PPVOID: Ptr = koffi.pointer(PVOID)
+  /** koffi STARTUPINFOW layout; its size is asserted against abi.STARTUPINFOW_SIZE at load. */
+  const STARTUPINFOW = koffi.struct('STARTUPINFOW', {
+    cb: 'uint32',
+    lpReserved: 'str16',
+    // PVOID, not 'str16': the desktop-name Buffer's address is written verbatim
+    // so its lifetime is caller-controlled (see StartupInfoInput.lpDesktop).
+    lpDesktop: PVOID,
+    lpTitle: 'str16',
+    dwX: 'uint32',
+    dwY: 'uint32',
+    dwXSize: 'uint32',
+    dwYSize: 'uint32',
+    dwXCountChars: 'uint32',
+    dwYCountChars: 'uint32',
+    dwFillAttribute: 'uint32',
+    dwFlags: 'uint32',
+    wShowWindow: 'uint16',
+    cbReserved2: 'uint16',
+    lpReserved2: koffi.pointer('uint8'),
+    hStdInput: PVOID,
+    hStdOutput: PVOID,
+    hStdError: PVOID,
+  })
+  /** koffi PROCESS_INFORMATION layout; its size is asserted against abi.PROCESS_INFORMATION_SIZE at load. */
+  const PROCESS_INFORMATION = koffi.struct('PROCESS_INFORMATION', {
+    hProcess: PVOID,
+    hThread: PVOID,
+    dwProcessId: 'uint32',
+    dwThreadId: 'uint32',
+  })
+
+  /* v8 ignore start -- layout-mismatch guards fire only on ABI breakage; verify/abi-probe.cpp pins both sizes. */
+  if (STARTUPINFOW.size !== abi.STARTUPINFOW_SIZE) {
+    throw new Error(`STARTUPINFOW layout mismatch: koffi computed ${STARTUPINFOW.size}, header probe says ${abi.STARTUPINFOW_SIZE}`)
+  }
+  if (PROCESS_INFORMATION.size !== abi.PROCESS_INFORMATION_SIZE) {
+    throw new Error(`PROCESS_INFORMATION layout mismatch: koffi computed ${PROCESS_INFORMATION.size}, header probe says ${abi.PROCESS_INFORMATION_SIZE}`)
+  }
+  /* v8 ignore stop */
+  cachedTypes = { koffi, PVOID, PPVOID, STARTUPINFOW, PROCESS_INFORMATION }
+  return cachedTypes
 }
-/* v8 ignore stop */
+
+let cachedTypes: NativeTypes | undefined
+
+/**
+ * Resolve the koffi STARTUPINFOW type for native tests and spawn encoding.
+ * @returns the STARTUPINFOW struct type.
+ */
+export function startupInfoStruct(): KoffiStruct {
+  return nativeTypes().STARTUPINFOW
+}
+
+/**
+ * Resolve the koffi PROCESS_INFORMATION type for native tests and spawn decoding.
+ * @returns the PROCESS_INFORMATION struct type.
+ */
+export function processInformationStruct(): KoffiStruct {
+  return nativeTypes().PROCESS_INFORMATION
+}
 
 /**
  * Allocate one pointer-sized slot (for `T **` out-parameters).
  * @returns the allocated slot pointer.
  */
 export function allocPtrSlot(): NativePtr {
+  const { koffi, PVOID } = nativeTypes()
   const value: unknown = koffi.alloc(PVOID, 1)
   return value as NativePtr
 }
@@ -219,6 +281,7 @@ export function allocPtrSlot(): NativePtr {
  * @returns the allocated slot pointer.
  */
 export function allocUint32(): NativePtr {
+  const { koffi } = nativeTypes()
   const value: unknown = koffi.alloc('uint32', 1)
   return value as NativePtr
 }
@@ -229,6 +292,7 @@ export function allocUint32(): NativePtr {
  * @param value - the uint32 to encode.
  */
 export function encodeUint32(slot: NativePtr, value: number): void {
+  const { koffi } = nativeTypes()
   koffi.encode(slot, 'uint32', value)
 }
 
@@ -238,6 +302,7 @@ export function encodeUint32(slot: NativePtr, value: number): void {
  * @returns the decoded pointer, or null for NULL.
  */
 export function decodePtr(slot: NativePtr): NativePtr | null {
+  const { koffi, PVOID } = nativeTypes()
   const value: unknown = koffi.decode(slot, PVOID)
   if (isNullPtr(value as NativePtr | null | undefined)) return null
   return value as NativePtr
@@ -249,6 +314,7 @@ export function decodePtr(slot: NativePtr): NativePtr | null {
  * @returns the decoded uint32.
  */
 export function decodeUint32(slot: NativePtr): number {
+  const { koffi } = nativeTypes()
   const value: unknown = koffi.decode(slot, 'uint32')
   return value as number
 }
@@ -264,6 +330,7 @@ export function decodeUint32(slot: NativePtr): number {
  * @returns the decoded string (without the terminator).
  */
 export function decodeString16(ptr: NativePtr): string {
+  const { koffi } = nativeTypes()
   const units: number[] = []
   for (let offset = 0; offset < 512; offset += 2) {
     const unit: unknown = koffi.decode(ptr, offset, 'uint16')
@@ -279,6 +346,7 @@ export function decodeString16(ptr: NativePtr): string {
  * @returns the pointer's numeric address.
  */
 export function ptrAddress(ptr: NativePtr): bigint {
+  const { koffi } = nativeTypes()
   return koffi.address(ptr)
 }
 
@@ -288,6 +356,7 @@ export function ptrAddress(ptr: NativePtr): bigint {
  * @returns the allocated block pointer.
  */
 export function allocBytes(length: number): NativePtr {
+  const { koffi } = nativeTypes()
   const value: unknown = koffi.alloc('uint8', length)
   return value as NativePtr
 }
@@ -311,6 +380,7 @@ export function allocOverlapped(): NativePtr {
  * @returns the decoded pointer, or null for NULL.
  */
 export function decodePtrAt(buffer: Buffer, offset: number): NativePtr | null {
+  const { koffi, PVOID } = nativeTypes()
   const value: unknown = koffi.decode(buffer, offset, PVOID)
   if (isNullPtr(value as NativePtr | null | undefined)) return null
   return value as NativePtr
@@ -325,6 +395,7 @@ export function decodePtrAt(buffer: Buffer, offset: number): NativePtr | null {
  * @returns the decoded uint8.
  */
 export function decodeUint8At(ptr: NativePtr, offset: number): number {
+  const { koffi } = nativeTypes()
   const value: unknown = koffi.decode(ptr, offset, 'uint8')
   return value as number
 }
@@ -336,6 +407,7 @@ export function decodeUint8At(ptr: NativePtr, offset: number): number {
  * @returns the decoded uint16.
  */
 export function decodeUint16At(ptr: NativePtr, offset: number): number {
+  const { koffi } = nativeTypes()
   const value: unknown = koffi.decode(ptr, offset, 'uint16')
   return value as number
 }
@@ -347,6 +419,7 @@ export function decodeUint16At(ptr: NativePtr, offset: number): number {
  * @returns the decoded uint32.
  */
 export function decodeUint32At(ptr: NativePtr, offset: number): number {
+  const { koffi } = nativeTypes()
   const value: unknown = koffi.decode(ptr, offset, 'uint32')
   return value as number
 }
@@ -384,6 +457,7 @@ export function sameSidAt(left: NativePtr, leftOffset: number, right: NativePtr,
  * @returns the allocated struct pointer.
  */
 export function allocStartupInfo(): NativePtr {
+  const { koffi, STARTUPINFOW } = nativeTypes()
   const value: unknown = koffi.alloc(STARTUPINFOW, 1)
   return value as NativePtr
 }
@@ -394,6 +468,7 @@ export function allocStartupInfo(): NativePtr {
  * @param fields - the field subset to write.
  */
 export function encodeStartupInfo(startupInfo: NativePtr, fields: StartupInfoInput): void {
+  const { koffi, STARTUPINFOW } = nativeTypes()
   koffi.encode(startupInfo, STARTUPINFOW, fields)
 }
 
@@ -402,6 +477,7 @@ export function encodeStartupInfo(startupInfo: NativePtr, fields: StartupInfoInp
  * @returns the allocated struct pointer.
  */
 export function allocProcessInfo(): NativePtr {
+  const { koffi, PROCESS_INFORMATION } = nativeTypes()
   const value: unknown = koffi.alloc(PROCESS_INFORMATION, 1)
   return value as NativePtr
 }
@@ -412,6 +488,7 @@ export function allocProcessInfo(): NativePtr {
  * @returns the decoded handle/id fields.
  */
 export function decodeProcessInfo(processInfo: NativePtr): ProcessInfoOutput {
+  const { koffi, PROCESS_INFORMATION } = nativeTypes()
   const value: unknown = koffi.decode(processInfo, PROCESS_INFORMATION)
   return value as ProcessInfoOutput
 }
@@ -420,6 +497,7 @@ let cached: Win32Bindings | undefined
 
 function bindings(): Win32Bindings {
   if (cached !== undefined) return cached
+  const { koffi, PVOID, PPVOID, STARTUPINFOW, PROCESS_INFORMATION } = nativeTypes()
   const kernel32 = koffi.load('kernel32.dll')
   const advapi32 = koffi.load('advapi32.dll')
   const user32 = koffi.load('user32.dll')
@@ -427,7 +505,7 @@ function bindings(): Win32Bindings {
   // Each binding shape is verified by verify/abi-probe.cpp against the real
   // Windows headers and exercised end-to-end by tests/probe.spec.ts; the
   // single cast keeps the per-binding noise out of this table.
-  const bind = (lib: ReturnType<typeof koffi.load>, name: string, result: Ptr | string, args: Array<Ptr | string>): unknown =>
+  const bind = (lib: ReturnType<KoffiModule['load']>, name: string, result: KoffiType, args: KoffiType[]): unknown =>
     lib.func('__stdcall', name, result, args)
 
   cached = {

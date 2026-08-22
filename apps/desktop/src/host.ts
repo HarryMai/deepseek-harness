@@ -8,11 +8,10 @@ import {
   isDesktopHostShutdown,
   resolveDesktopWebServer,
   webServerUrl,
-  type DesktopHostError,
-  type DesktopHostReady,
+  type DesktopHostMessage,
 } from './runtime.ts'
 
-function send(message: DesktopHostReady | DesktopHostError): void {
+function send(message: DesktopHostMessage): void {
   if (process.connected) process.send?.(message)
 }
 

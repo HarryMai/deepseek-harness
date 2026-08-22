@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   createProcessInspector,
   linuxProcessGroupHasLiveMembers,
@@ -211,6 +211,22 @@ describe('Linux process inspector', () => {
 })
 
 describe('macOS process inspector', () => {
+  it('does not load koffi when constructing POSIX inspectors', async () => {
+    vi.resetModules()
+    vi.doMock('koffi', () => {
+      throw new Error('koffi should not load')
+    })
+    try {
+      const imported = await import('@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts')
+      const fake = fakeInternals()
+      fake.setTpgid('0')
+      expect(imported.createProcessInspector('darwin', 'arm64', fake.internals).isStdinWaiting(1)).toBe(false)
+    } finally {
+      vi.doUnmock('koffi')
+      vi.resetModules()
+    }
+  })
+
   it('reads tpgid and process trees, contains cycles, and identity-fences signals', () => {
     const fake = fakeInternals()
     fake.setTpgid('55\n')
