@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-17-unsigned-macos-dmg-packaging.md
+2026-08-17-unsigned-macos-dmg-packaging.md: c30aac73681605fc4ebd4123b53103b9dc09d2a7
+2026-08-17-unsigned-macos-dmg-packaging.zh.md: 7b9bbce0ba605f5ee6d91ef5273def45a93cb753

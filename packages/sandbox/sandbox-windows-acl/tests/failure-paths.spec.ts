@@ -8,13 +8,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import koffi from 'koffi'
 
-import { PROCESS_INFORMATION, getTempPath } from '../src/ffi.ts'
+import { getTempPath, processInformationStruct } from '../src/ffi.ts'
 import type { NativePtr, Win32Bindings } from '../src/ffi.ts'
 import { Win32Error } from '../src/errors.ts'
 import { drainPipe, spawnSandboxed, spawnSandboxedInherited, waitForExit } from '../src/spawn.ts'
 import * as abi from '../src/win32-abi.ts'
 
 const PVOID = koffi.pointer('void')
+const PROCESS_INFORMATION = processInformationStruct()
 
 /** The stub the CreateProcessAsUserW failure branch needs: pipes "succeed", the spawn fails with Win32 5. */
 function pipeFailureApi(): { api: Win32Bindings; closed: bigint[]; closeHandle: ReturnType<typeof vi.fn> } {

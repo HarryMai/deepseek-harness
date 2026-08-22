@@ -22,6 +22,20 @@ pnpm desktop:make:win:x64
 
 配置有意只接受当前的无签名 Windows x64 路径。启用签名、自动更新、全机安装或其他架构等未支持修改会在打包前失败，不会被静默忽略。无签名安装程序可能在部分 Windows 系统上显示未知发布者或 SmartScreen 警告。
 
+## 构建无签名 macOS 磁盘映像
+
+同一个 [`desktop-build.config.json`](desktop-build.config.json) 在 `mac` 一节中管理 macOS 包元数据：目标架构（`x64` 与 `arm64`）、反向 DNS bundle 标识符、必须包含 `{arch}` 占位符的 DMG 输出文件名，以及可选的 `.icns` 图标路径。`installer.signing` 固定为 `none`；该字段为后续签名构建预留配置位置，但不启用签名。图标字段为 `null` 时保留 Electron 默认图标；配置的图标路径相对于当前目录。
+
+构建机必须是 macOS，并使用仓库声明的 pnpm 11.7.0；任一架构的构建机都能产出两种架构的包。先在仓库根目录执行一次 `pnpm install` 安装 workspace 依赖。与 Windows 构建复制构建机自身 Node 可执行文件不同，macOS 构建会从 nodejs.org 下载配置版本的官方 darwin tarball（每个目标架构一份），并在使用前对照官方发布的 SHA-256 校验。打包过程从 `electron_config_cache`、`ELECTRON_CACHE` 或 Electron 标准本地缓存读取固定版本的 Electron ZIP；`pnpm install` 只会填充构建机本架构的缓存，因此另一架构的 ZIP 从 GitHub release 下载，同样经 SHA-256 校验。然后构建磁盘映像：
+
+```sh
+pnpm desktop:make:mac
+```
+
+该命令先构建仓库产物，从本地 workspace 一次性部署现有 `@deepseek-ai/dsh` Host 闭包，并按架构放置下载的 Node 运行时；`.app` bundle 写入 `apps/desktop/out/package/`，每个架构一份 DMG 写入 `apps/desktop/out/make/dmg/<arch>/`——按当前提交的配置即 `DeepSeek Harness-x64.dmg` 与 `DeepSeek Harness-arm64.dmg`。每份 DMG 包含应用本体和一个用于拖拽安装的 `Applications` 符号链接；应用随包携带普通 Node，安装后可离线运行。打包后 Host 冒烟测试只覆盖构建机本架构，因为另一架构的 Node 无法在本机执行。`pnpm desktop:make:mac --dry-run` 只打印解析后的目标和输出名，不执行构建；`--skip-build` 复用已有仓库产物。
+
+配置有意只接受当前的无签名 DMG 路径。签名身份、其他安装格式或缺少 `{arch}` 的输出文件名等未支持修改会在打包前失败，不会被静默忽略。Gatekeeper 会拦截从互联网下载的无签名应用，提示「无法打开，因为无法验证开发者」或「已损坏」；接收者可右键点按后选择**打开**，在 macOS 15 或更高版本通过 **系统设置 → 隐私与安全性 → 仍要打开**，或用 `xattr -cr` 清除隔离属性后打开。在本机构建并运行的应用不带隔离属性，打开时不会有警告。
+
 ## 进程所有权
 
 Node 启动器启动 Electron，并把自身的 Node 可执行文件路径交给 Electron 主进程。Electron 使用该普通 Node 可执行文件启动 [`host.ts`](src/host.ts)，Host 子进程再启动公开的 `@deepseek-ai/dsh/desktop-host` 适配器。把 Harness 运行时保留在 Electron 外部，可以维持原生与子进程提供方对 Node ABI 和 `process.execPath` 的既有假设。
@@ -39,6 +53,8 @@ renderer 启用 context isolation 和 Chromium sandbox，不启用 Node integrat
 ## 已知限制
 
 - Windows 安装程序未签名，用户可能需要在 SmartScreen 中选择**更多信息**和**仍要运行**。
+- macOS 磁盘映像未签名；Gatekeeper 会拦截下载来的副本，接收者需要显式打开或清除其隔离属性。
+- 为非本架构产出的 macOS 包（在 x64 构建机上产出 arm64，或相反）只完成组装而从未在构建中执行：其打包后 Host 冒烟测试被跳过，且部署的 Host 闭包来自构建机的 workspace。分发前请在匹配硬件上验证该包。
 - 原生安装程序只在 workspace 内构建，不会从 npm 获取 `@deepseek-ai/dsh-desktop`。
 - 打包 Host 的输出位于 Electron 当前用户 `userData/logs/` 目录下；Harness home 之外的项目 `.env` 不会成为打包启动输入。
 - 桌面壳只接受回环应用 URL，因此会拒绝自定义的非回环 `--host`；如需有意向网络开放，请使用 `dsh web`。

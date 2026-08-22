@@ -41,4 +41,4 @@ workspace 本地的 Windows x64 构建读取 `apps/desktop/desktop-build.config.
 - 浏览器与桌面入口使用同一套前端产物、插件图、HTTP API、WebSocket stream、配置、持久化和关闭实现。
 - Electron 保持在核心逻辑之外，不能悄然用自己的 Node 运行时替换需要普通 Node 的提供方运行时。
 - 桌面 renderer 仍使用回环网络 socket。IPC 传输仍是可选的未来优化，不是提供桌面窗口的前置条件。
-- workspace 可以在不改变产品传输或 Host 组合的情况下生成无签名 Windows x64 安装程序。代码签名、自动更新、其他架构和其他 OS 包仍属于独立发布工作。
+- workspace 可以在不改变产品传输或 Host 组合的情况下生成无签名 Windows x64 安装程序。代码签名、自动更新、其他架构和 macOS 以外的 OS 包仍属于独立发布工作；无签名 macOS 磁盘映像经 [macOS 打包 Agent Note](2026-08-17-unsigned-macos-dmg-packaging.zh.md) 交付。

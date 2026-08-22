@@ -23,11 +23,13 @@ import { packager } from '@electron/packager'
 import { parseDesktopBuildConfig, type DesktopBuildConfig } from '../src/build-config.ts'
 import { pnpmBuildCommand } from '../src/build-command.ts'
 import { manageHostProcess, stopHostProcess, waitForHostReady } from '../src/process-lifecycle.ts'
+import { copyApplicationBundle } from '../src/stage-application.ts'
 import {
   runtimePackageRoots,
   workspaceRuntimeClosure,
   type WorkspaceRuntimeManifest,
   type WorkspaceRuntimePackage,
+  type WorkspaceRuntimeTarget,
 } from '../src/workspace-runtime.ts'
 
 const desktopRoot = resolve(import.meta.dirname, '..')
@@ -303,9 +305,9 @@ async function loadWorkspaceRuntimePackages(): Promise<Map<string, WorkspaceRunt
   return packages
 }
 
-async function stageMissingWorkspaceRuntimePackages(): Promise<void> {
+async function stageMissingWorkspaceRuntimePackages(targets: readonly WorkspaceRuntimeTarget[]): Promise<void> {
   const packages = await loadWorkspaceRuntimePackages()
-  const closure = workspaceRuntimeClosure('@deepseek-ai/dsh', packages)
+  const closure = workspaceRuntimeClosure('@deepseek-ai/dsh', packages, { targets })
   let copied = 0
   for (const workspacePackage of closure) {
     if (workspacePackage.manifest.name === '@deepseek-ai/dsh') continue
@@ -350,18 +352,19 @@ async function pruneNonRuntimeArtifacts(directory: string): Promise<void> {
   }
 }
 
-async function stageHostRuntime(): Promise<void> {
+async function stageHostRuntime(targets: readonly WorkspaceRuntimeTarget[]): Promise<void> {
   await runPnpm('deploy ordinary-Node Host closure', [
     '--filter',
     '@deepseek-ai/dsh',
     'deploy',
+    '--legacy',
     '--prod',
     '--config.inject-workspace-packages=true',
     '--config.node-linker=hoisted',
     '--config.ignore-scripts=true',
     hostRuntime,
   ])
-  await stageMissingWorkspaceRuntimePackages()
+  await stageMissingWorkspaceRuntimePackages(targets)
   await materializeLinks(join(hostRuntime, 'node_modules'))
   // This provider dependency is unique in the closure. Hoisting preserves Node
   // resolution while keeping Squirrel's legacy .NET extraction paths below MAX_PATH.
@@ -468,7 +471,7 @@ async function main(): Promise<void> {
   await removeGeneratedTree(buildRoot)
   await removeGeneratedTree(outputRoot)
   await mkdir(buildRoot, { recursive: true })
-  await stageHostRuntime()
+  await stageHostRuntime([{ os: 'win32', cpu: config.windows.architecture }])
   await stageNodeRuntime()
   const { electronVersion } = await stagePackagedApplication(config)
   const squirrelVendor = await stageSquirrelVendor()
@@ -526,10 +529,9 @@ async function main(): Promise<void> {
       }
     }
     await mkdir(packagedOutput, { recursive: true })
-    await cp(
+    await copyApplicationBundle(
       applicationDirectory,
       join(packagedOutput, `${config.product.displayName}-win32-${config.windows.architecture}`),
-      { recursive: true },
     )
     await createWindowsInstaller({
       appDirectory: applicationDirectory,

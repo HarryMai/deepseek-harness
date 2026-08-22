@@ -3,6 +3,7 @@ import {
   runtimePackageRoots,
   workspaceRuntimeClosure,
   type WorkspaceRuntimePackage,
+  type WorkspaceRuntimeTarget,
 } from '../src/workspace-runtime.ts'
 
 function workspacePackage(
@@ -26,6 +27,29 @@ describe('desktop workspace runtime closure', () => {
     ])
     expect(workspaceRuntimeClosure('app', packages).map(value => value.manifest.name))
       .toEqual(['app', 'optional', 'provider', 'service'])
+  })
+
+  it('skips workspace dependencies that do not match any package target platform', () => {
+    const targets: WorkspaceRuntimeTarget[] = [
+      { os: 'darwin', cpu: 'x64' },
+      { os: 'darwin', cpu: 'arm64' },
+    ]
+    const packages = new Map([
+      ['app', workspacePackage('app', {
+        optionalDependencies: {
+          'darwin-any': 'workspace:^',
+          'darwin-arm64': 'workspace:^',
+          'linux-arm64': 'workspace:^',
+          'not-darwin': 'workspace:^',
+        },
+      })],
+      ['darwin-any', workspacePackage('darwin-any', { os: ['darwin'] })],
+      ['darwin-arm64', workspacePackage('darwin-arm64', { os: ['darwin'], cpu: ['arm64'] })],
+      ['linux-arm64', workspacePackage('linux-arm64', { os: ['linux'], cpu: ['arm64'] })],
+      ['not-darwin', workspacePackage('not-darwin', { os: ['!darwin'] })],
+    ])
+    expect(workspaceRuntimeClosure('app', packages, { targets }).map(value => value.manifest.name))
+      .toEqual(['app', 'darwin-any', 'darwin-arm64'])
   })
 
   it('selects runtime roots from positive package files entries', () => {

@@ -28,6 +28,18 @@
       "setup": null
     }
   },
+  "mac": {
+    "architectures": ["x64", "arm64"],
+    "bundleIdentifier": "ai.deepseek.harness",
+    "installer": {
+      "format": "dmg",
+      "outputFileName": "DeepSeek Harness-{arch}.dmg",
+      "signing": "none"
+    },
+    "icons": {
+      "application": null
+    }
+  },
   "runtime": {
     "node": {
       "source": "builder",

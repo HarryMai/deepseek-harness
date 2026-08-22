@@ -41,4 +41,4 @@ Pure runtime tests pin launcher argument separation, patch parsing, ephemeral lo
 - Browser and desktop entries use the same frontend assets, plugin graph, HTTP API, WebSocket streams, configuration, persistence, and shutdown implementation.
 - Electron remains outside core logic and cannot silently substitute its Node runtime for providers that require ordinary Node.
 - The desktop renderer still uses a loopback network socket. IPC transport remains an optional future optimization, not a prerequisite for a desktop window.
-- The workspace can produce an unsigned Windows x64 installer without changing product transport or Host composition. Code signing, automatic updates, other architectures, and other operating-system packages remain separate release work.
+- The workspace can produce an unsigned Windows x64 installer without changing product transport or Host composition. Code signing, automatic updates, other architectures, and operating-system packages beyond macOS remain separate release work; unsigned macOS disk images ship through the [macOS packaging Agent Note](2026-08-17-unsigned-macos-dmg-packaging.md).

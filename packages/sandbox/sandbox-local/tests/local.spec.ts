@@ -62,13 +62,13 @@ function fakeSeatbeltExec(status: number): string {
 const SEATBELT_RO_PROFILE = '(version 1) (allow default) (deny file-write*) (allow file-write* (literal "/dev/null"))'
 
 describe('profile dialects', () => {
-  it('bwrap read-only: whole tree read-only with fresh /dev and /proc, no writable mounts', () => {
-    expect(bwrapProfileArgs(RO)).toEqual(['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--die-with-parent'])
+  it('bwrap read-only: whole tree read-only with fresh /dev and private PID-scoped /proc, no writable mounts', () => {
+    expect(bwrapProfileArgs(RO)).toEqual(['--ro-bind', '/', '/', '--dev', '/dev', '--unshare-pid', '--proc', '/proc', '--die-with-parent'])
   })
 
   it('bwrap workspace-write: adds an ephemeral /tmp and rebinds the workspace root', () => {
     expect(bwrapProfileArgs(WW)).toEqual([
-      '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--die-with-parent',
+      '--ro-bind', '/', '/', '--dev', '/dev', '--unshare-pid', '--proc', '/proc', '--die-with-parent',
       '--tmpfs', '/tmp', '--bind', '/ws', '/ws',
     ])
   })
@@ -159,6 +159,24 @@ describe('runnerCommand config', () => {
 })
 
 describe('the platform chains', () => {
+  it('does not load koffi when selecting a non-Windows sandbox runner', async () => {
+    vi.resetModules()
+    vi.doMock('koffi', () => {
+      throw new Error('koffi should not load')
+    })
+    try {
+      const imported = await import('@deepseek-ai/dsh-sandbox-local')
+      const ctx = new Context()
+      await ctx.plugin(imported.LocalSandboxProvider, {})
+      const sandbox = ctx.sandbox as LocalSandboxProvider
+      sandbox.internals = { platform: 'darwin' }
+      expect(sandbox.confine(['true'], RO).argv[0]).toBe('sandbox-exec')
+    } finally {
+      vi.doUnmock('koffi')
+      vi.resetModules()
+    }
+  })
+
   it('linux probes bwrap first: a passing probe wraps with the bwrap dialect at full enforcement', async () => {
     const probeBwrap = vi.fn(() => true)
     const probeLandlock = vi.fn(() => 'full' as const)

@@ -22,6 +22,20 @@ The command builds repository artifacts, deploys the existing `@deepseek-ai/dsh`
 
 The configuration intentionally accepts only the current unsigned Windows x64 route. Unsupported changes such as enabling signing, automatic updates, machine-wide installation, or another architecture fail before packaging instead of being ignored. An unsigned installer displays an unknown-publisher or SmartScreen warning on some Windows systems.
 
+## Build the unsigned macOS disk images
+
+The same [`desktop-build.config.json`](desktop-build.config.json) owns the macOS package metadata in its `mac` section: the target architectures (`x64` and `arm64`), the reverse-DNS bundle identifier, the DMG output filename with its required `{arch}` placeholder, and an optional `.icns` icon path. `installer.signing` is pinned to `none`; the field reserves the configuration position for a later signed build without enabling one. A `null` icon retains Electron's default icon; a configured icon path is relative to this directory.
+
+The builder requires macOS and the repository's pnpm 11.7.0, and one builder of either architecture produces both packages. From the repository root, install the workspace dependencies once with `pnpm install`. Unlike the Windows build, which copies the builder's own Node executable, the macOS build downloads the configured Node version's official darwin tarball for each target architecture from nodejs.org and verifies it against the published SHA-256 before use. Packaging reads the pinned Electron ZIP from `electron_config_cache`, `ELECTRON_CACHE`, or Electron's standard local cache; `pnpm install` populates that cache only for the builder's own architecture, so the other architecture's ZIP is downloaded from the GitHub release, with the same SHA-256 verification. Then build the disk images:
+
+```sh
+pnpm desktop:make:mac
+```
+
+The command builds repository artifacts, deploys the existing `@deepseek-ai/dsh` Host closure once from the local workspace, stages the downloaded Node runtime per architecture, and writes the `.app` bundles under `apps/desktop/out/package/` and one DMG per architecture under `apps/desktop/out/make/dmg/<arch>/` — `DeepSeek Harness-x64.dmg` and `DeepSeek Harness-arm64.dmg` with the checked-in configuration. Each DMG contains the application beside an `Applications` symlink for drag installation; the application bundles its ordinary Node runtime and works offline after installation. The packaged-Host smoke test runs only for the builder's own architecture because the other architecture's Node cannot execute on the host. `pnpm desktop:make:mac --dry-run` prints the resolved targets and output names without building; `--skip-build` reuses existing repository artifacts.
+
+The configuration intentionally accepts only the current unsigned DMG route. Unsupported changes such as a signing identity, another installer format, or an output filename without `{arch}` fail before packaging instead of being ignored. Gatekeeper blocks an unsigned application downloaded from the internet with a "cannot be opened because the developer cannot be verified" or "is damaged" alert; recipients open it through right-click → **Open**, on macOS 15 or later through **System Settings → Privacy & Security → Open Anyway**, or by clearing the quarantine attribute with `xattr -cr`. An application built and launched on the same machine carries no quarantine attribute and opens without warnings.
+
 ## Process ownership
 
 The Node launcher starts Electron and passes its own Node executable path to the Electron main process. Electron starts [`host.ts`](src/host.ts) with that ordinary Node executable, and the Host child boots the public `@deepseek-ai/dsh/desktop-host` adapter. Keeping the Harness runtime outside Electron preserves the Node ABI and `process.execPath` assumptions of native and subprocess providers.
@@ -39,6 +53,8 @@ The renderer uses context isolation, Chromium sandboxing, and no Node integratio
 ## Known limitations
 
 - The Windows installer is unsigned and may require the user to choose **More info** and **Run anyway** in SmartScreen.
+- The macOS disk images are unsigned; Gatekeeper blocks a downloaded copy until the recipient explicitly opens it or clears its quarantine attribute.
+- A macOS package built for the non-host architecture (arm64 on an x64 builder or the reverse) is staged but never executed during the build: its packaged-Host smoke test is skipped, and the deployed Host closure comes from the builder's workspace. Validate such a package on matching hardware before distributing it.
 - The native installer build is workspace-local and does not fetch `@deepseek-ai/dsh-desktop` from npm.
 - Packaged Host output is available below Electron's per-user `userData/logs/` directory; a project `.env` outside the Harness home is not a packaged-launch input.
 - A custom non-loopback `--host` is rejected by the desktop shell because its renderer accepts loopback application URLs only; use `dsh web` for deliberate network exposure.
