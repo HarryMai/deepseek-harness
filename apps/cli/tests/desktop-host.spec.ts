@@ -9,7 +9,14 @@ describe('desktop Web profile invocation', () => {
       '--port', '3080',
     ])).toEqual({
       patchFiles: ['./first.yml', './second.yml'],
-      args: ['--host', '127.0.0.1', '--port', '0', '--port', '3080'],
+      args: ['--host', '127.0.0.1', '--port', '0', '--no-open', '--port', '3080'],
+    })
+  })
+
+  it('passes the fixed no-open default to the Web profile', () => {
+    expect(resolveDesktopWebInvocation([])).toEqual({
+      patchFiles: [],
+      args: ['--host', '127.0.0.1', '--port', '0', '--no-open'],
     })
   })
 })

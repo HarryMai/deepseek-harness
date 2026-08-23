@@ -6,7 +6,7 @@
 
 ## 运行
 
-该应用从仓库 workspace 启动；构建过程不会从 registry 安装 `@deepseek-ai/dsh-desktop`。workspace 依赖和仓库产物就绪后，运行 `pnpm desktop`。启动器参数保持 `dsh web` 的顺序要求：可重复的 `--patch <path>` 必须放在首个 Web 选项之前，例如 `pnpm desktop --patch ./extra.yml --port 3080`。桌面默认参数为 `--host 127.0.0.1 --port 0`；OS 会选择空闲的回环端口，Electron 随后自动打开该地址。
+该应用从仓库 workspace 启动；构建过程不会从 registry 安装 `@deepseek-ai/dsh-desktop`。workspace 依赖和仓库产物就绪后，运行 `pnpm desktop`。启动器参数保持 `dsh web` 的顺序要求：可重复的 `--patch <path>` 必须放在首个 Web 选项之前，例如 `pnpm desktop --patch ./extra.yml --port 3080`。桌面 Host 始终传入固定默认参数 `--host 127.0.0.1 --port 0 --no-open`；OS 会选择空闲的回环端口，Electron 在自己的窗口中加载最终 URL，不会打开外部浏览器。该行为同时适用于 workspace 启动和打包后的应用。
 
 ## 构建无签名 Windows 安装程序
 

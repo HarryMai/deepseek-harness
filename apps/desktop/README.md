@@ -6,7 +6,7 @@ Electron desktop application for the shipped DeepSeek Harness Web profile. The E
 
 ## Run
 
-This application is launched from the repository workspace; the build does not install `@deepseek-ai/dsh-desktop` from a registry. After the workspace dependencies and repository artifacts are present, run `pnpm desktop`. Launcher flags keep the `dsh web` ordering: place repeatable `--patch <path>` options before the first Web option, for example `pnpm desktop --patch ./extra.yml --port 3080`. The desktop defaults are `--host 127.0.0.1 --port 0`; the operating system selects a free loopback port and Electron opens it automatically.
+This application is launched from the repository workspace; the build does not install `@deepseek-ai/dsh-desktop` from a registry. After the workspace dependencies and repository artifacts are present, run `pnpm desktop`. Launcher flags keep the `dsh web` ordering: place repeatable `--patch <path>` options before the first Web option, for example `pnpm desktop --patch ./extra.yml --port 3080`. The desktop host always passes the fixed defaults `--host 127.0.0.1 --port 0 --no-open`; the operating system selects a free loopback port, and Electron loads the resulting URL in its own window without opening an external browser. This applies to workspace and packaged launches.
 
 ## Build the unsigned Windows installer
 

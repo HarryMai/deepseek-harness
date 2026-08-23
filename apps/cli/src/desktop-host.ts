@@ -12,14 +12,14 @@ import { runProfile } from './profile-boot.ts'
 export interface DesktopWebInvocation {
   /** Extra profile overlays supplied before the Web application's arguments. */
   readonly patchFiles: readonly string[]
-  /** Loopback defaults followed by the Web application's arguments. */
+  /** Loopback defaults and the fixed `--no-open` flag followed by the Web application's arguments. */
   readonly args: readonly string[]
 }
 
 /**
  * Resolve desktop arguments through the public CLI launcher's Web alias.
  * @param args - Arguments after `dsh-desktop`.
- * @returns Profile overlays and Web arguments with desktop listener defaults.
+ * @returns Profile overlays and Web arguments with fixed desktop listener defaults and `--no-open`.
  */
 export function resolveDesktopWebInvocation(args: readonly string[]): DesktopWebInvocation {
   const invocation = parseDshArgs(['web', ...args], 'desktop')
@@ -28,7 +28,7 @@ export function resolveDesktopWebInvocation(args: readonly string[]): DesktopWeb
   }
   return {
     patchFiles: invocation.patches,
-    args: ['--host', '127.0.0.1', '--port', '0', ...invocation.args],
+    args: ['--host', '127.0.0.1', '--port', '0', '--no-open', ...invocation.args],
   }
 }
 
