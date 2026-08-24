@@ -7,9 +7,11 @@ export type McpSettingsKey =
   | 'importJson' | 'importJsonLabel' | 'importJsonHint' | 'importConfirm' | 'importCancel'
   | 'importSucceeded' | 'importInvalidJson' | 'importInvalidRoot' | 'importInvalidServer' | 'importUnsupportedFields'
   | 'serverTitle' | 'transport' | 'stdio' | 'streamableHttp' | 'serverName'
-  | 'command' | 'commandHint' | 'arguments' | 'argumentsHint' | 'cwd' | 'cwdHint'
+  | 'command' | 'commandHint' | 'arguments' | 'argument' | 'argumentsHint' | 'addArgument' | 'removeArgument'
+  | 'environment' | 'environmentKey' | 'environmentValue' | 'environmentHint' | 'addEnvironment' | 'removeEnvironment'
+  | 'cwd' | 'cwdHint'
   | 'url' | 'removeServer' | 'recordEnabled' | 'recordReady' | 'recordDisabled' | 'recordIncomplete' | 'invalidServerName'
-  | 'invalidUrl' | 'duplicateServerName' | 'testConnection' | 'testingConnection' | 'testSuccess'
+  | 'invalidUrl' | 'invalidEnvironment' | 'duplicateServerName' | 'testConnection' | 'testingConnection' | 'testSuccess'
   | 'testInvalidConfiguration' | 'testConnectionFailed' | 'testTimedOut' | 'testCancelled' | 'testUnavailable'
   | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed'
 
@@ -36,7 +38,7 @@ export const en: Record<McpSettingsKey, string> = {
   importInvalidJson: 'Enter valid JSON.',
   importInvalidRoot: 'Use an MCP server object or an mcpServers, mcp_servers, or servers map.',
   importInvalidServer: 'One MCP server record has unsupported or incomplete fields.',
-  importUnsupportedFields: 'Environment variables and HTTP headers cannot be imported into saved MCP settings.',
+  importUnsupportedFields: 'HTTP headers cannot be imported into saved MCP settings.',
   serverTitle: 'MCP server',
   transport: 'Connection type',
   stdio: 'Local program (stdio)',
@@ -45,7 +47,16 @@ export const en: Record<McpSettingsKey, string> = {
   command: 'Command or executable',
   commandHint: 'For a script, use its runtime here (for example, node) and put the script path in Arguments.',
   arguments: 'Arguments',
-  argumentsHint: 'One argument per line.',
+  argument: 'Argument',
+  argumentsHint: 'Add or remove one argument per row. Blank rows are not saved.',
+  addArgument: 'Add argument',
+  removeArgument: 'Remove argument',
+  environment: 'Environment variables',
+  environmentKey: 'Key',
+  environmentValue: 'Value',
+  environmentHint: 'Environment variables are saved as key-value pairs and passed to the stdio process.',
+  addEnvironment: 'Add environment variable',
+  removeEnvironment: 'Remove environment variable',
   cwd: 'Working directory',
   cwdHint: 'Optional. Leave blank to use the application working directory.',
   url: 'MCP endpoint URL',
@@ -56,6 +67,7 @@ export const en: Record<McpSettingsKey, string> = {
   recordIncomplete: 'Complete the required fields before this server can load.',
   invalidServerName: 'Use 1–32 letters, numbers, hyphens, or underscores for the server name.',
   invalidUrl: 'Enter an HTTP or HTTPS endpoint URL.',
+  invalidEnvironment: 'Environment variable keys cannot contain = or line breaks, and values cannot contain NUL characters.',
   duplicateServerName: 'Each saved MCP server needs a distinct server name.',
   testConnection: 'Test connection',
   testingConnection: 'Testing…',
@@ -95,7 +107,7 @@ export const zh: Record<McpSettingsKey, string> = {
   importInvalidJson: '请输入有效的 JSON。',
   importInvalidRoot: '请使用 MCP 服务对象，或 mcpServers、mcp_servers、servers 服务映射。',
   importInvalidServer: '有一条 MCP 服务记录的字段不受支持或不完整。',
-  importUnsupportedFields: '已保存的 MCP 配置不能导入环境变量或 HTTP 请求头。',
+  importUnsupportedFields: '已保存的 MCP 配置不能导入 HTTP 请求头。',
   serverTitle: 'MCP 服务',
   transport: '连接类型',
   stdio: '本地程序（stdio）',
@@ -104,7 +116,16 @@ export const zh: Record<McpSettingsKey, string> = {
   command: '命令或可执行程序',
   commandHint: '运行脚本时，将运行时写在这里（例如 node），再把脚本路径写入参数。',
   arguments: '参数',
-  argumentsHint: '每行一个参数。',
+  argument: '参数',
+  argumentsHint: '每行一个参数，可新增或删除；空白行不会保存。',
+  addArgument: '添加参数',
+  removeArgument: '删除参数',
+  environment: '环境变量',
+  environmentKey: '键',
+  environmentValue: '值',
+  environmentHint: '环境变量会按键值对保存，并传递给 stdio 本地程序。',
+  addEnvironment: '添加环境变量',
+  removeEnvironment: '删除环境变量',
   cwd: '工作目录',
   cwdHint: '可选；留空则使用应用当前工作目录。',
   url: 'MCP 服务地址',
@@ -115,6 +136,7 @@ export const zh: Record<McpSettingsKey, string> = {
   recordIncomplete: '请补齐必填项后再加载此服务。',
   invalidServerName: '服务名称只能包含 1–32 个字母、数字、连字符或下划线。',
   invalidUrl: '请输入 HTTP 或 HTTPS 服务地址。',
+  invalidEnvironment: '环境变量键不能包含等号或换行，值不能包含 NUL 字符。',
   duplicateServerName: '每个已保存的 MCP 服务都需要不同的服务名称。',
   testConnection: '测试连接',
   testingConnection: '测试中…',

@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { argumentsFromText, serverIssue, type McpSettingsFace } from './settings.ts'
+import { serverIssue, type McpSettingsFace } from './settings.ts'
 import type { McpConnectionTestState, McpJsonImportResult, McpServerIssue } from './settings.ts'
 import css from './McpSettingsSection.module.css'
 
@@ -23,6 +23,7 @@ function issueText(issue: McpServerIssue | undefined, t: McpSettingsSectionProps
     case 'incomplete': return t('recordIncomplete')
     case 'invalid-server-name': return t('invalidServerName')
     case 'invalid-url': return t('invalidUrl')
+    case 'invalid-environment': return t('invalidEnvironment')
     case 'duplicate-server-name': return t('duplicateServerName')
   }
 }
@@ -54,6 +55,22 @@ function importText(result: McpJsonImportResult, t: McpSettingsSectionProps['t']
   }
 }
 
+interface EnvironmentRow {
+  key: string
+  value: string
+}
+
+/** Render at least one editable row while keeping the persisted form a string map. */
+function environmentRows(env: Record<string, string>): EnvironmentRow[] {
+  const rows = Object.entries(env).map(([key, value]) => ({ key, value }))
+  return rows.length === 0 ? [{ key: '', value: '' }] : rows
+}
+
+/** Convert editable rows to the object accepted by the Host and stdio transport. */
+function environmentFromRows(rows: EnvironmentRow[]): Record<string, string> {
+  return Object.fromEntries(rows.filter(row => row.key.length > 0).map(row => [row.key, row.value]))
+}
+
 /**
  * Render the Settings top-level Custom Configuration page.
  *
@@ -66,6 +83,8 @@ export function McpSettingsSection(props: McpSettingsSectionProps): ReactNode {
   const [showImporter, setShowImporter] = useState(false)
   const [importValue, setImportValue] = useState('')
   const [importResult, setImportResult] = useState<McpJsonImportResult | undefined>()
+  const [argumentDrafts, setArgumentDrafts] = useState<Record<string, string[]>>({})
+  const [environmentDrafts, setEnvironmentDrafts] = useState<Record<string, EnvironmentRow[]>>({})
   if (state.status === 'loading') return <p className={css.status}>{t('loading')}</p>
   if (state.status === 'unavailable') return <p className={css.status}>{t('unavailable')}</p>
 
@@ -175,6 +194,8 @@ export function McpSettingsSection(props: McpSettingsSectionProps): ReactNode {
           const test = state.tests[id]
           const recordLabel = `${t('serverTitle')} ${String(index + 1)}`
           const fieldId = `mcp-server-${encodeURIComponent(id)}`
+          const args = argumentDrafts[id] ?? (server.args.length === 0 ? [''] : server.args)
+          const envRows = environmentDrafts[id] ?? environmentRows(server.env ?? {})
           return (
             <article className={css.card} key={id} data-server-id={id}>
               <div className={css.cardHeader}>
@@ -202,7 +223,11 @@ export function McpSettingsSection(props: McpSettingsSectionProps): ReactNode {
                     className={css.remove}
                     disabled={disabled}
                     aria-label={`${t('removeServer')}: ${server.serverName || recordLabel}`}
-                    onClick={() => { props.removeServer(id) }}
+                    onClick={() => {
+                      setArgumentDrafts(({ [id]: _removedArguments, ...rest }) => rest)
+                      setEnvironmentDrafts(({ [id]: _removed, ...rest }) => rest)
+                      props.removeServer(id)
+                    }}
                   >
                     {t('removeServer')}
                   </button>
@@ -245,17 +270,116 @@ export function McpSettingsSection(props: McpSettingsSectionProps): ReactNode {
                       />
                       <small id={`${fieldId}-command-hint`}>{t('commandHint')}</small>
                     </div>
-                    <div className={css.field}>
-                      <label htmlFor={`${fieldId}-arguments`}>{t('arguments')}</label>
-                      <textarea
-                        id={`${fieldId}-arguments`}
-                        aria-describedby={`${fieldId}-arguments-hint`}
-                        value={server.args.join('\n')}
+                    <div className={`${css.field} ${css.arrayField}`}>
+                      <span>{t('arguments')}</span>
+                      <div className={css.arrayRows}>
+                        {args.map((argument, argumentIndex) => (
+                          <div className={css.arrayRow} key={`${fieldId}-argument-${String(argumentIndex)}`}>
+                            <input
+                              aria-label={`${t('argument')} ${String(argumentIndex + 1)}`}
+                              value={argument}
+                              disabled={disabled}
+                              onChange={(event) => {
+                                const next = [...args]
+                                next[argumentIndex] = event.currentTarget.value
+                                setArgumentDrafts(previous => ({ ...previous, [id]: next }))
+                                props.editServer(id, { args: next.filter(value => value.length > 0) })
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className={css.removeRow}
+                              aria-label={`${t('removeArgument')} ${String(argumentIndex + 1)}`}
+                              disabled={disabled}
+                              onClick={() => {
+                                const next = args.filter((_, rowIndex) => rowIndex !== argumentIndex)
+                                const retained = next.length === 0 ? [''] : next
+                                setArgumentDrafts(previous => ({ ...previous, [id]: retained }))
+                                props.editServer(id, { args: retained.filter(value => value.length > 0) })
+                              }}
+                            >
+                              {t('removeArgument')}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        className={css.addRow}
                         disabled={disabled}
-                        rows={3}
-                        onChange={(event) => { props.editServer(id, { args: argumentsFromText(event.currentTarget.value) }) }}
-                      />
+                        onClick={() => {
+                          setArgumentDrafts(previous => ({ ...previous, [id]: [...args, ''] }))
+                          props.editServer(id, { args: args.filter(value => value.length > 0) })
+                        }}
+                      >
+                        {t('addArgument')}
+                      </button>
                       <small id={`${fieldId}-arguments-hint`}>{t('argumentsHint')}</small>
+                    </div>
+                    <div className={`${css.field} ${css.arrayField}`}>
+                      <span>{t('environment')}</span>
+                      <div className={css.arrayRows}>
+                        {envRows.map((row, rowIndex) => (
+                          <div className={`${css.arrayRow} ${css.environmentRow}`} key={`${fieldId}-environment-${String(rowIndex)}`}>
+                            <input
+                              aria-label={`${t('environmentKey')} ${String(rowIndex + 1)}`}
+                              placeholder={t('environmentKey')}
+                              value={row.key}
+                              disabled={disabled}
+                              onChange={(event) => {
+                                const next = envRows.map(value => ({ ...value }))
+                                const current = next[rowIndex]
+                                if (current === undefined) return
+                                current.key = event.currentTarget.value
+                                setEnvironmentDrafts(previous => ({ ...previous, [id]: next }))
+                                props.editServer(id, { env: environmentFromRows(next) })
+                              }}
+                            />
+                            <input
+                              aria-label={`${t('environmentValue')} ${String(rowIndex + 1)}`}
+                              placeholder={t('environmentValue')}
+                              value={row.value}
+                              disabled={disabled}
+                              onChange={(event) => {
+                                const next = envRows.map(value => ({ ...value }))
+                                const current = next[rowIndex]
+                                if (current === undefined) return
+                                current.value = event.currentTarget.value
+                                setEnvironmentDrafts(previous => ({ ...previous, [id]: next }))
+                                props.editServer(id, { env: environmentFromRows(next) })
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className={css.removeRow}
+                              aria-label={`${t('removeEnvironment')} ${String(rowIndex + 1)}`}
+                              disabled={disabled}
+                              onClick={() => {
+                                const next = envRows.filter((_, currentIndex) => currentIndex !== rowIndex)
+                                const retained = next.length === 0 ? [{ key: '', value: '' }] : next
+                                setEnvironmentDrafts(previous => ({ ...previous, [id]: retained }))
+                                props.editServer(id, { env: environmentFromRows(retained) })
+                              }}
+                            >
+                              {t('removeEnvironment')}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        className={css.addRow}
+                        disabled={disabled}
+                        onClick={() => {
+                          setEnvironmentDrafts(previous => ({
+                            ...previous,
+                            [id]: [...envRows, { key: '', value: '' }],
+                          }))
+                        }}
+                      >
+                        {t('addEnvironment')}
+                      </button>
+                      <small>{t('environmentHint')}</small>
                     </div>
                     <div className={css.field}>
                       <label htmlFor={`${fieldId}-cwd`}>{t('cwd')}</label>

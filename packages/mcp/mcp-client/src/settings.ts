@@ -26,6 +26,8 @@ export interface McpServerSettings {
   command: string
   /** Arguments passed directly to a stdio command. */
   args: string[]
+  /** Extra environment variables merged into the scrubbed parent environment. */
+  env?: Record<string, string>
   /** Working directory for a stdio command. */
   cwd: string
   /** Streamable HTTP endpoint URL. */
@@ -41,7 +43,7 @@ export interface McpSettings {
 }
 
 /** Why a stored record was not started. */
-export type McpSettingsIssueReason = 'incomplete' | 'invalid-server-name' | 'invalid-url' | 'duplicate-server-name'
+export type McpSettingsIssueReason = 'incomplete' | 'invalid-server-name' | 'invalid-url' | 'invalid-environment' | 'duplicate-server-name'
 
 /** A stored MCP record that the manager deliberately leaves unloaded. */
 export interface McpSettingsIssue {
@@ -67,6 +69,13 @@ function requireEntryTree(ctx: Context) {
 }
 
 const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
+const RESERVED_ENV_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+/** Reject environment entries that Node cannot pass to a child process safely. */
+function isValidEnvironment(value: Record<string, string> | undefined): boolean {
+  return Object.entries(value ?? {}).every(([key, entry]) => key.length > 0 && !RESERVED_ENV_KEYS.has(key)
+    && !/[=\0\r\n]/u.test(key) && !entry.includes('\0'))
+}
 
 const McpServerSettingsConfig = z.object({
   enabled: z.boolean().default(false),
@@ -74,6 +83,7 @@ const McpServerSettingsConfig = z.object({
   serverName: z.string().default(''),
   command: z.string().default(''),
   args: z.array(z.string()).default([]),
+  env: z.dict(String).default({}),
   cwd: z.string().default(''),
   url: z.string().default(''),
 })
@@ -126,6 +136,10 @@ export function resolveMcpClientEntries(settings: McpSettings): McpClientEntries
         issues.push({ id, reason: 'incomplete' })
         continue
       }
+      if (!isValidEnvironment(server.env)) {
+        issues.push({ id, reason: 'invalid-environment' })
+        continue
+      }
       names.add(serverName)
       entries.push({
         id: `mcp-${encodeURIComponent(id)}`,
@@ -135,6 +149,7 @@ export function resolveMcpClientEntries(settings: McpSettings): McpClientEntries
           serverName,
           command,
           args: [...server.args],
+          env: { ...server.env },
           cwd: server.cwd.trim(),
           // A saved user record must not prevent the rest of the application
           // from starting if its server is temporarily unavailable.

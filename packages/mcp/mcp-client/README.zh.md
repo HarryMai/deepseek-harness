@@ -47,6 +47,7 @@ mcp-client:
       serverName: codegraph
       command: /usr/local/bin/codegraph
       args: []
+      env: {}
       cwd: /workspace/project
       url: ''
     internal-search:
@@ -59,11 +60,11 @@ mcp-client:
       url: https://mcp.example.test/mcp
 ```
 
-`stdio` 直接以参数向量启动配置的本地可执行文件或运行时；CodeGraph 这类本地程序属于 stdio 记录，而不是另一种传输。`streamable-http` 只接受 `http:` 和 `https:` 端点。settings 管理器会在分节变化时以事务方式只协调独立 `enabled` 开关为 true 的有效记录；顶层 `enabled` 变为 false 时会卸载全部动态子客户端。每条记录默认 `enabled: false`；顶层开关、记录和独立开关都会持久化到 `$DSH_HOME/settings.yaml`。不完整、格式错误或 `serverName` 重复的已启用记录仍会被保存，但会跳过，且不会阻止有效的已启用同级记录加载。受 settings 驱动的管理器尚不接受环境变量或 HTTP 标头，因此带鉴权的记录需要未来的凭据引用设计。
+`stdio` 直接以参数向量和已保存的环境变量映射启动配置的本地可执行文件或运行时；CodeGraph 这类本地程序属于 stdio 记录，而不是另一种传输。`streamable-http` 只接受 `http:` 和 `https:` 端点。settings 管理器会在分节变化时以事务方式只协调独立 `enabled` 开关为 true 的有效记录；顶层 `enabled` 变为 false 时会卸载全部动态子客户端。每条记录默认 `enabled: false`；顶层开关、记录、独立开关、参数数组和 stdio 环境变量映射都会持久化到 `$DSH_HOME/settings.yaml`。不完整、格式错误、`serverName` 重复或环境变量无效的已启用记录仍会被保存，但会跳过，且不会阻止有效的已启用同级记录加载。环境变量值会按用户输入保存；需要保护的密钥应使用受保护的凭据机制，而不是普通 settings 字段。settings 管理器不提供 HTTP 标头编辑。
 
 ### JSON 导入和连接测试
 
-Web 页面可以导入含有 `mcpServers`、`mcp_servers` 或 `servers` 映射的常见 MCP JSON 文档，也可导入单条记录或裸映射。导入的记录只进入未保存的草稿，且独立开关始终关闭；导入不会改变当前总开关。由于已保存的记录格式无法安全保留，含有 `env` 或 `headers` 的 JSON 会被拒绝。
+Web 页面可以导入含有 `mcpServers`、`mcp_servers` 或 `servers` 映射的常见 MCP JSON 文档，也可导入单条记录或裸映射。导入的记录只进入未保存的草稿，且独立开关始终关闭；导入不会改变当前总开关。stdio 的 `env` 映射会作为字符串键值配置保留；HTTP 的 `headers` 会被拒绝，因为页面没有请求头编辑字段。
 
 **测试连接**是仅限环回地址的一次性 Host 探测。它会创建临时 MCP 客户端，完成初始化和 `tools/list`，报告工具数量或通用失败类别，并在回复前关闭客户端。它绝不会保存或启用记录、注册工具，或启动长期运行的重连 supervisor。
 

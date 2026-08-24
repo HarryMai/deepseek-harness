@@ -12,14 +12,14 @@ Every new record starts with its own switch off. A record loads only when the ma
 
 Each record has a user-chosen `serverName`, which namespaces its tools as `mcp__<serverName>__<toolName>`.
 
-- **Local program (stdio):** an executable or runtime command, optional line-separated arguments, and an optional working directory. A locally installed program such as CodeGraph is configured this way; the application does not bundle that program.
+- **Local program (stdio):** an executable or runtime command, repeatable arguments, repeatable key-value environment variables, and an optional working directory. Arguments and environment rows can be added or removed; an empty starter row is shown for each array editor. A locally installed program such as CodeGraph is configured this way; the application does not bundle that program.
 - **Streamable HTTP:** an `http:` or `https:` MCP endpoint URL.
 
-Incomplete, malformed, or duplicate server-name records stay saved but do not load. A valid enabled record continues to load when another enabled record is invalid. The initial settings manager intentionally does not support process environment variables or HTTP headers, so authenticated server records need a future credential-reference design.
+Incomplete, malformed, duplicate server-name, or invalid-environment records stay saved but do not load. A valid enabled record continues to load when another enabled record is invalid. Stdio environment variables are saved as a string map and passed to the child process; values are written to the settings file as supplied, so do not use this field for secrets that require protected credential storage. HTTP headers are not exposed by the settings page.
 
 ## JSON import and connection test
 
-Use **Import JSON** to paste a common MCP document with an `mcpServers`, `mcp_servers`, or `servers` service map. A single service object and a bare service map also work. Imports add records only to the unsaved draft: every imported record is off, the current master-switch value is left unchanged, and nothing takes effect until **Save** is selected. JSON that contains `env` or `headers` is rejected instead of silently dropping credentials.
+Use **Import JSON** to paste a common MCP document with an `mcpServers`, `mcp_servers`, or `servers` service map. A single service object and a bare service map also work. Imports add records only to the unsaved draft: every imported record is off, the current master-switch value is left unchanged, and nothing takes effect until **Save** is selected. Stdio `env` objects are retained as key-value settings; HTTP `headers` are rejected instead of silently dropping them.
 
 Each record has a **Test connection** action. From the local application, it starts a temporary stdio process or connects to the HTTP endpoint, completes MCP initialization, lists its tools, and then closes the connection. Testing does not save the draft, turn on either switch, register tools, or leave a reconnect loop running. The result shows only a tool count or a generic failure category; command and endpoint details stay local to the Host.
 

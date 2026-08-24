@@ -89,6 +89,7 @@ describe('mcp-client settings configuration', () => {
           serverName: 'codegraph',
           command: 'codegraph',
           args: ['serve', '--mcp'],
+          env: { CODEGRAPH_HOME: '/work' },
           cwd: '/work',
           url: '',
         },
@@ -132,6 +133,7 @@ describe('mcp-client settings configuration', () => {
           serverName: 'codegraph',
           command: 'codegraph',
           args: ['serve', '--mcp'],
+          env: { CODEGRAPH_HOME: '/work' },
           cwd: '/work',
           failOnStartupError: false,
         },
@@ -174,6 +176,19 @@ describe('mcp-client settings configuration', () => {
       { id: 'incomplete', reason: 'incomplete' },
       { id: 'invalidName', reason: 'invalid-server-name' },
     ])
+  })
+
+  it('skips stdio records with invalid environment names or values', () => {
+    const resolved = resolveMcpClientEntries({
+      enabled: true,
+      servers: {
+        invalid: {
+          enabled: true, transport: 'stdio', serverName: 'invalid', command: 'node', args: [],
+          env: { 'BAD=NAME': 'value' }, cwd: '', url: '',
+        },
+      },
+    })
+    expect(resolved).toEqual({ entries: [], issues: [{ id: 'invalid', reason: 'invalid-environment' }] })
   })
 
   it('keeps the settings manager as a Loader group and does not bake a server into its entry config', () => {

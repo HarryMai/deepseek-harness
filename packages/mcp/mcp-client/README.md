@@ -47,6 +47,7 @@ mcp-client:
       serverName: codegraph
       command: /usr/local/bin/codegraph
       args: []
+      env: {}
       cwd: /workspace/project
       url: ''
     internal-search:
@@ -59,11 +60,11 @@ mcp-client:
       url: https://mcp.example.test/mcp
 ```
 
-`stdio` starts the configured local executable or runtime directly with its argument vector; a local program such as CodeGraph is a stdio record, not a separate transport. `streamable-http` accepts only `http:` and `https:` endpoints. The settings manager transactionally reconciles only valid records whose individual `enabled` switch is true whenever the section changes, and disables all dynamic child clients when the top-level `enabled` becomes false. Each record defaults to `enabled: false`; the top-level switch, records, and individual switches persist in `$DSH_HOME/settings.yaml`. Incomplete, malformed, or duplicate-`serverName` enabled records stay saved but are skipped without preventing valid enabled peers from loading. The settings-backed manager does not yet accept environment variables or HTTP headers, so authenticated records need a future credential-reference design.
+`stdio` starts the configured local executable or runtime directly with its argument vector and saved environment map; a local program such as CodeGraph is a stdio record, not a separate transport. `streamable-http` accepts only `http:` and `https:` endpoints. The settings manager transactionally reconciles only valid records whose individual `enabled` switch is true whenever the section changes, and disables all dynamic child clients when the top-level `enabled` becomes false. Each record defaults to `enabled: false`; the top-level switch, records, individual switches, argument arrays, and stdio environment maps persist in `$DSH_HOME/settings.yaml`. Incomplete, malformed, duplicate-`serverName`, or invalid-environment enabled records stay saved but are skipped without preventing valid enabled peers from loading. Environment values are stored as supplied, so secrets should use a protected credential mechanism rather than this plain settings field. HTTP headers are not exposed by the settings-backed manager.
 
 ### JSON import and connection testing
 
-The Web page imports common MCP JSON documents with an `mcpServers`, `mcp_servers`, or `servers` map, plus a single record or a bare map. Imported records enter only the unsaved draft, always with their individual switch off; importing never changes the current master switch. `env` and `headers` are rejected because the saved record format cannot retain them safely.
+The Web page imports common MCP JSON documents with an `mcpServers`, `mcp_servers`, or `servers` map, plus a single record or a bare map. Imported records enter only the unsaved draft, always with their individual switch off; importing never changes the current master switch. Stdio `env` maps are retained as string key-value settings, while HTTP `headers` are rejected because the settings page has no editable header fields.
 
 **Test connection** is a loopback-only, one-shot Host probe. It creates a temporary MCP client, performs initialization and `tools/list`, reports the tool count or a generic failure category, and closes the client before replying. It never saves or enables a record, registers tools, or starts the long-lived reconnect supervisor.
 

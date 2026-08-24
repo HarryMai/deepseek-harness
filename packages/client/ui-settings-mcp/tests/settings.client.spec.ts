@@ -57,7 +57,7 @@ describe('McpSettingsController', () => {
     })
     controller.addServer()
     controller.editServer('server-1', {
-      serverName: 'codegraph', command: '/usr/local/bin/codegraph', args: ['serve'], cwd: '/work',
+      serverName: 'codegraph', command: '/usr/local/bin/codegraph', args: ['serve'], env: { CODEGRAPH_HOME: '/work' }, cwd: '/work',
     })
     controller.addServer()
     controller.editServer('server-2', {
@@ -77,10 +77,10 @@ describe('McpSettingsController', () => {
       enabled: true,
       servers: {
         'server-1': {
-          enabled: true, transport: 'stdio', serverName: 'codegraph', command: '/usr/local/bin/codegraph', args: ['serve'], cwd: '/work', url: '',
+          enabled: true, transport: 'stdio', serverName: 'codegraph', command: '/usr/local/bin/codegraph', args: ['serve'], env: { CODEGRAPH_HOME: '/work' }, cwd: '/work', url: '',
         },
         'server-2': {
-          enabled: false, transport: 'streamable-http', serverName: 'docs', command: '', args: [], cwd: '', url: 'https://mcp.example.test/mcp',
+          enabled: false, transport: 'streamable-http', serverName: 'docs', command: '', args: [], env: {}, cwd: '', url: 'https://mcp.example.test/mcp',
         },
       },
     })
@@ -132,6 +132,9 @@ describe('McpSettingsController', () => {
     expect(serverIssue({
       enabled: true, transport: 'stdio', serverName: 'local', command: '/usr/bin/local', args: [], cwd: '', url: '',
     }, true)).toBe('duplicate-server-name')
+    expect(serverIssue({
+      enabled: true, transport: 'stdio', serverName: 'local', command: '/usr/bin/local', args: [], env: { 'BAD=NAME': 'value' }, cwd: '', url: '',
+    })).toBe('invalid-environment')
   })
 
   it('parses standard MCP JSON maps into disabled staged records without changing the master switch', () => {
@@ -148,14 +151,14 @@ describe('McpSettingsController', () => {
           idHint: 'codegraph',
           server: {
             enabled: false, transport: 'stdio', serverName: 'codegraph', command: 'codegraph',
-            args: ['serve', '--mcp'], cwd: '/work', url: '',
+            args: ['serve', '--mcp'], env: {}, cwd: '/work', url: '',
           },
         },
         {
           idHint: 'docs',
           server: {
             enabled: false, transport: 'streamable-http', serverName: 'docs', command: '',
-            args: [], cwd: '', url: 'https://mcp.example.test/mcp',
+            args: [], env: {}, cwd: '', url: 'https://mcp.example.test/mcp',
           },
         },
       ],
@@ -171,7 +174,7 @@ describe('McpSettingsController', () => {
       servers: {
         node_repl: {
           enabled: false, transport: 'stdio', serverName: 'node_repl', command: 'node',
-          args: ['repl.mjs'], cwd: '', url: '',
+          args: ['repl.mjs'], env: {}, cwd: '', url: '',
         },
       },
     })
@@ -179,13 +182,19 @@ describe('McpSettingsController', () => {
     controller.dispose()
   })
 
-  it('rejects JSON that would silently discard environment variables or HTTP headers', () => {
+  it('imports stdio environment variables and still rejects unsupported HTTP headers', () => {
     expect(parseMcpJson(JSON.stringify({
       servers: { codegraph: { command: 'codegraph', env: { TOKEN: 'secret' } } },
-    }))).toEqual({ ok: false, reason: 'unsupported-fields' })
+    }))).toMatchObject({ ok: true, records: [{ server: { env: { TOKEN: 'secret' } } }] })
     expect(parseMcpJson(JSON.stringify({
       mcpServers: { docs: { url: 'https://mcp.example.test/mcp', headers: { Authorization: 'secret' } } },
     }))).toEqual({ ok: false, reason: 'unsupported-fields' })
+    expect(parseMcpJson(JSON.stringify({
+      mcpServers: { codegraph: { command: 'codegraph', env: { TOKEN: 1 } } },
+    }))).toEqual({ ok: false, reason: 'invalid-server' })
+    expect(parseMcpJson(JSON.stringify({
+      mcpServers: { codegraph: { command: 'codegraph', env: { 'BAD=NAME': 'value' } } },
+    }))).toEqual({ ok: false, reason: 'invalid-server' })
   })
 
   it('tests a disabled draft record without saving, enabling, or retaining stale test results after an edit', async () => {
@@ -201,7 +210,7 @@ describe('McpSettingsController', () => {
       expect(controller.store.getSnapshot().tests).toEqual({ 'server-1': { status: 'testing' } })
     })
     expect(tester.test).toHaveBeenCalledWith({
-      enabled: false, transport: 'stdio', serverName: 'codegraph', command: 'codegraph', args: ['serve'], cwd: '', url: '',
+      enabled: false, transport: 'stdio', serverName: 'codegraph', command: 'codegraph', args: ['serve'], env: {}, cwd: '', url: '',
     }, expect.any(AbortSignal))
     expect(scope.writes).toEqual([])
 

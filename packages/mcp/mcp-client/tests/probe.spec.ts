@@ -25,19 +25,10 @@ describe('mcp-client one-shot settings probe', () => {
     await expect(probeMcpConnection(fixturePayload(), undefined, 15_000)).resolves.toEqual({ ok: true, toolCount: 6 })
   }, 30_000)
 
-  it('rejects payload fields that saved MCP settings cannot safely represent', async () => {
-    await expect(probeMcpConnection({
-      server: {
-        enabled: false,
-        transport: 'stdio',
-        serverName: 'bad_probe',
-        command: 'codegraph',
-        args: [],
-        cwd: '',
-        url: '',
-        env: { TOKEN: 'secret' },
-      },
-    }, undefined)).resolves.toEqual({ ok: false, reason: 'invalid-configuration' })
+  it('passes stdio environment variables to the temporary client without returning them', async () => {
+    const payload = fixturePayload() as { server: Record<string, unknown> }
+    payload.server.env = { TOKEN: 'secret' }
+    await expect(probeMcpConnection(payload, undefined, 15_000)).resolves.toEqual({ ok: true, toolCount: 6 })
   })
 
   it('does not start a transport after the browser cancels the request', async () => {

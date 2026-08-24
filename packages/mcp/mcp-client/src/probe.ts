@@ -31,8 +31,9 @@ export const DEFAULT_MCP_CONNECTION_TEST_TIMEOUT_MS = 10_000
 
 const TEST_TIMEOUT_CODE = 'MCP_CONNECTION_TEST_TIMEOUT'
 const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
+const RESERVED_ENV_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 const SERVER_FIELDS = new Set([
-  'enabled', 'transport', 'serverName', 'command', 'args', 'cwd', 'url',
+  'enabled', 'transport', 'serverName', 'command', 'args', 'env', 'cwd', 'url',
 ])
 
 /** Host plugin configuration for a settings-page probe. */
@@ -125,9 +126,8 @@ export async function probeMcpConnection(
 /**
  * Decode the browser payload into the full client configuration required by the MCP SDK.
  *
- * User settings intentionally reject environment variables and HTTP headers. They cannot
- * be represented by the persisted MCP record format, so accepting and silently dropping
- * either value would make a successful test misleading.
+ * User settings retain stdio environment variables as a string map. HTTP headers
+ * remain unavailable because the settings page has no editable header fields.
  */
 function testConfigFromPayload(payload: unknown, timeoutMs: number): McpClientConfig | undefined {
   if (!isPlainObject(payload) || !isPlainObject(payload.server)) return undefined
@@ -139,7 +139,7 @@ function testConfigFromPayload(payload: unknown, timeoutMs: number): McpClientCo
       serverName: server.serverName,
       command: server.command,
       args: server.args,
-      env: {},
+      env: { ...server.env },
       cwd: server.cwd,
       toolCallTimeoutMs: timeoutMs,
       failOnStartupError: true,
@@ -171,12 +171,15 @@ function parseServer(value: Record<string, unknown>): McpServerSettings | undefi
 
   const serverName = value.serverName.trim()
   if (!SERVER_NAME_PATTERN.test(serverName)) return undefined
+  const env = parseEnvironment(value.env)
+  if (env === undefined) return undefined
   const server: McpServerSettings = {
     enabled: value.enabled,
     transport: value.transport,
     serverName,
     command: value.command.trim(),
     args: [...value.args],
+    env,
     cwd: value.cwd.trim(),
     url: value.url.trim(),
   }
@@ -236,4 +239,22 @@ async function listToolCount(client: Client, signal: AbortSignal): Promise<numbe
 /** Narrow JSON-like input without consulting inherited properties. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype
+}
+
+/** Validate one environment variable key accepted by a child-process env map. */
+function isEnvironmentKey(value: string): boolean {
+  return value.length > 0 && !RESERVED_ENV_KEYS.has(value) && !/[=\0\r\n]/u.test(value)
+}
+
+/** Decode the optional stdio environment map without accepting inherited properties. */
+function parseEnvironment(value: unknown): Record<string, string> | undefined {
+  if (value === undefined) return {}
+  if (!isPlainObject(value)) return undefined
+  const entries = Object.entries(value)
+  const environment: Record<string, string> = {}
+  for (const [key, entry] of entries) {
+    if (!isEnvironmentKey(key) || typeof entry !== 'string' || entry.includes('\0')) return undefined
+    environment[key] = entry
+  }
+  return environment
 }

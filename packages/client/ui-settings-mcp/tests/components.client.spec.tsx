@@ -123,4 +123,34 @@ describe('McpSettingsSection', () => {
     await waitFor(() => { expect(screen.getByText('连接成功，发现 2 个工具。')).toBeTruthy() })
     expect(scope.writes).toEqual([])
   })
+
+  it('renders stdio arguments and environment variables as repeatable rows', () => {
+    const { controller } = renderSection()
+
+    fireEvent.click(screen.getByRole('button', { name: '添加 MCP 服务' }))
+    expect(screen.getByRole('textbox', { name: '参数 1' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: '键 1' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: '值 1' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '添加参数' }))
+    expect(screen.getByRole('textbox', { name: '参数 2' })).toBeTruthy()
+    fireEvent.change(screen.getByRole('textbox', { name: '参数 1' }), { target: { value: '--mcp' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '参数 2' }), { target: { value: 'serve' } })
+
+    fireEvent.click(screen.getByRole('button', { name: '添加环境变量' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '键 1' }), { target: { value: 'NODE_ENV' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '值 1' }), { target: { value: 'test' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '键 2' }), { target: { value: 'CODEGRAPH_HOME' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '值 2' }), { target: { value: '/work' } })
+
+    expect(controller.store.getSnapshot().settings.servers['server-1']).toMatchObject({
+      args: ['--mcp', 'serve'],
+      env: { NODE_ENV: 'test', CODEGRAPH_HOME: '/work' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '删除参数 1' }))
+    expect(controller.store.getSnapshot().settings.servers['server-1']?.args).toEqual(['serve'])
+    fireEvent.click(screen.getByRole('button', { name: '删除环境变量 1' }))
+    expect(controller.store.getSnapshot().settings.servers['server-1']?.env).toEqual({ CODEGRAPH_HOME: '/work' })
+  })
 })

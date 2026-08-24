@@ -23,6 +23,8 @@ export interface McpServerSettings {
   command: string
   /** One command argument per item. */
   args: string[]
+  /** Extra environment variables merged into the child process environment. */
+  env?: Record<string, string>
   /** Optional working directory for a local command. */
   cwd: string
   /** Streamable HTTP endpoint. */
@@ -87,7 +89,7 @@ export interface McpSettings {
 export const DEFAULT_MCP_SETTINGS: McpSettings = { enabled: false, servers: {} }
 
 /** Why a record will not be loaded when the master switch is enabled. */
-export type McpServerIssue = 'disabled' | 'incomplete' | 'invalid-server-name' | 'invalid-url' | 'duplicate-server-name'
+export type McpServerIssue = 'disabled' | 'incomplete' | 'invalid-server-name' | 'invalid-url' | 'invalid-environment' | 'duplicate-server-name'
 
 /** Browser state rendered by the Custom Configuration settings section. */
 export interface McpSettingsState {
@@ -135,11 +137,12 @@ export interface McpSettingsFace {
 const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
 const RECORD_ID_PATTERN = /^[A-Za-z0-9_-]+$/
 const RESERVED_RECORD_IDS = new Set(['__proto__', 'constructor', 'prototype'])
+const RESERVED_ENV_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 const IMPORT_ROOT_KEYS = ['mcpServers', 'mcp_servers', 'servers'] as const
 const IMPORT_SERVER_KEYS = new Set([
-  'transport', 'type', 'serverName', 'name', 'id', 'command', 'args', 'cwd', 'url', 'enabled',
+  'transport', 'type', 'serverName', 'name', 'id', 'command', 'args', 'env', 'cwd', 'url', 'enabled',
 ])
-const UNSUPPORTED_IMPORT_SERVER_KEYS = new Set(['env', 'headers'])
+const UNSUPPORTED_IMPORT_SERVER_KEYS = new Set(['headers'])
 
 const unavailableConnectionTester: McpConnectionTester = {
   async test(): Promise<McpConnectionTestResult> {
@@ -149,7 +152,7 @@ const unavailableConnectionTester: McpConnectionTester = {
 
 /** Make an independent record copy before it leaves the controller. */
 function cloneServer(server: McpServerSettings): McpServerSettings {
-  return { ...server, args: [...server.args] }
+  return { ...server, args: [...server.args], env: { ...(server.env ?? {}) } }
 }
 
 /** Make an independent copy before a local draft receives edits. */
@@ -171,6 +174,7 @@ function normalizeSettings(value: McpSettings | undefined): McpSettings {
       serverName: typeof server.serverName === 'string' ? server.serverName : '',
       command: typeof server.command === 'string' ? server.command : '',
       args: Array.isArray(server.args) ? server.args.filter((arg): arg is string => typeof arg === 'string') : [],
+      env: normalizeEnvironment(server.env),
       cwd: typeof server.cwd === 'string' ? server.cwd : '',
       url: typeof server.url === 'string' ? server.url : '',
     }])),
@@ -195,7 +199,10 @@ export function serverIssue(server: McpServerSettings, duplicateServerName = fal
   if (serverName.length === 0) return 'incomplete'
   if (!SERVER_NAME_PATTERN.test(serverName)) return 'invalid-server-name'
   if (duplicateServerName) return 'duplicate-server-name'
-  if (server.transport === 'stdio') return server.command.trim().length === 0 ? 'incomplete' : undefined
+  if (server.transport === 'stdio') {
+    if (!isValidEnvironment(server.env)) return 'invalid-environment'
+    return server.command.trim().length === 0 ? 'incomplete' : undefined
+  }
   const url = server.url.trim()
   if (url.length === 0) return 'incomplete'
   try {
@@ -207,7 +214,7 @@ export function serverIssue(server: McpServerSettings, duplicateServerName = fal
 }
 
 /**
- * Convert the textarea representation into exact command arguments.
+ * Convert line-oriented argument input into exact command arguments.
  *
  * @param text - one argument per line.
  * @returns non-empty lines in their original order.
@@ -221,9 +228,9 @@ export function argumentsFromText(text: string): string[] {
  *
  * Accepted documents use `mcpServers`, `mcp_servers`, or `servers` as their
  * service map. A single service record and a bare map of service records are
- * also accepted for convenient copy-and-paste. Environment variables and HTTP
- * headers are rejected rather than silently discarded because saved MCP
- * settings cannot represent either field safely.
+ * also accepted for convenient copy-and-paste. Environment variables are
+ * retained as a string map; HTTP headers remain unsupported by this settings
+ * surface because the HTTP transport has no editable header fields.
  *
  * @param text - JSON copied from an MCP configuration document.
  * @returns normalized, disabled records or a user-facing parse category.
@@ -279,6 +286,9 @@ function parseMcpServer(value: Record<string, unknown>, fallbackId: string): Mcp
     return { ok: false, reason: 'invalid-server' }
   }
 
+  const env = value.env === undefined ? {} : parseEnvironment(value.env)
+  if (env === undefined) return { ok: false, reason: 'invalid-server' }
+
   const transport = parseTransport(value.transport, value.type, value.command, value.url)
   if (transport === undefined) return { ok: false, reason: 'invalid-server' }
   const serverName = firstNonEmpty(value.serverName, value.name, fallbackId)
@@ -304,6 +314,7 @@ function parseMcpServer(value: Record<string, unknown>, fallbackId: string): Mcp
         serverName,
         command,
         args,
+        env,
         cwd,
         url,
       },
@@ -345,6 +356,33 @@ function looksLikeMcpServer(value: Record<string, unknown>): boolean {
 /** Keep dangerous object-property names out of both JSON maps and staged ids. */
 function isSafeRecordId(value: string): boolean {
   return !RESERVED_RECORD_IDS.has(value) && RECORD_ID_PATTERN.test(value)
+}
+
+/** Validate one environment variable key accepted by a child-process env map. */
+function isEnvironmentKey(value: string): boolean {
+  return value.length > 0 && !RESERVED_ENV_KEYS.has(value) && !/[=\0\r\n]/u.test(value)
+}
+
+/** Parse user-authored environment variables without accepting inherited object properties. */
+function parseEnvironment(value: unknown): Record<string, string> | undefined {
+  if (!isPlainObject(value)) return undefined
+  const entries = Object.entries(value)
+  const environment: Record<string, string> = {}
+  for (const [key, entry] of entries) {
+    if (!isEnvironmentKey(key) || typeof entry !== 'string' || entry.includes('\0')) return undefined
+    environment[key] = entry
+  }
+  return environment
+}
+
+/** Normalize an older or malformed settings value before it reaches the editor. */
+function normalizeEnvironment(value: unknown): Record<string, string> {
+  return parseEnvironment(value) ?? {}
+}
+
+/** Check an already typed environment map before it is sent to the Host. */
+function isValidEnvironment(value: Record<string, string> | undefined): boolean {
+  return Object.entries(value ?? {}).every(([key, entry]) => isEnvironmentKey(key) && !entry.includes('\0'))
 }
 
 /** Validate the HTTP-only endpoint form the saved settings manager supports. */
@@ -445,6 +483,7 @@ export class McpSettingsController {
           serverName: id,
           command: '',
           args: [],
+          env: {},
           cwd: '',
           url: '',
         },
@@ -501,6 +540,7 @@ export class McpSettingsController {
           ...current,
           ...patch,
           ...patch.args === undefined ? {} : { args: [...patch.args] },
+          ...patch.env === undefined ? {} : { env: { ...patch.env } },
         },
       },
     }
