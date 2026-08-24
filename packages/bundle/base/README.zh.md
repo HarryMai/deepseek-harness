@@ -4,6 +4,8 @@
 
 以 profile 组合包形式交付的共享 dsh 核心：[`cordis.patch.yml`](cordis.patch.yml) 在空的 profile 根之上插入全部基础插件行——模型适配器、共享的 [`agent-default-model`](../../core/agent-default-model/README.zh.md) 选择、工具、持久化、策略、settings／credentials、遥测与核心 spawn／fork subagent provider——作为每个 profile 的 `dsh.profile.bundles` 列表中的第一层。可选的 Codex 与 Claude Code provider 不属于本包及其生产依赖闭包；Profile 仅在需要时安装任一[产品 provider Bundle](../../subagent/README.zh.md)。因此，默认的 `@deepseek-ai/dsh` 生产依赖闭包既不包含任一产品 provider、Claude Agent SDK，也不包含 Codex wrapper 及其平台载荷。后续的组合包层（例如 [`dsh-web-app`](../web-app/README.zh.md)）和用户 profile 的 `cordis.patch.yml` 按 id 覆盖这些行；patch 会替换目标行的整个 `config`，因此模式专属的值放在各模式组合包中，而不是这里。该包没有运行时 API；profile 组合器通过 manifest（元数据清单）的 `dsh.bundle.patch` 字段解析 patch，绝不通过代码。
 
+`mcp-settings` 行是一个受 settings 驱动的空 Loader group，不是一台已经配置好的 MCP 服务器。其默认的 `mcp-client` 分节处于关闭状态，不包含命令或端点，因此在用户保存完整记录、打开总开关并启用每个目标记录之前，不会启动本地进程或 HTTP 客户端。新记录的独立开关默认关闭并与记录一起持久化；之后由这个 group 负责每个记录的动态客户端生命周期。`dsh-web-app` 提供相应的**自定义配置** Settings 页面。
+
 patch 在自身上按平台门控两个 shell 栈：`bash-sandbox`/`tool-bash` 携带 `disabled: !!js process.platform === 'win32'`（bash 没有 Windows runner），它们的孪生行 `pwsh-sandbox`/`tool-pwsh` 以取反的表达式仅在 win32 挂载——同一份 patch 文件，每个宿主恰好挂载一个 shell 栈。权限面与 POSIX 完全一致：`sandbox`/`sandbox-policy` 通过 Windows ACL 受限令牌 runner（`dsh-sandbox-local` 的 win32 链 → `@deepseek-ai/dsh-sandbox-windows-acl`）执行文件效果策略，权限切换器与 approval 服务原样运行，`fs-sandbox` 继续围栏 `ctx.fs` 写入——在其旁再挂载 `dsh-fs-local` 会重复注册 `ctx.fs` 并在加载时失败。偏好不受沙盒约束的本地 pwsh 执行器或完整访问的 Windows 主机通过其 profile 或 home 的 `cordis.patch.yml` 覆盖这些行（bash 恢复配方必须完整：禁用 `pwsh-sandbox`/`tool-pwsh` 并重新启用 `bash-sandbox`/`tool-bash`——两个执行器家族注册同一个 `bash` 服务，配方不完整会在加载时直接报错）。POSIX 主机看到的是被禁用的 pwsh 行。
 
 行集合及其设计依据以行内注释写在 patch 文件里；[生成的组合图](../../../apps/cli/composition.md)负责渲染它。

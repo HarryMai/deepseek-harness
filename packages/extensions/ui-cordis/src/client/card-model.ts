@@ -54,8 +54,21 @@ function stringAt(source: Record<string, unknown>, key: string): string | null {
 }
 
 function objectAt(source: Record<string, unknown>, key: string): Record<string, unknown> | null {
-  const value = source[key]
-  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : null
+  return jsonObject(source[key])
+}
+
+/** Decode one historical structured call field when a model submitted it as JSON text. */
+function jsonObject(value: unknown): Record<string, unknown> | null {
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value) as unknown
+    } catch {
+      return null
+    }
+  }
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
 }
 
 function parseArgs(argsRaw: string): Record<string, unknown> | null {

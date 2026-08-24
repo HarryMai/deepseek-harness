@@ -21,6 +21,10 @@ A refusal from `run` or `stop` names one of `definition-missing`, `host-half-fai
 
 A definition another session defined reads as absent rather than forbidden, so nothing leaks across sessions. `invoke` and `resolveRequestRun` carry no session at all: a component's call and a page's answer are page-global facts, not one session's.
 
+## Inspect input routing
+
+`CordisInspectRegistryService` routes model-facing Host and Client inspection queries to the provider that declared the method schema. It validates the supplied JSON value first. Only when that value fails, is a string, and parsing the string produces a value that satisfies the same exact method input schema does it forward the parsed value instead. Thus a provider whose legitimate input is a JSON-looking string continues to receive that string, while an accidental serialized object such as `{"root":"shell.overlay"}` reaches an object-taking method as an object. Malformed or still-invalid text preserves the ordinary schema failure.
+
 Four forwarded events belong to this feature, declared by this package on its client-safe [`./types`](src/types.ts) subpath and allowlisted for delivery by [`@deepseek-ai/dsh-api-remotes`](../../api/remotes/README.md), which is what lets a browser reach them through `ctx.remote.$on`: `cordis/request-run` (`{requestId, agentId, id, name, purpose}` — metadata, never code), `cordis/request-run-resolved` (`{requestId, outcome}`), `dynamicCordisRunner/package` (`{id, name, rev}`), and `dynamicCordisRunner/retract` (`{id, rev}`). The last two are a symmetric pair announcing run state — every fresh start and every stop, whether or not the package has a browser half.
 
 ## Storage stance

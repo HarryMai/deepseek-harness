@@ -312,6 +312,10 @@ Define an immutable Cordis Package. For a new Plugin, use kind:"new" and provide
             "kind",
             "pluginId"
           ]
+        },
+        {
+          "type": "string",
+          "description": "Compatibility input: JSON text encoding one valid new or existing Plugin selector. Pass an object directly in new calls."
         }
       ]
     },
@@ -324,18 +328,26 @@ Define an immutable Cordis Package. For a new Plugin, use kind:"new" and provide
       "description": "One-sentence, user-facing description of the Package purpose."
     },
     "code": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "host": {
-          "type": "string",
-          "description": "Plain JavaScript function body that returns the Host-half Cordis Plugin."
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "host": {
+              "type": "string",
+              "description": "Plain JavaScript function body that returns the Host-half Cordis Plugin."
+            },
+            "client": {
+              "type": "string",
+              "description": "Plain JavaScript function body that returns the browser Client-half Cordis Plugin."
+            }
+          }
         },
-        "client": {
+        {
           "type": "string",
-          "description": "Plain JavaScript function body that returns the browser Client-half Cordis Plugin."
+          "description": "Compatibility input: JSON text encoding a source object. Pass an object with host and/or client directly in new calls."
         }
-      }
+      ]
     }
   },
   "required": [

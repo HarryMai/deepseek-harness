@@ -316,6 +316,10 @@ pwsh 工具是 Windows 组合中 bash 执行器 seam 的 PowerShell 方言消费
             "kind",
             "pluginId"
           ]
+        },
+        {
+          "type": "string",
+          "description": "Compatibility input: JSON text encoding one valid new or existing Plugin selector. Pass an object directly in new calls."
         }
       ]
     },
@@ -328,18 +332,26 @@ pwsh 工具是 Windows 组合中 bash 执行器 seam 的 PowerShell 方言消费
       "description": "One-sentence, user-facing description of the Package purpose."
     },
     "code": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "host": {
-          "type": "string",
-          "description": "Plain JavaScript function body that returns the Host-half Cordis Plugin."
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "host": {
+              "type": "string",
+              "description": "Plain JavaScript function body that returns the Host-half Cordis Plugin."
+            },
+            "client": {
+              "type": "string",
+              "description": "Plain JavaScript function body that returns the browser Client-half Cordis Plugin."
+            }
+          }
         },
-        "client": {
+        {
           "type": "string",
-          "description": "Plain JavaScript function body that returns the browser Client-half Cordis Plugin."
+          "description": "Compatibility input: JSON text encoding a source object. Pass an object with host and/or client directly in new calls."
         }
-      }
+      ]
     }
   },
   "required": [

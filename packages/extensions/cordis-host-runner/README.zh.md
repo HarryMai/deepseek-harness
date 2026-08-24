@@ -21,6 +21,10 @@
 
 别的会话登记的定义读起来是不存在，而不是被禁止，因此不会跨会话泄漏任何东西。`invoke` 与 `resolveRequestRun` 完全不携带会话：组件的一次调用和页面的一次作答都是页面全局的事实，不属于某一个会话。
 
+## Inspect 输入路由
+
+`CordisInspectRegistryService` 会把面向模型的 Host 和 Client 检查查询路由给声明该方法 schema 的 provider。它先校验传入的 JSON 值；只有当该值校验失败、它是字符串、并且解析该字符串后的值能通过同一份精确方法输入 schema 时，才会转发解析后的值。因此，一个合法输入本来就是 JSON 外观字符串的 provider 仍会收到原字符串；而意外序列化的对象（例如 `{"root":"shell.overlay"}`）则会作为对象到达需要对象的方法。格式错误或解码后仍不合法的文本会保留普通 schema 失败。
+
 本功能拥有四条转发事件，由本包在其 client-safe 的 [`./types`](src/types.ts) 子路径上声明，并由 [`@deepseek-ai/dsh-api-remotes`](../../api/remotes/README.zh.md) 的白名单准许投递——正是这一点让浏览器能经 `ctx.remote.$on` 收到它们：`cordis/request-run`（`{requestId, agentId, id, name, purpose}`——只有元数据，绝无代码）、`cordis/request-run-resolved`（`{requestId, outcome}`）、`dynamicCordisRunner/package`（`{id, name, rev}`），以及 `dynamicCordisRunner/retract`（`{id, rev}`）。后两者是对称的一对运行状态播报：每次全新启动与每次停止都播，与该包有没有浏览器半无关。
 
 ## 存储立场

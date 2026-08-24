@@ -36,6 +36,19 @@ describe('cordisDefineCard', () => {
     expect(card.packageId).toBeNull()
   })
 
+  it('reads the code halves when a compatible define call encoded its source object as JSON text', () => {
+    const card = cordisDefineCard(running({
+      argsRaw: JSON.stringify({
+        plugin: JSON.stringify({ kind: 'new', idPrefix: 'clock' }),
+        name: 'clock',
+        purpose: 'top-bar clock',
+        code: JSON.stringify({ host: 'HOST_CODE', client: 'CLIENT_CODE' }),
+      }),
+    }))
+
+    expect(card).toMatchObject({ hostCode: 'HOST_CODE', clientCode: 'CLIENT_CODE' })
+  })
+
   it('takes the minted id from the result presentation meta', () => {
     expect(cordisDefineCard(settled()).pluginId).toBe('dyn-1')
     expect(cordisDefineCard(settled()).packageId).toBe('pkg-1')

@@ -13,6 +13,8 @@
 import { describe, expect, it } from 'vitest'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import * as mcpClient from '@deepseek-ai/dsh-mcp-client'
+import * as mcpSettings from '@deepseek-ai/dsh-mcp-client/settings'
+import * as mcpProbe from '@deepseek-ai/dsh-mcp-client/probe'
 
 describe('dsh-mcp-client real-load-path guard', () => {
   it('has no default export and keeps name/inject/Config through unwrapExports', () => {
@@ -25,5 +27,27 @@ describe('dsh-mcp-client real-load-path guard', () => {
     expect(unwrapped.inject).toEqual(['tools'])
     expect(typeof unwrapped.apply).toBe('function')
     expect(unwrapped.Config).toBeDefined()
+  })
+
+  it('exports the settings-backed Loader group through its public subpath', () => {
+    expect('default' in mcpSettings).toBe(false)
+
+    const loader = Object.create(Loader.prototype) as Loader
+    const unwrapped = loader.unwrapExports(mcpSettings) as Record<string, unknown>
+    expect(unwrapped).toBe(mcpSettings)
+    expect(unwrapped.name).toBe('mcp-client-settings')
+    expect(unwrapped.inject).toEqual([])
+    expect(typeof unwrapped.apply).toBe('function')
+  })
+
+  it('exports the loopback-only connection probe through its public subpath', () => {
+    expect('default' in mcpProbe).toBe(false)
+
+    const loader = Object.create(Loader.prototype) as Loader
+    const unwrapped = loader.unwrapExports(mcpProbe) as Record<string, unknown>
+    expect(unwrapped).toBe(mcpProbe)
+    expect(unwrapped.name).toBe('mcp-client-probe')
+    expect(unwrapped.inject).toEqual([])
+    expect(typeof unwrapped.apply).toBe('function')
   })
 })

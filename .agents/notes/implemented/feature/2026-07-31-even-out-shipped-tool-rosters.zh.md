@@ -30,11 +30,15 @@ Status: implemented
 
 **LSP 三件套**留在外面是运维原因而非安全原因:`command` 在插件加载时从 `PATH` 解析,因此缺少语言服务器会让整次启动失败,而不只是失去一个工具。等到「缺失」退化为「跳过注册」之后,它就可以挂了。
 
-### MCP 是依赖,不是配置行
+### MCP 是按 settings 启用的 group
 
-`@deepseek-ai/dsh-mcp-client` 成为本 CLI（命令行界面）的运行时依赖,但在任何交付配置里都没有对应的行。该插件每个实例只挂载一台服务器,且 `command` 是必填,因此一个默认值必须点名一台第三方服务器,并在每次启动时把它作为子进程 spawn——不经 `ctx.shell`,因而也在 Web surface 所组合的沙箱策略之外。
+`@deepseek-ai/dsh-mcp-client` 是运行时依赖，`dsh-base` 也挂载了它的 `mcp-settings` Loader group，但交付的行带着空子项列表，`mcp-client` 分节默认也是 `enabled: false`。因此，刚启动时它不点名任何第三方服务器，不启动本地子进程，也不提供 MCP 工具。
 
-真正能让 MCP 成为默认的那一层,恰恰是本仓库尚未拥有的:一个读取用户服务器清单、按条目逐台挂载客户端的桥接,形态与 [`dsh-hooks-claude-code`](../../../../packages/hooks/hooks-claude-code/README.zh.md) 读取 Claude Code 的 `hooks.json` 完全相同。交付这个依赖意味着已安装的 `dsh` 今天就能从 `$DSH_HOME/config.yaml` 挂载服务器;CLI README 里给了那段 YAML。
+这个 group 读取用户按键保存的 MCP 记录，只有用户同时启用该分节和该记录时才会为每个有效条目创建一个客户端。每条新记录默认关闭；Web Settings 中的**自定义配置**页面会持久化总开关、每条记录及其独立开关。关闭总开关会卸载全部动态子项，关闭单条记录只会卸载该子项。CodeGraph 这类本地可执行程序是 `stdio` 记录；远端服务器是 `streamable-http` 记录。记录仍是用户选择、在 `ctx.shell` 与其沙箱策略之外运行的进程；显式启用以及应用中没有写死命令才是这里的产品边界。
+
+同一页面还可以导入粘贴的 `mcpServers`、`mcp_servers` 或 `servers` JSON 映射、裸映射或单条记录。导入只会修改未保存的草稿，保留总开关状态，并强制关闭每条导入记录。它会拒绝 `env` 和 `headers`，而不是悄悄丢弃已保存 settings 格式无法表示的凭据形数据。
+
+针对一条暂存记录，**测试连接**会调用仅限环回地址的 Host 端点；该端点创建临时 MCP 客户端，初始化它，列出工具，并在回复前关闭它。探测只报告数量或通用失败类别；它绝不会保存或启用记录、注册工具，或启动长期运行的重连 supervisor。
 
 ## 测试
 
@@ -58,12 +62,12 @@ Status: implemented
 
 **开启 Code Mode。** 它的信任立场按设计与 bash 同级,工具调用要过与 bash 相同的 `tools/pre-execute` 闸门,所以它与上面那些模型写码工具不是同一个判断。在这里仍被否决:`both` 会改变两个 surface 上每一个模型可见请求,而 `code` 是把线路替换而非加一个——两者都是呈现方式的决定,不是工具清单的决定。
 
-**默认挂一台 MCP 服务器。**否决，因为交付默认值必须点名一台，而任何选择都会在每个用户的机器上、在沙箱之外 spawn 一个第三方子进程。改为交付依赖。
+**默认挂一台固定的 MCP 服务器。**否决，因为交付默认值必须点名一台，而任何选择都会在每个用户的机器上、在沙箱之外 spawn 一个第三方子进程。改为交付 settings group；在用户输入记录之前它保持为空且关闭，应用绝不写死一台服务器的选择。
 
 ## 后果
 
 同一个模型在两个 surface 上拿到同样的工具,那处没有记录理由的差异消失了。测试会精确断言二十个无条件提供的名称，并把 `glob` 与 `grep` 作为固定成员钉在两侧，因此日后只改一个 surface 都会让检查失败而不是悄悄发出去；[session-search-not-shipped-default 决策](2026-08-02-session-search-not-shipped-default.zh.md)正是这样一次后来的改动，两个测试也随之移动。
 
-`apps/cli` 增加了五个 workspace 依赖:四个是交付树当时挂载的,外加 `dsh-mcp-client`——它并不被挂载,存在的意义是让已安装的 `dsh` 能挂。四个保留了下来——[session-search-not-shipped-default 决策](2026-08-02-session-search-not-shipped-default.zh.md)把 `@deepseek-ai/dsh-tool-session-query` 连同它的行一起移除了。
+`dsh-base` 现在依赖 `dsh-mcp-client` 并挂载空的 `mcp-settings` group。这是一条稳定的 settings 接缝，不是新的默认工具清单：只有填写完整且总开关与独立开关都启用的记录，才会加入它所发现的、以服务器名限定的工具。历史 workspace 依赖中有四个保留下来——[session-search-not-shipped-default 决策](2026-08-02-session-search-not-shipped-default.zh.md)把 `@deepseek-ai/dsh-tool-session-query` 连同它的行一起移除了。
 
 执行策略独立于工具清单。[共享 workspace-write 决策](2026-07-31-workspace-write-surface-default.zh.md)拥有两个 surface 的沙箱执行器与默认权限；更改该策略不会增加或移除工具。

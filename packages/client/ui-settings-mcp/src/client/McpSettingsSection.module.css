@@ -1,0 +1,194 @@
+.section {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.header h2,
+.serverHeader h3,
+.cardHeader h4 {
+  margin: 0;
+}
+
+.header p,
+.masterDescription,
+.empty,
+.status,
+.readOnly,
+.recordStatus,
+.failed {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.master {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.masterDescription[data-enabled='true'],
+.recordStatus[data-ready='true'] {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.serverHeader,
+.cardHeader,
+.footer,
+.actions,
+.serverActions,
+.cardActions,
+.recordEnabled {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.serverHeader,
+.footer {
+  justify-content: space-between;
+}
+
+.records {
+  display: grid;
+  gap: 12px;
+}
+
+.importPanel {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.importPanel textarea {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 8px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+  font: inherit;
+  resize: vertical;
+}
+
+.importPanel small,
+.importStatus,
+.testStatus {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.importStatus[data-success='true'],
+.testStatus[data-status='success'] {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.importStatus[data-success='false'],
+.testStatus[data-status='failure'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.cardHeader {
+  justify-content: space-between;
+}
+
+.recordEnabled {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.875rem;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.fields input,
+.fields select,
+.fields textarea {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 8px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+  font: inherit;
+}
+
+.fields textarea {
+  resize: vertical;
+}
+
+.fields small {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.add,
+.import,
+.save,
+.discard,
+.remove,
+.test {
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 11px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.save {
+  color: var(--dsw-alias-bg-base);
+  background: var(--dsw-alias-brand-primary);
+}
+
+.remove {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.add:disabled,
+.import:disabled,
+.save:disabled,
+.discard:disabled,
+.remove:disabled,
+.test:disabled,
+.recordEnabled input:disabled,
+.fields input:disabled,
+.fields select:disabled,
+.fields textarea:disabled,
+.importPanel textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.unsaved {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.failed {
+  color: var(--dsw-alias-state-error-primary);
+}

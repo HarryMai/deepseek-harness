@@ -56,18 +56,36 @@ export function presentPackageInspectCall(args: { pluginId: string; packageId: s
  * @returns replay-safe generic call presentation with source in raw input.
  */
 export function presentDefineCall(args: {
-  plugin: { kind: 'new'; idPrefix: string } | { kind: 'existing'; pluginId: string }
+  plugin: { kind: 'new'; idPrefix: string } | { kind: 'existing'; pluginId: string } | string
   name: string
   purpose: string
-  code: { host?: string; client?: string }
+  code: { host?: string; client?: string } | string
 }): GenericCallView {
-  const target = args.plugin.kind === 'new' ? `new ${args.plugin.idPrefix}-*` : args.plugin.pluginId
+  const plugin = jsonObject(args.plugin)
+  const code = jsonObject(args.code)
+  const target = plugin?.kind === 'new' && typeof plugin.idPrefix === 'string'
+    ? `new ${plugin.idPrefix}-*`
+    : typeof plugin?.pluginId === 'string' ? plugin.pluginId : 'an unknown Plugin'
   return {
     card: 'generic',
     kind: 'execute',
     title: `Register Cordis Plugin "${args.name}" for ${target}: ${args.purpose}`,
-    rawInput: args.code,
+    rawInput: code ?? args.code,
   }
+}
+
+/** Read a structured presentation field that may have reached the log as JSON text. */
+function jsonObject(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value) as unknown
+    } catch {
+      return undefined
+    }
+  }
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
 }
 
 /**

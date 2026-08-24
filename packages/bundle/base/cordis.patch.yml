@@ -424,6 +424,17 @@
     - id: tools
       name: '@deepseek-ai/dsh-tools'
 
+    # User-owned MCP integration. The empty group is always composed, but it
+    # creates no child client or subprocess until `$DSH_HOME/settings.yaml`
+    # supplies `mcp-client.enabled: true` and at least one complete record
+    # with its individual `enabled` switch set to true.
+    # The manager applies later settings changes transactionally, so either
+    # switch unloads its affected clients rather than leaving a dormant connection.
+    - id: mcp-settings
+      name: '@deepseek-ai/dsh-mcp-client/settings'
+      group: true
+      config: []
+
     # The deployment persona is a deployment choice; plan-mode and tool plugins own
     # their own prompt sections.
     - id: system-prompt

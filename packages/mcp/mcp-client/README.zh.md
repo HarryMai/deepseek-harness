@@ -31,6 +31,42 @@ MCP 客户端桥接插件：连接外部 [Model Context Protocol](https://modelc
 
 模型会看到 `mcp__github__create_issue`、`mcp__web__search` 等工具，这与 Claude Code 和 Codex 使用的服务器限定形状相同。HMR（热模块替换）支持热替换：编辑配置项会触发断开 + 重新连接，无需重启进程；`serverName` 不变时会生成完全相同的工具名称。
 
+## 用户管理的服务器
+
+随发行版交付的 base profile 将 `@deepseek-ai/dsh-mcp-client/settings` 挂为一个空的 Loader group。它不含内置 MCP 服务器、命令、URL 或凭据，默认的 `mcp-client` settings 分节也是关闭的。因此，刚安装的应用既不会启动 MCP 客户端，也不会启动本地子进程。
+
+Web Settings 中的**自定义配置**页面会把任意数量的用户记录写入 `$DSH_HOME/settings.yaml`。也可以直接编写已保存的配置：
+
+```yaml
+mcp-client:
+  enabled: true
+  servers:
+    codegraph:
+      enabled: true
+      transport: stdio
+      serverName: codegraph
+      command: /usr/local/bin/codegraph
+      args: []
+      cwd: /workspace/project
+      url: ''
+    internal-search:
+      enabled: false
+      transport: streamable-http
+      serverName: search
+      command: ''
+      args: []
+      cwd: ''
+      url: https://mcp.example.test/mcp
+```
+
+`stdio` 直接以参数向量启动配置的本地可执行文件或运行时；CodeGraph 这类本地程序属于 stdio 记录，而不是另一种传输。`streamable-http` 只接受 `http:` 和 `https:` 端点。settings 管理器会在分节变化时以事务方式只协调独立 `enabled` 开关为 true 的有效记录；顶层 `enabled` 变为 false 时会卸载全部动态子客户端。每条记录默认 `enabled: false`；顶层开关、记录和独立开关都会持久化到 `$DSH_HOME/settings.yaml`。不完整、格式错误或 `serverName` 重复的已启用记录仍会被保存，但会跳过，且不会阻止有效的已启用同级记录加载。受 settings 驱动的管理器尚不接受环境变量或 HTTP 标头，因此带鉴权的记录需要未来的凭据引用设计。
+
+### JSON 导入和连接测试
+
+Web 页面可以导入含有 `mcpServers`、`mcp_servers` 或 `servers` 映射的常见 MCP JSON 文档，也可导入单条记录或裸映射。导入的记录只进入未保存的草稿，且独立开关始终关闭；导入不会改变当前总开关。由于已保存的记录格式无法安全保留，含有 `env` 或 `headers` 的 JSON 会被拒绝。
+
+**测试连接**是仅限环回地址的一次性 Host 探测。它会创建临时 MCP 客户端，完成初始化和 `tools/list`，报告工具数量或通用失败类别，并在回复前关闭客户端。它绝不会保存或启用记录、注册工具，或启动长期运行的重连 supervisor。
+
 ## 配置
 
 | 字段 | 传输 | 必填 | 描述 |

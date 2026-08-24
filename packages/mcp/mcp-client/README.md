@@ -31,6 +31,42 @@ One plugin instance per MCP server in `cordis.yml`:
 
 The model sees `mcp__github__create_issue`, `mcp__web__search`, … — the same server-qualified shape Claude Code and Codex use. HMR hot-swaps: editing the entry triggers disconnect + reconnect without process restart; an unchanged `serverName` reproduces identical tool names.
 
+## User-managed servers
+
+The shipped base profile mounts `@deepseek-ai/dsh-mcp-client/settings` as an empty Loader group. It has no built-in MCP server, command, URL, or credential, and its default `mcp-client` settings section is disabled. Consequently, a fresh application launch starts neither an MCP client nor a local child process.
+
+The Web Settings **Custom Configuration** page writes any number of user-owned records into `$DSH_HOME/settings.yaml`. A saved configuration can also be authored directly:
+
+```yaml
+mcp-client:
+  enabled: true
+  servers:
+    codegraph:
+      enabled: true
+      transport: stdio
+      serverName: codegraph
+      command: /usr/local/bin/codegraph
+      args: []
+      cwd: /workspace/project
+      url: ''
+    internal-search:
+      enabled: false
+      transport: streamable-http
+      serverName: search
+      command: ''
+      args: []
+      cwd: ''
+      url: https://mcp.example.test/mcp
+```
+
+`stdio` starts the configured local executable or runtime directly with its argument vector; a local program such as CodeGraph is a stdio record, not a separate transport. `streamable-http` accepts only `http:` and `https:` endpoints. The settings manager transactionally reconciles only valid records whose individual `enabled` switch is true whenever the section changes, and disables all dynamic child clients when the top-level `enabled` becomes false. Each record defaults to `enabled: false`; the top-level switch, records, and individual switches persist in `$DSH_HOME/settings.yaml`. Incomplete, malformed, or duplicate-`serverName` enabled records stay saved but are skipped without preventing valid enabled peers from loading. The settings-backed manager does not yet accept environment variables or HTTP headers, so authenticated records need a future credential-reference design.
+
+### JSON import and connection testing
+
+The Web page imports common MCP JSON documents with an `mcpServers`, `mcp_servers`, or `servers` map, plus a single record or a bare map. Imported records enter only the unsaved draft, always with their individual switch off; importing never changes the current master switch. `env` and `headers` are rejected because the saved record format cannot retain them safely.
+
+**Test connection** is a loopback-only, one-shot Host probe. It creates a temporary MCP client, performs initialization and `tools/list`, reports the tool count or a generic failure category, and closes the client before replying. It never saves or enables a record, registers tools, or starts the long-lived reconnect supervisor.
+
 ## Config
 
 | Field | Transport | Required | Description |

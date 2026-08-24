@@ -30,11 +30,15 @@ Withholding it narrows the surface without removing the reach: `bash` is mounted
 
 **The LSP trio** stays out for an operational reason rather than a security one: `command` resolves from `PATH` at plugin load, so a missing language server fails the whole boot rather than one tool. It becomes mountable once absence degrades to a skipped registration.
 
-### MCP is a dependency, not a row
+### MCP is an opt-in settings group
 
-`@deepseek-ai/dsh-mcp-client` becomes a runtime dependency of the CLI without a row in any shipped config. The plugin mounts exactly one server per instance and `command` is required, so a default would have to name a third-party server and spawn it as a child process on every launch — outside `ctx.shell`, and therefore outside the sandbox policy the Web surface composes.
+`@deepseek-ai/dsh-mcp-client` is a runtime dependency and `dsh-base` mounts its `mcp-settings` Loader group, but the shipped row has an empty child list and the `mcp-client` section defaults to `enabled: false`. It therefore names no third-party server, starts no local child process, and contributes no MCP tools on a fresh launch.
 
-The layer that would make MCP a default is the one this repository does not have yet: a bridge that reads a user's server list and mounts one client per entry, the same shape [`dsh-hooks-claude-code`](../../../../packages/hooks/hooks-claude-code/README.md) already has for a Claude Code `hooks.json`. Shipping the dependency means an installed `dsh` can mount servers from `$DSH_HOME/config.yaml` today; the CLI README carries the YAML.
+The group reads the user's keyed MCP records and creates one client per valid entry only when the user enables both the section and that record. Every new record starts disabled; the Web Settings **Custom Configuration** page persists the master switch, each record, and its individual switch. Disabling the master switch unloads every dynamic child, while disabling one record unloads only that child. A local executable such as CodeGraph is a `stdio` record; a remote server is a `streamable-http` record. The records are still user-selected processes outside `ctx.shell` and its sandbox policy; the opt-in and absence of a baked command are the product boundary here.
+
+The same page can import a pasted `mcpServers`, `mcp_servers`, or `servers` JSON map, a bare map, or one record. Import changes only the unsaved draft, preserves the master-switch state, and forces every imported record off. It rejects `env` and `headers` rather than silently losing credential-shaped data the persisted settings format cannot represent.
+
+For one staged record, **Test connection** calls a loopback-only Host endpoint that creates a temporary MCP client, initializes it, lists its tools, and closes it before replying. The probe reports only a count or a generic failure category; it never saves or enables the record, registers tools, or starts the long-lived reconnect supervisor.
 
 ## Testing
 
@@ -58,12 +62,12 @@ Beyond the committed tests, both surfaces were driven against a real key from th
 
 **Enable Code Mode.** Its trust posture is bash-equivalent by design and its tool calls pass the same `tools/pre-execute` gate as bash, so it is not the same call as the model-code tools above. Rejected here anyway: `both` changes every model-visible request on both surfaces, and `code` replaces the wire rather than adding to it — either is a presentation decision, not a roster one.
 
-**Mount an MCP server by default.** Rejected because a shipped default would have to name one, and any choice spawns a third-party child process on every user's machine outside the sandbox. The dependency ships instead.
+**Mount a fixed MCP server by default.** Rejected because a shipped default would have to name one, and any choice spawns a third-party child process on every user's machine outside the sandbox. The settings group ships instead, remains empty and disabled until the user enters records, and never bakes a server choice into the application.
 
 ## Consequences
 
 The same model gets the same tools on both surfaces, and the difference that existed for no recorded reason is gone. The tests assert the twenty unconditional names exactly and pin `glob` and `grep` as fixed members on both sides, so a later change that alters only one surface fails a check instead of shipping quietly; the [session-search-not-shipped-default decision](2026-08-02-session-search-not-shipped-default.md) is exactly such a later change, and both tests moved with it.
 
-`apps/cli` gained five workspace dependencies: four the shipped tree mounted, plus `dsh-mcp-client`, which it does not mount and which exists so an installed `dsh` can. Four remain — the [session-search-not-shipped-default decision](2026-08-02-session-search-not-shipped-default.md) removed `@deepseek-ai/dsh-tool-session-query` along with its row.
+`dsh-base` now depends on `dsh-mcp-client` and mounts the empty `mcp-settings` group. That is a stable settings seam rather than a new default tool roster: only a complete record with both the master and individual switches enabled adds the server-qualified tools it discovers. Four of the historical workspace dependencies remain — the [session-search-not-shipped-default decision](2026-08-02-session-search-not-shipped-default.md) removed `@deepseek-ai/dsh-tool-session-query` along with its row.
 
 Execution policy stays independent of the roster. The [shared workspace-write decision](2026-07-31-workspace-write-surface-default.md) owns both surfaces' sandboxed executors and default permission; changing that policy does not add or remove a tool.

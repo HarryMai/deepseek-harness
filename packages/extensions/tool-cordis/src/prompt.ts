@@ -33,6 +33,7 @@ Before creating, modifying, or repairing a Plugin, load the cordis-plugin-develo
 
 - Inspect and Catalog data only confirm capabilities, names, signatures, types, and registration protocols before code is written; they do not replace business APIs.
 - Query Service.listService and Event.listEvents without input to choose from their compact signature directories, then query the exact service or event before using it. Exact queries return the structured contract and only its referenced types.
+- Tool arguments are JSON values: pass cordis_inspect_query input, plugin, and code as objects directly, never as JSON text produced by JSON.stringify.
 - At runtime, a Plugin must call real Services or listen to real Events. Do not cache, display, or depend on Inspect results as business data.
 
 ## Identity, versions, and approval

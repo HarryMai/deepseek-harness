@@ -117,9 +117,9 @@ export class CordisInspectRegistryService extends Service {
       const registration = this.providers.get(providerId)
       if (registration === undefined) throw new Error(`Host Cordis inspect provider "${providerId}" is not registered`)
       const method = findMethod(registration.manifest, methodName)
-      validateInput('Host', providerId, method, input)
+      const normalizedInput = validateInput('Host', providerId, method, input)
       signal.throwIfAborted()
-      const data = await registration.query(methodName, input, { agent, signal })
+      const data = await registration.query(methodName, normalizedInput, { agent, signal })
       signal.throwIfAborted()
       return validateOutput('Host', providerId, method, data)
     }
@@ -165,7 +165,7 @@ export class CordisInspectRegistryService extends Service {
     const provider = this.clientManifest?.find(candidate => candidate.id === providerId)
     if (provider === undefined) throw new Error(`Client Cordis inspect provider "${providerId}" is not registered`)
     const method = findMethod(provider, methodName)
-    validateInput('Client', providerId, method, input)
+    const normalizedInput = validateInput('Client', providerId, method, input)
     signal.throwIfAborted()
     const requestId = `inspect-${this.nextRequest++}` as CordisInspectRequestId
     const request: CordisInspectQueryRequest = {
@@ -173,7 +173,7 @@ export class CordisInspectRegistryService extends Service {
       agentId: agent.id,
       provider: providerId,
       method: methodName,
-      ...input === undefined ? {} : { input },
+      ...normalizedInput === undefined ? {} : { input: normalizedInput },
     }
     const result = new Promise<CordisInspectQueryResolution>((resolve) => {
       this.pending.set(requestId, { request, method, settle: resolve })
@@ -229,9 +229,19 @@ function validateInput(
   provider: string,
   method: CordisInspectMethodManifest,
   input: JsonValue | undefined,
-): void {
-  const violations = validateJsonSchemaValue(method.inputSchema as JsonSchemaNode, input ?? {}, 'input')
-  if (violations.length > 0) throw new Error(`${platform} Cordis inspect ${provider}.${method.name} rejected input: ${violations.join('; ')}`)
+): JsonValue | undefined {
+  const schema = method.inputSchema as JsonSchemaNode
+  const violations = validateJsonSchemaValue(schema, input ?? {}, 'input')
+  if (violations.length === 0) return input
+  if (typeof input === 'string') {
+    try {
+      const decoded = JSON.parse(input) as JsonValue
+      if (validateJsonSchemaValue(schema, decoded, 'input').length === 0) return decoded
+    } catch {
+      // Preserve the regular schema error below when a model supplied non-JSON text.
+    }
+  }
+  throw new Error(`${platform} Cordis inspect ${provider}.${method.name} rejected input: ${violations.join('; ')}`)
 }
 
 function validateOutput(
