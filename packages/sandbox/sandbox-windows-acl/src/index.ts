@@ -49,12 +49,12 @@
 
 import { existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { Win32Error } from '@deepseek-ai/dsh-win32-process'
 
 import { grantWrite, revokeWrite } from './acl.ts'
 import { DebugLog } from './debug-log.ts'
 import { closeSandboxDesktop, createSandboxDesktop, hasConsole } from './desktop.ts'
 import type { SandboxDesktop } from './desktop.ts'
-import { Win32Error } from './errors.ts'
 import { allocPtrSlot, decodePtr, isNullPtr, throwLastError, win32 } from './ffi.ts'
 import type { NativePtr, Win32Bindings } from './ffi.ts'
 import { assertPrivateTempDisjoint } from './path-boundary.ts'
@@ -62,11 +62,10 @@ import { drainPipe, spawnSandboxed, spawnSandboxedInherited, waitForExit } from 
 import { createRestrictedToken, findLogonSid, makeWellKnownSid, openCurrentProcessToken, setTokenDefaultDaclGrant, sidToString } from './token.ts'
 import * as abi from './win32-abi.ts'
 
-export { quoteArg } from './spawn.ts'
 export { AclWriteGrant } from './grant.ts'
 export { assertTempRootOutsideWorkspace } from './path-boundary.ts'
 export { tempWriteSid, workspaceWriteSid } from './workspace-sid.ts'
-export { Win32Error } from './errors.ts'
+export { Win32Error } from '@deepseek-ai/dsh-win32-process'
 
 /**
  * Host-environment opt-in for the runner's forensic log (`--debug-log`). The
@@ -75,7 +74,6 @@ export { Win32Error } from './errors.ts'
  * the desktop shell sets it so a packaged app's confined spawns always log.
  */
 export const ACL_RUNNER_DEBUG_LOG_ENV = 'DSH_ACL_DEBUG_LOG'
-
 /** Construction options: the workspace/temp allowlists and their distinct SID identities. */
 export interface AclSandboxOptions {
   /** Directories the confined child may write into (must exist and be caller-owned). */

@@ -159,6 +159,7 @@ export const HANDLE_FLAG_INHERIT = 0x1
 export const INFINITE = 0xFFFFFFFF
 /** MAX_PATH: legacy path length bound. */
 export const MAX_PATH = 260
+
 // winbase.h line ~410: the confined child starts suspended so the runner can
 // assign it to the kill-on-close job before any of its code runs.
 /** CREATE_SUSPENDED: create the child with its primary thread suspended until ResumeThread. */
@@ -200,16 +201,11 @@ export const ERROR_INSUFFICIENT_BUFFER = 122
 export const ERROR_BROKEN_PIPE = 109
 /** ERROR_NO_DATA: the pipe is being closed. */
 export const ERROR_NO_DATA = 232
-/** ERROR_LOCK_VIOLATION: a byte-range lock conflicts with an existing lock (winerror.h line ~78). */
+/** Win32 error reported when an immediate byte-range lock cannot be obtained. */
 export const ERROR_LOCK_VIOLATION = 33
-
-// ---- lock files (fileapi.h / minwinbase.h / winnt.h) -----------------------
-
-// CreateFileW dwDesiredAccess for the ACL lock files: plain read+write is
-// enough to take byte-range locks.
-/** GENERIC_READ: generic read access (winnt.h line ~3028). */
+/** Generic read access bit. */
 export const GENERIC_READ = 0x80000000
-/** GENERIC_WRITE: generic write access (winnt.h line ~3029). */
+/** Generic write access bit. */
 export const GENERIC_WRITE = 0x40000000
 /** GENERIC_ALL: generic all-access (winnt.h line ~3030) — the sandbox desktop's handle access and DACL ACE mask. */
 export const GENERIC_ALL = 0x10000000
@@ -218,31 +214,21 @@ export const GENERIC_ALL = 0x10000000
 // lock holder, two processes could hold "the same" lock on different files.
 /** FILE_SHARE_READ: other opens may read (winnt.h line ~5949). */
 export const FILE_SHARE_READ = 0x00000001
-/** FILE_SHARE_WRITE: other opens may write (winnt.h line ~5950). */
+/** CreateFile share-write flag. */
 export const FILE_SHARE_WRITE = 0x00000002
-/** FILE_SHARE_DELETE: other opens may delete (winnt.h line ~5951) — deliberately NOT used for lock files. */
+/** CreateFile share-delete flag. */
 export const FILE_SHARE_DELETE = 0x00000004
-/** OPEN_ALWAYS: create the lock file if absent, open it otherwise (fileapi.h line ~21). */
+/** CreateFile disposition that opens or creates the file. */
 export const OPEN_ALWAYS = 4
-// LockFileEx dwFlags (minwinbase.h lines ~180-181, included by winbase.h).
-/** LOCKFILE_EXCLUSIVE_LOCK: request an exclusive byte-range lock. */
+/** LockFileEx exclusive-lock flag. */
 export const LOCKFILE_EXCLUSIVE_LOCK = 0x2
-/** LOCKFILE_FAIL_IMMEDIATELY: fail with ERROR_LOCK_VIOLATION instead of waiting. */
+/** LockFileEx immediate-failure flag. */
 export const LOCKFILE_FAIL_IMMEDIATELY = 0x1
-
-// ACE_HEADER.AceType (winnt.h lines ~3449-3463)
-/** ACCESS_ALLOWED_ACE_TYPE: an access-allowed ACE granting the mask to the trustee. */
+/** ACE type for an allowed-access entry. */
 export const ACCESS_ALLOWED_ACE_TYPE = 0
-
-// SID structure (winnt.h line ~280 SID_IDENTIFIER_AUTHORITY; line ~286
-// #define SID_MAX_SUB_AUTHORITIES 15).
-/** SID_MAX_SUB_AUTHORITIES: the most subauthorities a SID may carry. */
+/** Maximum SID sub-authority count. */
 export const SID_MAX_SUB_AUTHORITIES = 15
-
-// ACE_HEADER.AceFlags (winnt.h lines ~3477-3524): inherited ACEs shown when
-// reading a DACL are marked with this bit and are not part of the explicit
-// DACL edits this module makes.
-/** INHERITED_ACE: the ACE was inherited from the parent object, not stored explicitly. */
+/** ACE flag marking inherited entries. */
 export const INHERITED_ACE = 0x10
 
 // ---- job object (winnt.h lines ~4859-4866, ~5138, ~5190-5199) --------------
@@ -285,15 +271,15 @@ export const SECURITY_ATTRIBUTES_SIZE = 24
 
 /** SECURITY_MAX_SID_SIZE: maximum SID byte size. */
 export const SECURITY_MAX_SID_SIZE = 68
-/** SID_AND_ATTRIBUTES stride: { PSID Sid @0 (8); DWORD Attributes @8 (4) } + pad. */
+/** x64 SID_AND_ATTRIBUTES byte size. */
 export const SID_AND_ATTRIBUTES_SIZE = 16
-/** TOKEN_GROUPS.Groups[] starts at offset 8 (GroupCount @0 + alignment). */
+/** x64 TOKEN_GROUPS offset of the first group entry. */
 export const TOKEN_GROUPS_OFFSET = 8
-/** sizeof(EXPLICIT_ACCESS_W): perms@0 mode@4 inheritance@8 Trustee@16. */
+/** x64 EXPLICIT_ACCESS_W byte size. */
 export const EXPLICIT_ACCESS_W_SIZE = 48
-/** Trustee offset inside EXPLICIT_ACCESS_W. */
+/** x64 offset of TRUSTEE_W inside EXPLICIT_ACCESS_W. */
 export const TRUSTEE_W_OFFSET = 16
-/** ptstrName offset inside TRUSTEE_W (=> 40 inside EXPLICIT_ACCESS_W). */
+/** x64 offset of ptstrName inside TRUSTEE_W. */
 export const TRUSTEE_W_PTSTRNAME_OFFSET = 24
 /** sizeof(STARTUPINFOW), verified by abi-probe. */
 export const STARTUPINFOW_SIZE = 104
