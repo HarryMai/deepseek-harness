@@ -1,7 +1,7 @@
 /** Browser-side draft and save behavior for user-owned MCP records. */
 
 import { describe, expect, it, vi } from 'vitest'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   DEFAULT_MCP_SETTINGS, McpSettingsController, parseMcpJson, serverIssue,
 } from '../src/client/settings.ts'
@@ -32,6 +32,8 @@ class MemoryScope implements SettingsScope<McpSettings> {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
+
+  async mutate(): Promise<void> {}
 
   async set(field: string, value: unknown): Promise<void> {
     this.writes.push({ field, value: structuredClone(value) })

@@ -81,7 +81,6 @@ export function apply(ctx: Context, config: McpConnectionProbeConfig): void {
         if (endpoint !== MCP_SETTINGS_TEST_ENDPOINT) return { ok: true, value: { ok: false, reason: 'unavailable' } }
         return { ok: true, value: await probeMcpConnection(payload, signal, timeoutMs) }
       },
-      { authority: 'loopback' },
     )
   })
 }

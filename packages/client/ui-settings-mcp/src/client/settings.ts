@@ -4,9 +4,8 @@
  * that the Host settings manager reconciles into MCP client entries.
  */
 
-import {
-  createSnapshotStore, type SettingsScope, type SnapshotStore,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 
 /** The Host settings namespace this UI edits. Kept literal to avoid a client-to-host value dependency. */
 export const MCP_SETTINGS_NAMESPACE = 'mcp-client'

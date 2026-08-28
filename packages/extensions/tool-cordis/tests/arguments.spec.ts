@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRegistry from '@deepseek-ai/dsh-tools'
@@ -27,7 +27,7 @@ function text(result: ToolExecutionResult): string {
 
 async function define(ctx: Context, arguments_: unknown): Promise<ToolExecutionResult> {
   return await ctx.tools.execute({
-    callId: CallId('define'),
+    callId: ToolCallId('define'),
     name: 'cordis_define',
     arguments: arguments_,
     agent: AGENT,

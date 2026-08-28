@@ -44,7 +44,15 @@ it('boots and disposes the built Web profile through the desktop Host boundary',
   try {
     const message = await waitForMessage(child)
     if (message.type === 'error') throw new Error(message.message)
-    const response = await fetch(message.url)
+    const launch = await fetch(message.url, { redirect: 'manual' })
+    const location = launch.headers.get('location')
+    const cookie = launch.headers.get('set-cookie')?.split(';', 1)[0]
+    if (location === null || cookie === undefined) {
+      throw new Error('desktop snapshot: Host readiness URL did not establish a browser session')
+    }
+    const response = await fetch(new URL(location, message.url), {
+      headers: { cookie },
+    })
     const html = await response.text()
     const exit = waitForExit(child)
     child.send({ type: 'shutdown' })
@@ -53,6 +61,8 @@ it('boots and disposes the built Web profile through the desktop Host boundary',
       readyProtocol: new URL(message.url).protocol,
       readyHost: new URL(message.url).hostname,
       hasAssignedPort: new URL(message.url).port !== '',
+      hasLaunchToken: new URL(message.url).searchParams.has('token'),
+      launchStatus: launch.status,
       responseStatus: response.status,
       contentType: response.headers.get('content-type'),
       hasBootManifest: html.includes('__DSH_BOOT__'),
@@ -64,6 +74,8 @@ it('boots and disposes the built Web profile through the desktop Host boundary',
         "exitCode": 0,
         "hasAssignedPort": true,
         "hasBootManifest": true,
+        "hasLaunchToken": true,
+        "launchStatus": 303,
         "readyHost": "127.0.0.1",
         "readyProtocol": "http:",
         "responseStatus": 200,

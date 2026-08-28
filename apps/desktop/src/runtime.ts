@@ -34,6 +34,12 @@ export interface DesktopWebServer {
   readonly port: number
 }
 
+/** Supplies the one-time URL used to establish a browser session. */
+export interface DesktopBrowserAuthenticator {
+  /** Add this Host process's browser-authentication input to an application URL. */
+  authenticatedUrl(baseUrl: string): string
+}
+
 /** Loader entry fields used to find an isolated WebServer provider. */
 export interface DesktopLoaderEntry {
   readonly options: { readonly id: string }
@@ -143,6 +149,19 @@ export function webServerUrl(host: string, port: number): string {
 }
 
 /**
+ * Build the Desktop renderer URL through the Host's one-time browser authentication exchange.
+ * @param server - Bound WebServer values owned by the Host child.
+ * @param authentication - Connection service that mints the process-scoped launch URL.
+ * @returns Reachable loopback URL that establishes the Electron session before loading the app.
+ */
+export function authenticatedWebServerUrl(
+  server: DesktopWebServer,
+  authentication: DesktopBrowserAuthenticator,
+): string {
+  return authentication.authenticatedUrl(webServerUrl(server.host, server.port))
+}
+
+/**
  * Find the WebServer service on its Loader entry context.
  * @param entries - Settled Loader entries from the Web profile.
  * @returns The validated bound WebServer values.
@@ -159,6 +178,26 @@ export function resolveDesktopWebServer(entries: Iterable<DesktopLoaderEntry>): 
     break
   }
   throw new Error('desktop host: settled Web profile has no bound webserver entry')
+}
+
+/**
+ * Find the browser-authentication service on its Loader entry context.
+ * @param entries - Settled Loader entries from the Web profile.
+ * @returns The service that mints the Host child's one-time browser URL.
+ */
+export function resolveDesktopBrowserAuthenticator(
+  entries: Iterable<DesktopLoaderEntry>,
+): DesktopBrowserAuthenticator {
+  for (const entry of entries) {
+    if (entry.options.id !== 'connection') continue
+    const candidate = entry.ctx.get('connection')
+    if (typeof candidate === 'object' && candidate !== null
+      && typeof (candidate as { authenticatedUrl?: unknown }).authenticatedUrl === 'function') {
+      return candidate as DesktopBrowserAuthenticator
+    }
+    break
+  }
+  throw new Error('desktop host: settled Web profile has no browser authentication entry')
 }
 
 /**

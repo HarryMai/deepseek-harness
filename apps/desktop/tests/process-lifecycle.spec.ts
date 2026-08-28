@@ -91,7 +91,7 @@ describe('desktop Host shutdown', () => {
     const snapshots = [[host], [child, host], [replacement]]
     const signals: ProcessIdentity[] = []
     const inspector = {
-      processTree: () => snapshots.shift() ?? [replacement],
+      snapshot: () => ({ tree: () => snapshots.shift() ?? [replacement] }),
       signalProcess: (identity: ProcessIdentity) => { signals.push(identity) },
     } as unknown as ProcessInspector
     const managed = manageHostProcess(asChild(new FakeHostProcess()), 'linux', inspector)

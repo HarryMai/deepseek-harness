@@ -143,7 +143,7 @@ export function manageHostProcess(
   const refreshProcessTree = (): void => {
     const { pid } = child
     if (pid === undefined) return
-    const current = inspector.processTree(pid)
+    const current = inspector.snapshot().tree(pid)
     const currentHost = current.find(identity => identity.pid === pid)
     if (host === undefined) {
       if (currentHost === undefined) return

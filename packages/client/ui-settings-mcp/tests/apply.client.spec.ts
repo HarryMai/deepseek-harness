@@ -4,7 +4,7 @@ import Schema from '@deepseek-ai/schemastery'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -30,34 +30,32 @@ async function bench() {
   const locale = new LocaleRuntime(ctx)
   locale.setLocale('zh')
   ctx.provide('locale', locale)
-  new TestRemote(ctx)
+  const settings = {
+    describe: vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: {
+        writable: true,
+        hasDocument: true,
+        namespaces: [{
+          ns: 'mcp-client',
+          schema: SETTINGS_SCHEMA.toJSON(),
+          value: { enabled: false, servers: {} },
+          base: { enabled: false, servers: {} },
+          user: {},
+          applies: 'live' as const,
+          secrets: [],
+          revision: 0,
+        }],
+      },
+    })),
+    update: vi.fn(),
+    replace: vi.fn(),
+    mutate: vi.fn(),
+  }
+  new TestRemote(ctx, { settings })
   ctx.provide('connection', {
     isLoopback: true,
-    api: {
-      settings: {
-        describe: vi.fn(() => Promise.resolve({
-          rpcId: 'mcp-settings' as never,
-          result: {
-            ok: true as const,
-            value: {
-              writable: true,
-              hasDocument: true,
-              namespaces: [{
-                ns: 'mcp-client',
-                schema: SETTINGS_SCHEMA.toJSON(),
-                value: { enabled: false, servers: {} },
-                base: { enabled: false, servers: {} },
-                user: {},
-                applies: 'live' as const,
-                secrets: [],
-                revision: 0,
-              }],
-            },
-          },
-        })),
-        mutate: vi.fn(),
-      },
-    },
+    api: { settings },
   } as never)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return { ctx, locale, slots: ctx.get('slots') as SlotRegistry }

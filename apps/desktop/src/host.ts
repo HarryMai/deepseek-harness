@@ -5,9 +5,10 @@
 
 import { runWebProfile } from '@deepseek-ai/dsh/desktop-host'
 import {
+  authenticatedWebServerUrl,
   isDesktopHostShutdown,
+  resolveDesktopBrowserAuthenticator,
   resolveDesktopWebServer,
-  webServerUrl,
   type DesktopHostMessage,
 } from './runtime.ts'
 
@@ -42,8 +43,10 @@ try {
   if (shutdownRequest.received) {
     stop()
   } else {
-    const server = resolveDesktopWebServer(ctx.loader.entries())
-    send({ type: 'ready', url: webServerUrl(server.host, server.port) })
+    const entries = [...ctx.loader.entries()]
+    const server = resolveDesktopWebServer(entries)
+    const authentication = resolveDesktopBrowserAuthenticator(entries)
+    send({ type: 'ready', url: authenticatedWebServerUrl(server, authentication) })
   }
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error)

@@ -8,9 +8,9 @@
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { Win32Error } from '@deepseek-ai/dsh-win32-process'
 
 import { buildDesktopSddl, closeSandboxDesktop, createSandboxDesktop } from '../src/desktop.ts'
-import { Win32Error } from '../src/errors.ts'
 import { win32Sync } from '../src/ffi.ts'
 
 const isWin32 = process.platform === 'win32'

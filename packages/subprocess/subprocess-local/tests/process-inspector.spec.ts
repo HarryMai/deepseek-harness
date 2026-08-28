@@ -291,7 +291,7 @@ describe('macOS process inspector', () => {
       const imported = await import('@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts')
       const fake = fakeInternals()
       fake.setTpgid('0')
-      expect(imported.createProcessInspector('darwin', 'arm64', fake.internals).isStdinWaiting(1)).toBe(false)
+      expect(imported.createProcessInspector('darwin', 'arm64', fake.internals).isStdinWaiting(1, 1)).toBe(false)
     } finally {
       vi.doUnmock('koffi')
       vi.resetModules()

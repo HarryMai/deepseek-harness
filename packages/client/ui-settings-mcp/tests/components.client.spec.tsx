@@ -4,7 +4,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { McpSettingsSection } from '../src/client/McpSettingsSection.tsx'
 import type { McpSettingsSectionProps } from '../src/client/McpSettingsSection.tsx'
 import { DEFAULT_MCP_SETTINGS, McpSettingsController } from '../src/client/settings.ts'
@@ -35,6 +35,8 @@ class MemoryScope implements SettingsScope<McpSettings> {
     return () => { this.listeners.delete(listener) }
   }
 
+  async mutate(): Promise<void> {}
+
   async set(field: string, value: unknown): Promise<void> {
     this.writes.push(field)
     this.snapshot = {
@@ -55,6 +57,7 @@ function renderSection(scope = new MemoryScope(), tester?: McpConnectionTester) 
     ...controller.inject(),
     useMcpSettings: bindSnapshotSelector(controller.store),
     useSessions: unusedHook,
+    useSessionPendingInteraction: unusedHook,
     useWorkspaces: unusedHook,
     t: (key, values) => (zh[key as McpSettingsKey] ?? '').replace(/\{(\w+)\}/gu, (_match, name: string) => {
       const value = values?.[name]

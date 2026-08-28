@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DESKTOP_NODE_EXECUTABLE,
+  authenticatedWebServerUrl,
   desktopHostLogPaths,
   desktopArguments,
   isApplicationNavigation,
@@ -11,6 +12,7 @@ import {
   packagedHostEntry,
   packagedNodeExecutable,
   parseDesktopHostMessage,
+  resolveDesktopBrowserAuthenticator,
   resolveDesktopWebServer,
   resolveDesktopHostCwd,
   resolveNodeExecutable,
@@ -71,6 +73,14 @@ describe('desktop runtime decisions', () => {
     expect(() => webServerUrl('127.0.0.1', 0)).toThrow(/invalid WebServer port/)
   })
 
+  it('uses the Host authentication exchange before Electron loads the Web server', () => {
+    const authenticated = authenticatedWebServerUrl(
+      { host: '0.0.0.0', port: 43123 },
+      { authenticatedUrl: baseUrl => `${baseUrl}?token=desktop-launch` },
+    )
+    expect(authenticated).toBe('http://127.0.0.1:43123/?token=desktop-launch')
+  })
+
   it('reads the bound server from its isolated Loader entry context', () => {
     const server = { host: '127.0.0.1', port: 43123 }
     expect(resolveDesktopWebServer([
@@ -80,6 +90,17 @@ describe('desktop runtime decisions', () => {
     expect(() => resolveDesktopWebServer([
       { options: { id: 'webserver' }, ctx: { get: () => undefined } },
     ])).toThrow(/no bound webserver entry/)
+  })
+
+  it('reads browser authentication from its isolated Loader entry context', () => {
+    const authentication = { authenticatedUrl: (baseUrl: string) => `${baseUrl}?token=desktop-launch` }
+    expect(resolveDesktopBrowserAuthenticator([
+      { options: { id: 'other' }, ctx: { get: () => undefined } },
+      { options: { id: 'connection' }, ctx: { get: name => name === 'connection' ? authentication : undefined } },
+    ])).toBe(authentication)
+    expect(() => resolveDesktopBrowserAuthenticator([
+      { options: { id: 'connection' }, ctx: { get: () => undefined } },
+    ])).toThrow(/no browser authentication entry/)
   })
 
   it('accepts only validated loopback Host messages and the shutdown command', () => {
