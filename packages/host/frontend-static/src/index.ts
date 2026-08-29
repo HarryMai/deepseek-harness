@@ -6,9 +6,10 @@
  * unknown extensions ship as octet-stream, and non-GET/HEAD is 405. Every
  * index response first passes Connection's browser authentication, then the
  * webserver's index render (structured injection rows, then raw taps).
- * Non-index assets stay public. The dist location is workspace knowledge of
- * the composing application, so `distIndex` is typically supplied through a
- * `!!js` expression, never hardcoded by a deployment.
+ * Rendered index responses carry `Cache-Control: no-store` with the active
+ * host's injected boot rows. Non-index assets stay public. The dist location
+ * is workspace knowledge of the composing application, so `distIndex` is
+ * typically supplied through a `!!js` expression, never hardcoded by a deployment.
  * @module @deepseek-ai/dsh-host-frontend-static
  */
 
@@ -66,7 +67,8 @@ const STATIC_MISS_CODES: ReadonlySet<string | undefined> = new Set([
  * @param distIndex - absolute path of index.html inside distRoot.
  * @param authorizeIndex - authenticates an index response before its bytes are read.
  * @param renderIndex - produces the index.html body (structured injection
- * rendering) for the dist root and configured index path.
+ * rendering) for the dist root and configured index path. Rendered index
+ * responses carry `Cache-Control: no-store` with the active host's boot rows.
  */
 export async function serveStatic(
   pathname: string, res: ServerResponse, distRoot: string, distIndex: string,
@@ -82,10 +84,11 @@ export async function serveStatic(
     res.end()
     return
   }
+  const isIndex = target === distRoot || target === distIndex
   let body: string | Buffer
   let type: string
   try {
-    if (target === distRoot || target === distIndex) {
+    if (isIndex) {
       if (!authorizeIndex()) return
       body = await renderIndex()
       type = HTML_MIME
@@ -101,7 +104,10 @@ export async function serveStatic(
     res.end()
     return
   }
-  res.writeHead(200, { 'content-type': type })
+  const headers = isIndex
+    ? { 'content-type': type, 'cache-control': 'no-store' }
+    : { 'content-type': type }
+  res.writeHead(200, headers)
   res.end(body)
 }
 

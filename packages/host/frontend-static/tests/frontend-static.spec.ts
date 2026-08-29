@@ -96,7 +96,7 @@ async function request(port: number, path: string, init?: RequestInit): Promise<
 }
 
 describe('real Loader composition', () => {
-  it('serves explicit index entries and files while preserving HTTP error semantics', { timeout: 60_000 }, async () => {
+  it('serves explicit index entries and files, avoids caching dynamic HTML, and preserves HTTP error semantics', { timeout: 60_000 }, async () => {
     const loaded = await loadComposition()
     const unloaded = [...loaded.loader.entries()]
       .filter(entry => entry.fiber === undefined && !entry.disabled)
@@ -150,6 +150,12 @@ describe('real Loader composition', () => {
       expect(got.body).toContain('__T__')
       expect(got.body).toContain('shell')
     }
+    const dynamicIndex = await fetch(`http://127.0.0.1:${String(port)}/`, authenticated())
+    expect(dynamicIndex.headers.get('cache-control')).toBe('no-store')
+    await dynamicIndex.arrayBuffer()
+    const staticAsset = await fetch(`http://127.0.0.1:${String(port)}/app.js`)
+    expect(staticAsset.headers.get('cache-control')).toBeNull()
+    await staticAsset.arrayBuffer()
     expect(await request(port, '/', authenticated({ method: 'HEAD' }))).toEqual({
       status: 200,
       type: 'text/html; charset=utf-8',
