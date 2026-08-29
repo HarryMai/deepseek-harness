@@ -45,7 +45,7 @@ export interface ModuleJob {
 }
 
 /**
- * Node 22/23 ModuleLoader interface.
+ * Legacy Node ModuleLoader interface.
  *
  * Key methods:
  * - getModuleJobForImport(specifier, parentURL, importAttributes)
@@ -63,7 +63,7 @@ export interface ModuleLoaderV1 {
   load(specifier: string, context: Pick<LoadHookContext, 'format' | 'importAttributes'>): Promise<LoadResult>
 }
 
-/** Node 24+ module request object. */
+/** Module request object accepted by the request-object Loader interface. */
 export interface ModuleRequest {
   specifier: string
   attributes?: ImportAttributes
@@ -80,9 +80,9 @@ export const enum ModulePhase {
 export type ModuleRequestType = unknown // internal symbols
 
 /**
- * Node 24+ ModuleLoader interface.
+ * Request-object Node ModuleLoader interface.
  *
- * Breaking changes from v1:
+ * Differences from the legacy interface:
  * - getModuleJobForImport removed → getOrCreateModuleJob(parentURL, request, requestType)
  * - resolve removed (became private #resolve) → resolveSync(parentURL, request)
  * - Parameter order reversed for resolveSync, request object { specifier, attributes }
@@ -101,7 +101,7 @@ export interface ModuleLoaderV2 {
 /** Supported Node internal ESM loader shapes. */
 export type ModuleLoader = ModuleLoaderV1 | ModuleLoaderV2
 
-/** Helpers for locating the current Node internal module loader. */
+/** Helpers for locating and classifying the current Node internal module loader. */
 export namespace ModuleLoader {
   let _cachedLoader: ModuleLoader | undefined
 
@@ -120,13 +120,13 @@ export namespace ModuleLoader {
   export function fromInternal(): ModuleLoader | undefined {
     if (_cachedLoader) return _cachedLoader
     const [major] = process.versions.node.split('.').map(Number)
-
-    if (major >= 24) {
-      const raw = requireInternal('internal/modules/esm/loader')?.getOrInitializeCascadedLoader()
-      if (raw) return _cachedLoader = Object.assign(raw, { version: 'v2' })
-    } else if (major >= 22) {
-      const raw = requireInternal('internal/modules/esm/loader')?.getOrInitializeCascadedLoader()
-      if (raw) return _cachedLoader = Object.assign(raw, { version: 'v1' })
+    if (major < 22) return
+    const raw = requireInternal('internal/modules/esm/loader')?.getOrInitializeCascadedLoader()
+    if (typeof raw?.getOrCreateModuleJob === 'function') {
+      return _cachedLoader = Object.assign(raw, { version: 'v2' })
+    }
+    if (typeof raw?.getModuleJobForImport === 'function') {
+      return _cachedLoader = Object.assign(raw, { version: 'v1' })
     }
   }
 }

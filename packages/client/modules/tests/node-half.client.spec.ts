@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { Context, type Fiber } from '@deepseek-ai/cordis'
+import { ModuleLoader } from '@deepseek-ai/cordis-plugin-loader'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderIndexInjections, type WebServer, type WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import * as modulesClient from '../src/client/index.ts'
@@ -240,6 +241,35 @@ describe('HTML bootstrap facade', () => {
 })
 
 describe('client bundle activation', () => {
+  it('uses the runtime Node Loader resolver to compose an active client package', () => {
+    const packageName = '@fixture/runtime-internal-loader'
+    const clientPath = writePackage(packageName)
+    const packageRoot = dirname(dirname(clientPath))
+    const hostPath = join(packageRoot, 'lib', 'index.js')
+    mkdirSync(dirname(hostPath), { recursive: true })
+    writeFileSync(hostPath, 'export default {}\n')
+    writeFileSync(clientPath, 'module.exports = {}\n')
+    writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({
+      name: packageName,
+      exports: {
+        '.': './lib/index.js',
+        './client': './lib/client.js',
+        './package.json': './package.json',
+      },
+      dsh: { client: { platform: 'web' } },
+    }))
+    const internal = ModuleLoader.fromInternal()
+    if (internal === undefined) throw new Error('Node internal ModuleLoader is unavailable')
+
+    const { service } = constructWithRoute([packageName], {
+      entryBaseUrl: pathToFileURL(join(root!, 'overlay', 'entry.mjs')).href,
+      internal,
+    })
+
+    expect(service.clientPath(packageName)).toBe(clientPath)
+    expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
+  })
+
   it.each(['v1', 'v2'] as const)(
     'resolves %s package metadata from the owning entry tree',
     (version) => {
