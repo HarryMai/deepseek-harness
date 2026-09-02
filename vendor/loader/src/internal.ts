@@ -45,7 +45,7 @@ export interface ModuleJob {
 }
 
 /**
- * Legacy Node ModuleLoader interface.
+ * Node 22/23 ModuleLoader interface.
  *
  * Key methods:
  * - getModuleJobForImport(specifier, parentURL, importAttributes)
@@ -63,7 +63,7 @@ export interface ModuleLoaderV1 {
   load(specifier: string, context: Pick<LoadHookContext, 'format' | 'importAttributes'>): Promise<LoadResult>
 }
 
-/** Module request object accepted by the request-object Loader interface. */
+/** Node 24+ module request object. */
 export interface ModuleRequest {
   specifier: string
   attributes?: ImportAttributes
@@ -80,9 +80,9 @@ export const enum ModulePhase {
 export type ModuleRequestType = unknown // internal symbols
 
 /**
- * Request-object Node ModuleLoader interface.
+ * Node 24+ ModuleLoader interface.
  *
- * Differences from the legacy interface:
+ * Breaking changes from v1:
  * - getModuleJobForImport removed → getOrCreateModuleJob(parentURL, request, requestType)
  * - resolve removed (became private #resolve) → resolveSync(parentURL, request)
  * - Parameter order reversed for resolveSync, request object { specifier, attributes }
@@ -101,7 +101,7 @@ export interface ModuleLoaderV2 {
 /** Supported Node internal ESM loader shapes. */
 export type ModuleLoader = ModuleLoaderV1 | ModuleLoaderV2
 
-/** Helpers for locating and classifying the current Node internal module loader. */
+/** Helpers for locating the current Node internal module loader. */
 export namespace ModuleLoader {
   let _cachedLoader: ModuleLoader | undefined
 
@@ -117,16 +117,28 @@ export namespace ModuleLoader {
     } catch {}
   }
 
+  /**
+   * Locate and classify the running Node internal module loader.
+   *
+   * The shape is decided by which module-job API the loader owns, never by the
+   * Node version: v2 landed in 24.12.0, so a major-version test mistags every
+   * 24.0–24.11.1 loader as v2 and makes consumers call `resolveSync` with
+   * reversed parameters. Arity is not usable either — `resolveSync` reports 2
+   * under both shapes. A loader owning neither API is left unclassified rather
+   * than guessed, so consumers take their documented no-internals path.
+   * @returns the classified loader, or `undefined` when none is reachable or its shape is unknown.
+   */
   export function fromInternal(): ModuleLoader | undefined {
     if (_cachedLoader) return _cachedLoader
     const [major] = process.versions.node.split('.').map(Number)
     if (major < 22) return
+
     const raw = requireInternal('internal/modules/esm/loader')?.getOrInitializeCascadedLoader()
-    if (typeof raw?.getOrCreateModuleJob === 'function') {
-      return _cachedLoader = Object.assign(raw, { version: 'v2' })
-    }
-    if (typeof raw?.getModuleJobForImport === 'function') {
-      return _cachedLoader = Object.assign(raw, { version: 'v1' })
-    }
+    if (!raw) return
+    const version = typeof raw.getOrCreateModuleJob === 'function'
+      ? 'v2'
+      : typeof raw.getModuleJobForImport === 'function' ? 'v1' : undefined
+    if (!version) return
+    return _cachedLoader = Object.assign(raw, { version })
   }
 }
