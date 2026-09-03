@@ -14,6 +14,13 @@
   "bin": {
     "dsh": "lib/bin.js"
   },
+  "exports": {
+    "./desktop-host": {
+      "types": "./lib/types/desktop-host.d.ts",
+      "default": "./lib/desktop-host.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "lib/*.js"
   ],

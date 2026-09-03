@@ -9,10 +9,10 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { EntryGroup, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 
 /** Namespace persisted in the user settings document. */
-export const MCP_SETTINGS_NAMESPACE = settingsNamespace('mcp-client')
+export const MCP_SETTINGS_NAMESPACE = 'mcp-client'
 
 /** A user-authored MCP record before it is resolved into a client entry. */
 export interface McpServerSettings {
@@ -212,9 +212,11 @@ export class McpClientSettingsGroup extends EntryGroup {
    */
   constructor(ctx: Context, _config: EntryOptions[]) {
     super(ctx, requireEntryTree(ctx))
-    installSettingsSection(ctx, MCP_SETTINGS_NAMESPACE, McpSettingsConfig, DEFAULT_MCP_SETTINGS, {
-      setSource: (source) => { this.source = source },
-      onChange: () => { void this.enqueue() },
+    ctx.inject(['settings'], (settingsCtx) => {
+      settingsCtx.settings.installSection(ctx, MCP_SETTINGS_NAMESPACE, McpSettingsConfig, DEFAULT_MCP_SETTINGS, {
+        setSource: (source) => { this.source = source },
+        onChange: () => { void this.enqueue() },
+      })
     })
   }
 
@@ -253,7 +255,7 @@ export class McpClientSettingsGroup extends EntryGroup {
 /** Cordis plugin name used by Loader diagnostics. */
 export const name = 'mcp-client-settings'
 
-/** The manager uses `installSettingsSection()` to wait for an optional settings provider. */
+/** The manager injects the optional Settings service before installing its section. */
 export const inject: readonly string[] = []
 
 /** Loader callback for the settings-owned dynamic group. */

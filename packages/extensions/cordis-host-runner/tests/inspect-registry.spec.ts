@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { JsonValue } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { describe, expect, it } from 'vitest'
 import { CordisInspectRegistryService } from '../src/inspect-registry.ts'
 import type { CordisInspectMethodManifest } from '../src/types.ts'
