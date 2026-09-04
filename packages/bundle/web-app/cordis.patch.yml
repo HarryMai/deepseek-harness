@@ -168,13 +168,6 @@
         # its literals, for example: ['app.internal', ...ctx.webRuntime.trustedHosts].
         trustedHosts: !!js ctx.webRuntime.trustedHosts
 
-    # One-shot, loopback-only validation for staged Custom Configuration MCP
-    # records. It never becomes a long-lived mcp-client entry.
-    - id: mcp-settings-probe
-      name: '@deepseek-ai/dsh-mcp-client/probe'
-      config:
-        timeoutMs: 10000
-
     - id: api-remotes
       name: '@deepseek-ai/dsh-api-remotes'
 
@@ -207,9 +200,6 @@
 
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
-
-    - id: ui-settings-mcp
-      name: '@deepseek-ai/dsh-client-ui-settings-mcp'
 
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
