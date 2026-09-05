@@ -206,6 +206,7 @@
       "@deepseek-ai/dsh-client-ui-settings": ["./packages/client/ui-settings/src"],
       "@deepseek-ai/dsh-client-ui-settings-general": ["./packages/client/ui-settings-general/src"],
       "@deepseek-ai/dsh-client-ui-settings-models": ["./packages/client/ui-settings-models/src"],
+      "@deepseek-ai/dsh-client-ui-settings-mcp": ["./packages/client/ui-settings-mcp/src"],
       "@deepseek-ai/dsh-client-ui-settings-plugin-inventory": ["./packages/client/ui-settings-plugin-inventory/src"],
       "@deepseek-ai/dsh-client-locale": ["./packages/client/locale/src"],
       "@deepseek-ai/dsh-client-web": ["./packages/client/web/src"],
@@ -232,6 +233,10 @@
       // util/ folders are role-named without the util- prefix their npm names carry,
       // so these aliases stay hand-written like dsh-util-crypto above.
       "@deepseek-ai/dsh-util-time": ["./packages/util/time/src"],
+      // The MCP settings and probe exports are public subpaths, so the source
+      // resolver maps their files explicitly outside the bare-package generator.
+      "@deepseek-ai/dsh-mcp-client/settings": ["./packages/mcp/mcp-client/src/settings.ts"],
+      "@deepseek-ai/dsh-mcp-client/probe": ["./packages/mcp/mcp-client/src/probe.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],
@@ -307,8 +312,6 @@
       "@deepseek-ai/dsh-lsp": ["./packages/lsp/lsp/src"],
       "@deepseek-ai/dsh-lsp-stdio": ["./packages/lsp/lsp-stdio/src"],
       "@deepseek-ai/dsh-mcp-client": ["./packages/mcp/mcp-client/src"],
-      "@deepseek-ai/dsh-mcp-client/settings": ["./packages/mcp/mcp-client/src/settings.ts"],
-      "@deepseek-ai/dsh-mcp-client/probe": ["./packages/mcp/mcp-client/src/probe.ts"],
       "@deepseek-ai/dsh-message-feedback": ["./packages/feedback/message-feedback/src"],
       "@deepseek-ai/dsh-native-command": ["./packages/util/native-command/src"],
       "@deepseek-ai/dsh-output-retention": ["./packages/util/output-retention/src"],

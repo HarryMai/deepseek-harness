@@ -13,6 +13,9 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../../../vendor/loader"
+    },
+    {
       "path": "../../../vendor/schemastery"
     },
     {
@@ -28,7 +31,19 @@
       "path": "../../subprocess/subprocess"
     },
     {
+      "path": "../../settings/settings"
+    },
+    {
       "path": "../../util/timeout"
+    },
+    {
+      "path": "../../util/values"
+    },
+    {
+      "path": "../../client/connection/tsconfig.host.json"
+    },
+    {
+      "path": "../../util/http-proxy"
     }
   ]
 }
