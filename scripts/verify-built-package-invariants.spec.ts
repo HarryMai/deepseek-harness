@@ -17,16 +17,22 @@ function fixture(options: {
   invariantSource?: string
   invariantExport?: string
   runtimeChunk?: string
+  runtimeChunkDeclared?: boolean
+  entrySource?: string
+  entryDeclared?: boolean
 } = {}): { root: string; loaderUrl: string } {
   const root = mkdtempSync(join(tmpdir(), 'dsh-built-package-invariants-'))
   roots.push(root)
   const packageDir = join(root, 'packages/core/probe')
   mkdirSync(join(packageDir, 'lib'), { recursive: true })
   const companion = options.companion ?? true
+  const files = companion ? ['lib/invariant.js'] : []
+  if (options.entryDeclared) files.push('lib/index.js')
+  if (options.runtimeChunkDeclared) files.push('lib/chunk.js')
   writeFileSync(join(packageDir, 'package.json'), `${JSON.stringify({
     name: '@deepseek-ai/dsh-probe',
     type: 'module',
-    files: companion ? ['lib/invariant.js'] : [],
+    files,
     exports: companion ? {
       './invariant': {
         default: options.invariantExport ?? './lib/invariant.js',
@@ -41,6 +47,9 @@ function fixture(options: {
   }
   if (options.runtimeChunk !== undefined) {
     writeFileSync(join(packageDir, 'lib/chunk.js'), options.runtimeChunk)
+  }
+  if (options.entrySource !== undefined) {
+    writeFileSync(join(packageDir, 'lib/index.js'), options.entrySource)
   }
   const loaderPath = join(root, 'loader.mjs')
   writeFileSync(loaderPath, 'export default class Loader { unwrapExports(value) { return value } }\n')
@@ -95,5 +104,29 @@ describe('built package invariant verifier', () => {
     const result = verify(root, loaderUrl)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('chunk.js')
+  })
+
+  it('checks declared lib entries even when a package has no companion', () => {
+    const { root, loaderUrl } = fixture({
+      companion: false,
+      entryDeclared: true,
+      entrySource: "export * from './chunk.js'\n",
+      runtimeChunk: "export const value = 'chunk'\n",
+    })
+    const result = verify(root, loaderUrl)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('lib/index.js -> ./chunk.js')
+  })
+
+  it('accepts a non-companion entry when its runtime chunk is declared', () => {
+    const { root, loaderUrl } = fixture({
+      companion: false,
+      entryDeclared: true,
+      entrySource: "export * from './chunk.js'\n",
+      runtimeChunk: "export const value = 'chunk'\n",
+      runtimeChunkDeclared: true,
+    })
+    const result = verify(root, loaderUrl)
+    expect(result.status, result.stderr).toBe(0)
   })
 })

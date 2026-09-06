@@ -70,16 +70,22 @@ for (const manifestPath of manifests) {
     failures.push(`${manifestPath}: missing package name`)
     continue
   }
+  const declaredFiles = Array.isArray(manifest.files)
+    ? manifest.files.filter(file => typeof file === 'string')
+    : []
   const invariantExport = manifest.exports?.['./invariant']
-  if (invariantExport === undefined) continue
-  companionCount += 1
-  if (typeof invariantExport !== 'object'
-    || invariantExport === null
-    || invariantExport.default !== './lib/invariant.js'
-    || !manifest.files?.includes('lib/invariant.js')) {
-    failures.push(`${packageName}: manifest does not publish ./lib/invariant.js as ./invariant`)
-    continue
+  const hasCompanion = invariantExport !== undefined
+  if (hasCompanion) {
+    companionCount += 1
+    if (typeof invariantExport !== 'object'
+      || invariantExport === null
+      || invariantExport.default !== './lib/invariant.js'
+      || !declaredFiles.includes('lib/invariant.js')) {
+      failures.push(`${packageName}: manifest does not publish ./lib/invariant.js as ./invariant`)
+      continue
+    }
   }
+  if (!declaredFiles.some(file => file.startsWith('lib/'))) continue
 
   // Keep the staged view below its owning package so Node reaches the real
   // pnpm dependency links. Junctioning node_modules elsewhere breaks pnpm's
@@ -88,11 +94,12 @@ for (const manifestPath of manifests) {
   const stagedPackageDir = mkdtempSync(resolve(packageDir, '.dsh-built-invariant-'))
   try {
     copyFileSync(resolve(packageDir, 'package.json'), resolve(stagedPackageDir, 'package.json'))
-    copyDeclaredLibFiles(packageDir, stagedPackageDir, manifest.files)
+    copyDeclaredLibFiles(packageDir, stagedPackageDir, declaredFiles)
     const undeclared = findUndeclaredLibImports(stagedPackageDir)
     if (undeclared.length > 0) {
       throw new Error(`declared files view misses relative imports: ${undeclared.join(', ')}`)
     }
+    if (!hasCompanion) continue
     const probePath = resolve(stagedPackageDir, 'probe.mjs')
     writeFileSync(
       probePath,

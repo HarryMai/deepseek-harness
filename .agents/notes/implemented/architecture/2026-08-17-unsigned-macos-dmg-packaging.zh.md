@@ -14,13 +14,13 @@ Status: implemented
 
 分架构的 Node 运行时是下载的，不是复制的。Windows 构建复制构建机自身的 Node 可执行文件，因此断言构建机 Node 与配置版本一致；macOS 构建机必须在一台主机上产出两种架构，所以构建从 nodejs.org 下载配置版本的官方 `node-v<version>-darwin-<arch>.tar.gz`，并在解包前对照官方发布的 `SHASUMS256.txt` 校验，归档缓存在 `apps/desktop/.desktop-cache/` 下并在复用时重新校验。固定版本的 Electron darwin ZIP 优先来自本地 Electron 缓存（`electron_config_cache`、`ELECTRON_CACHE` 或 `~/Library/Caches/electron`），不存在时从 GitHub release 下载，同样经 SHA-256 校验。Windows 构建在缓存缺少 ZIP 时直接失败，因为 `pnpm install` 总会填充唯一的 Windows 目标；macOS 构建机的本地缓存只持有本架构，无法要求另一架构的 ZIP 本地必有。
 
-Host 闭包每次构建只暂存一次，走与 Windows 相同的 pnpm deploy 加 workspace 暂存流程，由两个架构的包共用。打包后 Host 冒烟测试只覆盖构建机本架构：另一架构下载来的 Node 无法在本机执行，因此该包只完成暂存、条目检查和映像封装，不做启动探测。
+Host 闭包按每个目标架构各暂存一次，走与 Windows 相同的 pnpm deploy 加 workspace 暂存流程。部署调用保持依赖生命周期脚本隔离；在解压经过校验的目标 Node 头文件后，只对已审核的 `fs-ext` 安装步骤调用构建机 Node 随附的 node-gyp，并要求生成对应绑定文件。这会为随该 Host 闭包一同打包的 Node 运行时构建原生依赖。打包后 Host 冒烟测试只覆盖构建机本架构：另一架构下载来的 Node 无法在本机执行，因此该包只完成暂存、条目检查和映像封装，不做启动探测。
 
 签名只在配置中预留，未实现：`installer.signing` 校验字面量 `'none'`，使后续签名身份以新增枚举值的方式加入，而不是改变配置结构，与 Windows 的 `unsigned: true` 立场一致。无签名的代价落在下载副本的接收者身上：Gatekeeper 会拦截首次启动（提示「无法打开，因为无法验证开发者」或「已损坏」），直到应用通过右键点按 → 打开、macOS 15+ 的系统设置 → 隐私与安全性 → 仍要打开，或 `xattr -cr` 打开。在本机构建并运行的应用不带隔离属性，打开时不会有警告。
 
 ## 验证
 
-`apps/desktop/tests/build-config.spec.ts` 接受当前提交的无签名 macOS 设置，并拒绝未知或缺失的 `mac` 字段、重复或不支持的架构、非反向 DNS 的 bundle 标识符、带签名或非 DMG 的安装格式、缺少 `{arch}` 的输出文件名，以及非 `.icns` 图标。`apps/desktop/tests/runtime.spec.ts` 固定 darwin 打包 Node 分支（非 darwin 平台跳过）及其对不支持平台的拒绝。`apps/desktop/tests/stage-application.spec.ts` 证明暂存复制在暂存后的 bundle 内保持框架符号链接目标相对且可解析。`--dry-run` 端到端走通配置加载与目标解析路径。在 darwin-x64 构建机上完整执行 `pnpm run desktop:make:mac` 已在 `apps/desktop/out/make/dmg/` 下产出 `DeepSeek Harness-x64.dmg` 与 `DeepSeek Harness-arm64.dmg`：x64 的打包后 Host 冒烟测试通过，arm64 冒烟测试按设计跳过。
+`apps/desktop/tests/build-config.spec.ts` 接受当前提交的无签名 macOS 设置，并拒绝未知或缺失的 `mac` 字段、重复或不支持的架构、非反向 DNS 的 bundle 标识符、带签名或非 DMG 的安装格式、缺少 `{arch}` 的输出文件名，以及非 `.icns` 图标。`apps/desktop/tests/runtime.spec.ts` 固定 darwin 打包 Node 分支（非 darwin 平台跳过）及其对不支持平台的拒绝。`apps/desktop/tests/stage-application.spec.ts` 证明暂存复制在暂存后的 bundle 内保持框架符号链接目标相对且可解析。`apps/desktop/tests/native-module.spec.ts` 固定直接 node-gyp 命令的目标架构和解压出的 Node 头文件，要求其运行后存在预期的 fs-ext 绑定，并拒绝缺少随 Node 附带的 node-gyp。`--dry-run` 端到端走通配置加载与目标解析路径。在 darwin-x64 构建机上完整执行 `pnpm run desktop:make:mac` 已在 `apps/desktop/out/make/dmg/` 下产出 `DeepSeek Harness-x64.dmg` 与 `DeepSeek Harness-arm64.dmg`：x64 的打包后 Host 冒烟测试通过，arm64 冒烟测试按设计跳过。
 
 ## 曾考虑的替代方案
 
@@ -33,6 +33,6 @@ Host 闭包每次构建只暂存一次，走与 Windows 相同的 pnpm deploy �
 
 - macOS x64 与 arm64 接收者无需项目持有 Apple Developer 身份即可从 DMG 安装；代价是 `apps/desktop/README.md` 中记录的 Gatekeeper 首次运行变通方法。
 - 暂存后的 bundle 保持框架符号链接相对，安装副本在应用内部解析 Electron Framework，不再依赖构建机的 workspace 路径。
-- 为非本架构产出的包在构建中从未执行：其 Node 可执行文件经校验下载而正确，但共用的 Host 闭包来自构建机的 workspace，因此任何只携带单架构二进制的原生模块都会匹配构建机而非该包（`node-pty` 当前同时携带两种 darwin prebuild）。分发跨架构包前请在匹配硬件上验证。
+- 每个 DMG 都接收为其架构暂存的 Host 闭包，因此新增的原生依赖会为加载它们的 Node 运行时构建。非构建机架构的包在构建中仍不执行；分发前请在匹配硬件上验证。
 - macOS 构建每次运行都会访问网络（Node 校验和清单），并在 Electron 缓存未命中时访问 GitHub release；离线构建必须预置 `apps/desktop/.desktop-cache/` 和 Electron 缓存。
 - [Electron 壳 Agent Note](2026-08-14-electron-shell-over-web-profile.zh.md) 仍是窗口／Host 分离与 Windows 打包决策的所有者；本 Note 只拥有 macOS 打包路径。

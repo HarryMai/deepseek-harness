@@ -23,6 +23,7 @@ import { parseArgs } from 'node:util'
 import { packager } from '@electron/packager'
 import { parseDesktopBuildConfig, type DesktopBuildConfig, type DesktopMacConfig } from '../src/build-config.ts'
 import { pnpmBuildCommand } from '../src/build-command.ts'
+import { assertFsExtBinding, bundledNodeGypPath, nativeModuleBuildCommand } from '../src/native-module.ts'
 import { manageHostProcess, stopHostProcess, waitForHostReady } from '../src/process-lifecycle.ts'
 import { copyApplicationBundle } from '../src/stage-application.ts'
 import {
@@ -335,7 +336,8 @@ async function pruneNonRuntimeArtifacts(directory: string): Promise<void> {
   }
 }
 
-async function stageHostRuntime(targets: readonly WorkspaceRuntimeTarget[]): Promise<void> {
+async function stageHostRuntime(architecture: MacArchitecture, nodeHeaders: string): Promise<void> {
+  await removeGeneratedTree(hostRuntime)
   await runPnpm('deploy ordinary-Node Host closure', [
     '--filter',
     '@deepseek-ai/dsh',
@@ -347,7 +349,7 @@ async function stageHostRuntime(targets: readonly WorkspaceRuntimeTarget[]): Pro
     '--config.ignore-scripts=true',
     hostRuntime,
   ])
-  await stageMissingWorkspaceRuntimePackages(targets)
+  await stageMissingWorkspaceRuntimePackages([{ os: 'darwin', cpu: architecture }])
   await materializeLinks(join(hostRuntime, 'node_modules'))
   // The Windows build hoists this provider dependency to keep Squirrel's legacy
   // .NET extraction paths below MAX_PATH; macOS packaging has no such limit.
@@ -357,15 +359,29 @@ async function stageHostRuntime(targets: readonly WorkspaceRuntimeTarget[]): Pro
   if (existsSync(join(hostRuntime, 'node_modules', owner, 'node_modules', dependency))) {
     await hoistNestedDependency(owner, dependency)
   }
+  const fsExtDirectory = join(hostRuntime, 'node_modules', 'fs-ext')
+  if (!existsSync(fsExtDirectory)) {
+    throw new Error(`desktop installer: fs-ext is missing from the Host closure: ${fsExtDirectory}`)
+  }
+  const nativeBuild = nativeModuleBuildCommand(bundledNodeGypPath(), nodeHeaders, architecture)
+  await run(`build fs-ext for darwin-${architecture}`, nativeBuild.command, nativeBuild.args, fsExtDirectory)
+  assertFsExtBinding(hostRuntime)
   await pruneNonRuntimeArtifacts(hostRuntime)
   await copyFile(join(desktopRoot, 'lib/host.js'), join(hostRuntime, 'desktop-host-child.js'))
 }
 
-async function stageNodeRuntime(version: string, architecture: MacArchitecture): Promise<string> {
+interface StagedNodeRuntime {
+  readonly directory: string
+  readonly headers: string
+}
+
+async function stageNodeRuntime(version: string, architecture: MacArchitecture): Promise<StagedNodeRuntime> {
   const archive = await cachedNodeArchive(version, architecture)
   const distribution = `node-v${version}-darwin-${architecture}`
   const directory = join(buildRoot, architecture, 'n')
+  const headers = join(buildRoot, architecture, 'headers')
   await mkdir(directory, { recursive: true })
+  await mkdir(headers, { recursive: true })
   await run(`extract Node ${version} darwin-${architecture} executable`, 'tar', [
     '-xzf',
     archive,
@@ -382,12 +398,22 @@ async function stageNodeRuntime(version: string, architecture: MacArchitecture):
     '--strip-components=1',
     `${distribution}/LICENSE`,
   ])
+  await run(`extract Node ${version} darwin-${architecture} headers`, 'tar', [
+    '-xzf',
+    archive,
+    '-C',
+    headers,
+    '--strip-components=1',
+    `${distribution}/include`,
+  ])
   const nodeExecutable = join(directory, 'node')
-  if (!existsSync(nodeExecutable) || !existsSync(join(directory, 'LICENSE'))) {
-    throw new Error(`desktop installer: Node archive is missing bin/node or LICENSE: ${archive}`)
+  if (!existsSync(nodeExecutable) || !existsSync(join(directory, 'LICENSE'))
+    || !existsSync(join(headers, 'include/node/node.h'))
+    || !existsSync(join(headers, 'include/node/common.gypi'))) {
+    throw new Error(`desktop installer: Node archive is missing runtime or build headers: ${archive}`)
   }
   await chmod(nodeExecutable, 0o755)
-  return directory
+  return { directory, headers }
 }
 
 interface DesktopPackageManifest {
@@ -507,15 +533,15 @@ async function main(): Promise<void> {
   await removeGeneratedTree(buildRoot)
   await removeGeneratedTree(outputRoot)
   await mkdir(buildRoot, { recursive: true })
-  await stageHostRuntime(config.mac.architectures.map(architecture => ({ os: 'darwin', cpu: architecture })))
   const { electronVersion } = await stagePackagedApplication(config)
   for (const architecture of config.mac.architectures) {
     const nodeRuntime = await stageNodeRuntime(config.runtime.node.version, architecture)
+    await stageHostRuntime(architecture, nodeRuntime.headers)
     if (architecture === process.arch) {
       const smokeHome = join(buildRoot, 'smoke-home')
       await mkdir(smokeHome)
       await smokePackagedHost(
-        join(nodeRuntime, 'node'),
+        join(nodeRuntime.directory, 'node'),
         join(hostRuntime, 'desktop-host-child.js'),
         smokeHome,
       )
@@ -539,7 +565,7 @@ async function main(): Promise<void> {
       executableName: config.product.executableName,
       appCopyright: config.product.copyright,
       appBundleId: config.mac.bundleIdentifier,
-      extraResource: [nodeRuntime, hostRuntime],
+      extraResource: [nodeRuntime.directory, hostRuntime],
       ...(appIcon === undefined ? {} : { icon: appIcon }),
     })
     const [applicationDirectory] = applicationDirectories

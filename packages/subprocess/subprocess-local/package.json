@@ -28,6 +28,7 @@
   "files": [
     "lib/index.js",
     "lib/process-inspector.js",
+    "lib/process-inspector-*.js",
     "scripts/ensure-spawn-helper.mjs",
     "lib/types/**/*.d.ts"
   ],

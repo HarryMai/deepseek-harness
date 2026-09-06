@@ -10,6 +10,7 @@ import {
   renameSync,
   rmSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -192,9 +193,10 @@ function runInstaller(
   fixture: Fixture,
   root: string,
   extraEnv: NodeJS.ProcessEnv = {},
+  installerPath = installer,
 ): Promise<CommandResult> {
   return new Promise((resolveResult, reject) => {
-    const child = spawn(process.execPath, [installer], {
+    const child = spawn(process.execPath, [installerPath], {
       cwd: root,
       env: { ...fixture.env, ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -244,6 +246,27 @@ describe('worktree-local Lefthook installer', { timeout: 90_000 }, () => {
       ]).status).toBe(1)
     })
   }
+
+  it('skips hook installation when a production deployment omits Lefthook', async () => {
+    const fixture = createFixture()
+    const lefthook = join(
+      fixture.main,
+      'node_modules',
+      '.bin',
+      process.platform === 'win32' ? 'lefthook.cmd' : 'lefthook',
+    )
+    unlinkSync(lefthook)
+    const deployedInstaller = join(fixture.container, 'install-lefthook.mjs')
+    write(deployedInstaller, readFileSync(installer, 'utf8'))
+
+    const result = await runInstaller(fixture, fixture.main, {}, deployedInstaller)
+
+    expect(result.status, result.stderr).toBe(0)
+    expect(gitResult(fixture, fixture.main, ['config', '--get', 'extensions.worktreeConfig']).status).toBe(1)
+    expect(git(fixture, fixture.main, ['config', '--get', 'core.repositoryFormatVersion'])).toBe('0')
+    expect(existsSync(hooksPath(fixture, fixture.main))).toBe(false)
+    expect(existsSync(join(commonDirectory(fixture), 'config.worktree'))).toBe(false)
+  })
 
   it('isolates main and linked worktrees without changing legacy common hooks', async () => {
     const fixture = createFixture()
