@@ -7,19 +7,12 @@
   },
   "include": [
     "src",
-    "tests",
-    "scripts",
     "desktop-build.config.json"
   ],
   "references": [
-    {
-      "path": "../cli"
-    },
-    {
-      "path": "../../packages/host/webserver"
-    },
-    {
-      "path": "../../packages/subprocess/subprocess-local"
-    }
+    { "path": "../cli" },
+    { "path": "../../packages/host/webserver" },
+    { "path": "../../packages/subprocess/subprocess-local" },
+    { "path": "../../packages/util/home-paths" }
   ]
 }

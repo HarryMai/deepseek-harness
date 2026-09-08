@@ -22,4 +22,4 @@ agent-loop 只解析一次工具调用最外层的参数文档。因此，即使
 
 ## 后果
 
-合法输入为字符串的 Inspect 方法会保持原始输入，因为原始 schema 校验优先执行。格式错误的 Inspect 文本保留普通校验错误；格式错误或不匹配的 Define 文本会报告失败字段。通用校验机制仍然保持严格，如[运行时参数校验 Note](../architecture/2026-06-11-runtime-arg-validation.zh.md)所述。
+合法输入为字符串的 Inspect 方法会保持原始输入，因为原始 schema 校验优先执行。格式错误的 Inspect 文本保留普通校验错误；格式错误或不匹配的 Define 文本会报告失败字段。通用校验机制仍然保持严格，如[运行时参数校验 Note](../../archived/architecture/2026-06-11-runtime-arg-validation.md)所述。

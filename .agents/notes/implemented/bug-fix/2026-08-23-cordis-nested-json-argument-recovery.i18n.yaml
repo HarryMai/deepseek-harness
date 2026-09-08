@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-23-cordis-nested-json-argument-recovery.md
-2026-08-23-cordis-nested-json-argument-recovery.md: 46f4558eb6b8909ce6b9eb1d4ba23ba5f9ff3a9f
-2026-08-23-cordis-nested-json-argument-recovery.zh.md: 68d89e4b66121903717ebdf39e53e96e43699ce0
+2026-08-23-cordis-nested-json-argument-recovery.md: c1a9ef40c741c685448151ef16a9468708143821
+2026-08-23-cordis-nested-json-argument-recovery.zh.md: 0b5343423f7fa0640b5e2d4549c3a31ba9a53589

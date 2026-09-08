@@ -14,7 +14,7 @@ Status: implemented
 
 Web bundle 的 `connection` 邻域包含独立挂载的 `mcp-settings-probe`、`file-upload` 和 `ui-settings-mcp` 配置项。包依赖让它们的模块可被解析，但不会挂载 Cordis 服务。[Web roster spec](../../../../packages/bundle/web-app/tests/settings-mcp-roster.spec.ts) 断言这三个配置项全部存在，其中包括 Session Controller 所需的 `file-upload` 提供方。[已发布工具名录决策](../feature/2026-07-31-even-out-shipped-tool-rosters.zh.md)负责 MCP 设置组和探测行为，[通用文件上传决策](../feature/2026-08-26-generic-file-upload.zh.md)负责 file-upload 行为。MCP client 的直接 project reference 和公共子路径源码别名，以及 MCP 设置页面手写的源码路径别名，仍是完整包集成的一部分；[公共包子路径决策](../bug-fix/2026-09-03-public-package-subpaths.zh.md)负责子路径元组。
 
-[增量更新 PR base 分支决策](2026-07-26-incremental-pr-base-retargeting.zh.md)继续负责合并检查点。本文负责同一检查点中独立新增项的保留与验证。
+[增量更新 PR base 分支决策](../../archived/process/2026-07-26-incremental-pr-base-retargeting.md)继续负责合并检查点。本文负责同一检查点中独立新增项的保留与验证。
 
 ## 考虑过的替代方案
 

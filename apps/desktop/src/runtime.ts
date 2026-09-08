@@ -1,6 +1,6 @@
 /** Shared, Electron-free decisions for the desktop launcher and Host child. */
 
-import { join } from 'node:path'
+import { join, win32 } from 'node:path'
 
 /** Environment key carrying the Node executable that launched the Electron shell. */
 export const DESKTOP_NODE_EXECUTABLE = 'DSH_DESKTOP_NODE_EXECUTABLE'
@@ -124,10 +124,13 @@ export interface DesktopHostLogPaths {
  * @returns Separate append-only paths for Host stdout and stderr.
  */
 export function desktopHostLogPaths(userDataPath: string): DesktopHostLogPaths {
-  const logs = join(userDataPath, 'logs')
+  // Tests and cross-platform tooling may resolve a Windows user-data path on a
+  // non-Windows host; retain the path family supplied by Electron.
+  const path = win32.isAbsolute(userDataPath) ? win32 : { join }
+  const logs = path.join(userDataPath, 'logs')
   return {
-    stdout: join(logs, 'host.stdout.log'),
-    stderr: join(logs, 'host.stderr.log'),
+    stdout: path.join(logs, 'host.stdout.log'),
+    stderr: path.join(logs, 'host.stderr.log'),
   }
 }
 

@@ -1,260 +1,397 @@
-/** Electron main process for the DeepSeek Harness desktop application. */
+/** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
-import { spawn } from 'node:child_process'
-import { createWriteStream, type WriteStream } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { readFile, writeFile } from 'node:fs/promises'
+import { extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, dialog, session, shell, type Event as ElectronEvent } from 'electron'
-import desktopBuildConfig from '../desktop-build.config.json' with { type: 'json' }
 import {
-  ACL_RUNNER_DEBUG_LOG_ENV,
-  desktopHostLogPaths,
-  desktopArguments,
-  isApplicationNavigation,
-  isDesktopPermissionAllowed,
-  isExternalWebUrl,
-  isUnexpectedDesktopHostExit,
-  packagedHostEntry,
-  packagedNodeExecutable,
-  resolveNodeExecutable,
-  resolveDesktopHostCwd,
-} from './runtime.ts'
-import {
-  manageHostProcess,
-  stopHostProcess,
-  waitForHostReady,
-  type ManagedHostProcess,
-} from './process-lifecycle.ts'
-import { squirrelLifecycleAction } from './squirrel.ts'
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  protocol,
+  type IpcMainInvokeEvent,
+} from 'electron'
+import { resolveDesktopPaths } from './paths.ts'
+import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
+import { DesktopHostProcess } from './host-process.ts'
+import { DESKTOP_IPC, type DesktopUpdateState } from './ipc.ts'
+import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
+import { claimDesktopSingleInstance } from './single-instance.ts'
+import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 
-const HOST_START_TIMEOUT_MS = 60_000
-const HOST_SHUTDOWN_TIMEOUT_MS = 6_000
-const hostEntry = app.isPackaged
-  ? packagedHostEntry(process.resourcesPath)
-  : fileURLToPath(new URL('./host.js', import.meta.url))
+const SCHEME = 'dsh-app'
+let focusPrimaryWindow = (): void => {}
 
-let hostProcess: ManagedHostProcess | undefined
-let hostReady = false
-let applicationUrl: string | undefined
-let mainWindow: BrowserWindow | undefined
-let shutdownStarted = false
-
-interface HostLogStreams {
-  readonly stdout: WriteStream
-  readonly stderr: WriteStream
+function errorOf(reason: unknown, fallback: string): Error {
+  return reason instanceof Error ? reason : new Error(fallback)
 }
 
-async function openHostLogStreams(userDataPath: string): Promise<HostLogStreams | undefined> {
-  const paths = desktopHostLogPaths(userDataPath)
+protocol.registerSchemesAsPrivileged([{
+  scheme: SCHEME,
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    corsEnabled: false,
+    stream: true,
+    codeCache: true,
+  },
+}])
+
+const MIME: Readonly<Record<string, string>> = {
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.svg': 'image/svg+xml',
+}
+
+interface RuntimeResources {
+  readonly node: string
+  readonly pnpm: string
+  readonly seed: string
+}
+
+function runtimeResources(): RuntimeResources {
+  const development = !app.isPackaged
+  const node = (development ? process.env.DSH_DESKTOP_NODE_BINARY : undefined)
+    ?? join(process.resourcesPath, 'runtime', 'node', process.platform === 'win32' ? 'node.exe' : 'node')
+  const pnpm = (development ? process.env.DSH_DESKTOP_PNPM_ENTRY : undefined)
+    ?? join(process.resourcesPath, 'runtime', 'pnpm', 'bin', 'pnpm.mjs')
+  const seed = (development ? process.env.DSH_DESKTOP_SEED_DIR : undefined) ?? join(process.resourcesPath, 'seed')
+  return { node, pnpm, seed }
+}
+
+function developmentProject(): string | undefined {
+  const configured = process.env.DSH_DESKTOP_DEV_PROJECT_DIR
+  if (configured === undefined || configured === '') return undefined
+  if (app.isPackaged) throw new Error('dsh desktop: development project override is unavailable in packaged applications')
+  return resolve(configured)
+}
+
+function developmentHostInspectPort(enabled: boolean): number | undefined {
+  const configured = process.env.DSH_DESKTOP_HOST_INSPECT_PORT
+  if (!enabled || configured === undefined || configured === '') return undefined
+  const port = Number(configured)
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+    throw new Error('dsh desktop: DSH_DESKTOP_HOST_INSPECT_PORT must be an integer from 1 through 65535')
+  }
+  return port
+}
+
+function createWindow(preload: string): BrowserWindow {
+  const window = new BrowserWindow({
+    width: 1280,
+    height: 840,
+    minWidth: 880,
+    minHeight: 600,
+    show: false,
+    webPreferences: {
+      preload,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
+    },
+  })
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.on('will-navigate', (event, url) => {
+    if (new URL(url).protocol !== `${SCHEME}:`) event.preventDefault()
+  })
+  return window
+}
+
+function assertDesktopSender(event: IpcMainInvokeEvent, hostnames: readonly string[]): void {
+  const senderFrame = event.senderFrame
+  if (senderFrame === null) throw new Error('dsh desktop: rejected IPC without a sender frame')
+  const url = new URL(senderFrame.url)
+  if (url.protocol !== `${SCHEME}:` || !hostnames.includes(url.hostname)) {
+    throw new Error('dsh desktop: rejected IPC from an unowned renderer')
+  }
+}
+
+async function serveShellAsset(request: Request): Promise<Response> {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return new Response(null, { status: 405 })
+  const root = resolve(app.getAppPath(), 'renderer')
+  const url = new URL(request.url)
+  let pathname: string
   try {
-    await mkdir(dirname(paths.stdout), { recursive: true })
-    const stdout = createWriteStream(paths.stdout, { flags: 'a', encoding: 'utf8' })
-    const stderr = createWriteStream(paths.stderr, { flags: 'a', encoding: 'utf8' })
-    stdout.on('error', (error: Error) => {
-      console.error(`desktop: Host stdout log failed: ${error.message}`)
+    pathname = decodeURIComponent(url.pathname)
+  } catch {
+    return new Response(null, { status: 400 })
+  }
+  const target = resolve(normalize(join(root, pathname)))
+  if (target !== root && !target.startsWith(root + sep)) return new Response(null, { status: 403 })
+  try {
+    const body = request.method === 'HEAD' ? null : await readFile(target)
+    return new Response(body, { headers: { 'content-type': MIME[extname(target)] ?? 'application/octet-stream' } })
+  } catch {
+    return new Response(null, { status: 404 })
+  }
+}
+
+async function main(): Promise<void> {
+  const resources = runtimeResources()
+  const paths = resolveDesktopPaths()
+  const development = developmentProject()
+  const activeProject = development ?? paths.profile
+  const hostInspectPort = developmentHostInspectPort(development !== undefined)
+  const manager = new DesktopProjectManager(paths, resources)
+  if (development === undefined) manager.recover()
+  let host: DesktopHostProcess | undefined
+  let mainWindow: BrowserWindow | undefined
+  let pluginWindow: BrowserWindow | undefined
+  let shellInstallerOwnsQuit = false
+  let updateState: DesktopUpdateState = { phase: 'idle' }
+  const locale = resolveDesktopLocale(app.getLocale())
+  const messages = locale.messages
+  const appPreload = fileURLToPath(new URL('./preload-app.cjs', import.meta.url))
+  const managementPreload = fileURLToPath(new URL('./preload.cjs', import.meta.url))
+
+  const publishUpdate = (state: DesktopUpdateState): DesktopUpdateState => {
+    updateState = state
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send(DESKTOP_IPC.updatesState, state)
+    }
+    return state
+  }
+
+  const startHost = async (projectDir = activeProject): Promise<DesktopHostProcess> => {
+    const next = new DesktopHostProcess(resources.node, projectDir, hostInspectPort)
+    await next.start()
+    return next
+  }
+  const hooks: DesktopProjectHooks = {
+    healthCheck: async (projectDir) => {
+      const active = host
+      host = undefined
+      await active?.stop()
+      let healthFailure: unknown
+      let probe: DesktopHostProcess | undefined
+      try {
+        probe = await startHost(projectDir)
+        await probe.stop()
+      } catch (error) {
+        healthFailure = error
+        await probe?.stop().catch(() => undefined)
+      }
+      let restartFailure: unknown
+      if (active !== undefined) {
+        try {
+          host = await startHost()
+        } catch (error) {
+          restartFailure = error
+        }
+      }
+      if (healthFailure !== undefined && restartFailure !== undefined) {
+        throw new AggregateError([
+          errorOf(healthFailure, 'desktop project: staged health check failed'),
+          errorOf(restartFailure, 'desktop project: active backend restart failed'),
+        ], 'desktop project: staged health check and active backend restart failed')
+      }
+      if (healthFailure !== undefined) throw errorOf(healthFailure, 'desktop project: staged health check failed')
+      if (restartFailure !== undefined) throw errorOf(restartFailure, 'desktop project: active backend restart failed')
+    },
+    beforeActivate: async () => {
+      const active = host
+      host = undefined
+      await active?.stop()
+    },
+    afterActivate: async () => {
+      host = await startHost()
+    },
+  }
+
+  if (development === undefined) {
+    await manager.applyRelease(resources.seed, app.getVersion(), {
+      ...hooks,
+      beforeActivate: async () => {},
+      afterActivate: async () => {},
     })
-    stderr.on('error', (error: Error) => {
-      console.error(`desktop: Host stderr log failed: ${error.message}`)
-    })
-    return { stdout, stderr }
-  } catch (error: unknown) {
-    console.error(
-      'desktop: could not open Host logs',
-      error instanceof Error ? error.message : String(error),
-    )
-    return undefined
   }
-}
+  host = await startHost()
 
-function handleSquirrelLifecycle(): boolean {
-  const action = squirrelLifecycleAction(process.argv, process.execPath, process.platform, {
-    desktop: desktopBuildConfig.windows.installer.createDesktopShortcut,
-    startMenu: desktopBuildConfig.windows.installer.createStartMenuShortcut,
-  })
-  if (action === undefined) return false
-  if (action.kind === 'quit') {
-    app.quit()
-    return true
-  }
-
-  const update = spawn(action.executable, action.args, {
-    stdio: 'ignore',
-    windowsHide: true,
-  })
-  let finished = false
-  const quit = (): void => {
-    if (finished) return
-    finished = true
-    app.quit()
-  }
-  update.once('error', quit)
-  update.once('close', quit)
-  return true
-}
-
-function openExternal(url: string): void {
-  if (!isExternalWebUrl(url)) return
-  void shell.openExternal(url).catch((error: unknown) => {
-    console.error('desktop: failed to open external URL', error)
-  })
-}
-
-async function startHost(args: readonly string[]): Promise<string> {
-  const userDataPath = app.getPath('userData')
-  const logs = await openHostLogStreams(userDataPath)
-  const child = spawn(
-    app.isPackaged
-      ? packagedNodeExecutable(process.resourcesPath, process.platform)
-      : resolveNodeExecutable(process.env),
-    [hostEntry, ...args],
-    {
-      cwd: resolveDesktopHostCwd(app.isPackaged, app.getPath('home'), process.cwd()),
-      detached: process.platform !== 'win32',
-      env: {
-        ...process.env,
-        // The windows-acl runner appends per-spawn forensics here (the
-        // sandbox seam forwards it as --debug-log), so a field recurrence of
-        // the 0xC0000142 init failure is self-describing instead of a bare
-        // popup. Best-effort: the runner ignores an unwritable path.
-        [ACL_RUNNER_DEBUG_LOG_ENV]: join(userDataPath, 'logs', 'acl-runner.log'),
-      },
-      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-      windowsHide: true,
+  const updates = new DesktopUpdateCoordinator(
+    publishUpdate,
+    async () => {
+      shellInstallerOwnsQuit = true
+      const active = host
+      host = undefined
+      await active?.stop()
     },
   )
-  const managed = manageHostProcess(child)
-  hostProcess = managed
-  child.stdout?.pipe(process.stdout)
-  child.stderr?.pipe(process.stderr)
-  if (logs !== undefined) {
-    child.stdout?.pipe(logs.stdout)
-    child.stderr?.pipe(logs.stderr)
-  }
 
-  child.once('exit', (code, signal) => {
-    if (!hostReady || shutdownStarted) return
-    if (!isUnexpectedDesktopHostExit(hostReady, shutdownStarted, code, signal)) {
-      if (hostProcess === managed) hostProcess = undefined
-      app.quit()
+  protocol.handle(SCHEME, (request) => {
+    const url = new URL(request.url)
+    if (url.hostname === 'shell') return serveShellAsset(request)
+    if (url.hostname !== 'app') return Promise.resolve(new Response(null, { status: 404 }))
+    const active = host
+    if (active === undefined) return Promise.resolve(new Response('backend unavailable', { status: 503 }))
+    return active.fetch(request)
+  })
+
+  const mutate = async (event: IpcMainInvokeEvent, mutation: Parameters<DesktopProjectManager['mutate']>[0]): Promise<void> => {
+    assertDesktopSender(event, ['shell'])
+    if (development !== undefined) {
+      throw new Error('dsh desktop: plugin package changes require a packaged application')
+    }
+    await manager.mutate(mutation, hooks)
+    if (mainWindow !== undefined && !mainWindow.isDestroyed()) mainWindow.webContents.reload()
+  }
+  ipcMain.handle(DESKTOP_IPC.localeGet, (event) => {
+    assertDesktopSender(event, ['shell'])
+    return locale
+  })
+  ipcMain.handle(DESKTOP_IPC.pluginsList, (event) => {
+    assertDesktopSender(event, ['shell'])
+    if (development !== undefined) return []
+    return manager.listPlugins()
+  })
+  ipcMain.handle(DESKTOP_IPC.pluginsAdd, (event, spec: unknown) => {
+    if (typeof spec !== 'string') throw new Error('dsh desktop: plugin spec must be a string')
+    return mutate(event, { type: 'plugin-add', spec })
+  })
+  ipcMain.handle(DESKTOP_IPC.pluginsRemove, (event, name: unknown) => {
+    if (typeof name !== 'string') throw new Error('dsh desktop: plugin name must be a string')
+    return mutate(event, { type: 'plugin-remove', name })
+  })
+  ipcMain.handle(DESKTOP_IPC.pluginsUpdate, (event, name: unknown, version: unknown) => {
+    if (typeof name !== 'string' || typeof version !== 'string') {
+      throw new Error('dsh desktop: plugin name and version must be strings')
+    }
+    return mutate(event, { type: 'plugin-update', name, version })
+  })
+  ipcMain.handle(DESKTOP_IPC.updatesCheck, async (event) => {
+    assertDesktopSender(event, ['shell'])
+    return updates.check()
+  })
+  ipcMain.handle(DESKTOP_IPC.updatesInstall, async (event) => {
+    assertDesktopSender(event, ['shell'])
+    await updates.install()
+  })
+
+  const checkAndPrompt = async (manual: boolean): Promise<void> => {
+    const state = await updates.check()
+    if (state.phase === 'error') {
+      if (manual) {
+        await dialog.showMessageBox({
+          type: 'error',
+          title: messages.updateCheckFailedTitle,
+          message: state.message ?? messages.unknownError,
+        })
+      }
       return
     }
-    dialog.showErrorBox(
-      'DeepSeek Harness stopped',
-      `The local Host exited unexpectedly (code ${String(code)}, signal ${String(signal)}).`,
-    )
-    app.quit()
-  })
-  child.once('close', () => {
-    logs?.stdout.end()
-    logs?.stderr.end()
-    if (hostProcess === managed) hostProcess = undefined
-  })
-
-  const url = await waitForHostReady(child, HOST_START_TIMEOUT_MS)
-  managed.refreshProcessTree()
-  return url
-}
-
-function stopHost(): Promise<void> {
-  const host = hostProcess
-  return host === undefined
-    ? Promise.resolve()
-    : stopHostProcess(host, { gracefulTimeoutMs: HOST_SHUTDOWN_TIMEOUT_MS })
-}
-
-async function createWindow(url: string): Promise<void> {
-  const window = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 960,
-    minHeight: 640,
-    show: false,
-    autoHideMenuBar: process.platform !== 'darwin',
-    backgroundColor: '#111315',
-    title: 'DeepSeek Harness',
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      webviewTag: false,
-    },
-  })
-  mainWindow = window
-  window.once('ready-to-show', () => { window.show() })
-  window.once('closed', () => {
-    if (mainWindow === window) mainWindow = undefined
-  })
-  window.webContents.setWindowOpenHandler(({ url: target }) => {
-    openExternal(target)
-    return { action: 'deny' }
-  })
-  const guardNavigation = (event: ElectronEvent, target: string): void => {
-    if (isApplicationNavigation(url, target)) return
-    event.preventDefault()
-    openExternal(target)
-  }
-  window.webContents.on('will-navigate', guardNavigation)
-  window.webContents.on('will-redirect', guardNavigation)
-  window.webContents.on('will-attach-webview', (event) => { event.preventDefault() })
-  await window.loadURL(url)
-}
-
-function installPermissionHandlers(applicationUrl: string): void {
-  session.defaultSession.setPermissionCheckHandler((_contents, permission, requestingOrigin) =>
-    isDesktopPermissionAllowed(permission, applicationUrl, requestingOrigin))
-  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
-    callback(isDesktopPermissionAllowed(permission, applicationUrl, details.requestingUrl))
-  })
-}
-
-async function startApplication(): Promise<void> {
-  applicationUrl = await startHost(desktopArguments(process.argv, process.defaultApp))
-  installPermissionHandlers(applicationUrl)
-  hostReady = true
-  await createWindow(applicationUrl)
-}
-
-const squirrelLifecycle = handleSquirrelLifecycle()
-const singleInstance = squirrelLifecycle ? false : app.requestSingleInstanceLock()
-if (squirrelLifecycle || !singleInstance) {
-  app.quit()
-} else {
-  app.on('second-instance', () => {
-    if (mainWindow === undefined) return
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.show()
-    mainWindow.focus()
-  })
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length !== 0 || applicationUrl === undefined) return
-    void createWindow(applicationUrl).catch((error: unknown) => {
-      dialog.showErrorBox('DeepSeek Harness failed to open', error instanceof Error ? error.message : String(error))
+    if (state.phase !== 'available') {
+      if (manual) {
+        await dialog.showMessageBox({
+          type: 'info',
+          title: messages.updateCheckTitle,
+          message: state.message ?? messages.updateCurrent,
+        })
+      }
+      return
+    }
+    const result = await dialog.showMessageBox({
+      type: 'info',
+      title: messages.updateTitle,
+      message: messages.updateAvailable,
+      detail: formatDesktopMessage(messages.updateDetail, { version: state.version ?? '' }),
+      buttons: [messages.installAndRestart, messages.later],
+      defaultId: 0,
+      cancelId: 1,
     })
+    if (result.response !== 0) return
+    const installed = await updates.install()
+    if (installed.phase === 'error') {
+      await dialog.showMessageBox({
+        type: 'error',
+        title: messages.updateFailedTitle,
+        message: installed.message ?? messages.unknownError,
+      })
+    }
+  }
+
+  const openPluginWindow = (): void => {
+    if (pluginWindow !== undefined && !pluginWindow.isDestroyed()) {
+      pluginWindow.focus()
+      return
+    }
+    pluginWindow = createWindow(managementPreload)
+    pluginWindow.setSize(900, 620)
+    pluginWindow.setTitle(messages.pluginWindowTitle)
+    pluginWindow.once('ready-to-show', () => { pluginWindow?.show() })
+    pluginWindow.once('closed', () => { pluginWindow = undefined })
+    void pluginWindow.loadURL(`${SCHEME}://shell/plugin-manager.html`)
+  }
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{
+    label: process.platform === 'darwin' ? app.name : messages.application,
+    submenu: [
+      {
+        label: development === undefined ? messages.pluginsMenu : messages.pluginsMenuPackagedOnly,
+        accelerator: 'CmdOrCtrl+,',
+        enabled: development === undefined,
+        click: openPluginWindow,
+      },
+      { label: messages.checkUpdatesMenu, click: () => { void checkAndPrompt(true) } },
+      { type: 'separator' },
+      { role: 'quit' },
+    ],
+  }]))
+
+  const createMainWindow = (): BrowserWindow => {
+    const window = createWindow(appPreload)
+    mainWindow = window
+    window.once('ready-to-show', () => { if (!window.isDestroyed()) window.show() })
+    window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
+    return window
+  }
+  focusPrimaryWindow = () => {
+    const window = mainWindow
+    if (window === undefined || window.isDestroyed()) {
+      const replacement = createMainWindow()
+      void replacement.loadURL(`${SCHEME}://app/index.html`)
+      return
+    }
+    if (window.isMinimized()) window.restore()
+    window.show()
+    window.focus()
+  }
+
+  mainWindow = createMainWindow()
+  await mainWindow.loadURL(`${SCHEME}://app/index.html`)
+  if (development !== undefined && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
+  }
+  publishUpdate(updateState)
+  setTimeout(() => { void checkAndPrompt(false) }, 10_000)
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) focusPrimaryWindow()
   })
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
   })
   app.on('before-quit', (event) => {
-    if (shutdownStarted || hostProcess === undefined) return
+    if (shellInstallerOwnsQuit) return
+    if (host === undefined) return
     event.preventDefault()
-    shutdownStarted = true
-    void stopHost().then(
-      () => { app.quit() },
-      (error: unknown) => {
-        shutdownStarted = false
-        dialog.showErrorBox(
-          'DeepSeek Harness could not stop',
-          error instanceof Error ? error.message : String(error),
-        )
-      },
-    )
-  })
-  void app.whenReady().then(startApplication).catch((error: unknown) => {
-    dialog.showErrorBox(
-      'DeepSeek Harness failed to start',
-      error instanceof Error ? error.message : String(error),
-    )
-    app.quit()
+    const active = host
+    host = undefined
+    void active.stop().finally(() => { app.quit() })
   })
 }
+
+const ownsDesktopInstance = claimDesktopSingleInstance(app, () => { focusPrimaryWindow() })
+
+if (ownsDesktopInstance) void app.whenReady().then(main).catch(async (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error)
+  console.error(error)
+  const diagnosticFile = process.env.DSH_DESKTOP_DIAGNOSTIC_FILE
+  if (diagnosticFile !== undefined) {
+    await writeFile(diagnosticFile, `${error instanceof Error ? error.stack ?? message : message}\n`).catch(() => undefined)
+  }
+  dialog.showErrorBox(resolveDesktopLocale(app.getLocale()).messages.startupFailed, message)
+  app.exit(1)
+})

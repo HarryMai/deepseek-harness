@@ -22,4 +22,4 @@ The model guidance continues to require structured objects. The compatibility pa
 
 ## Consequences
 
-Valid string-valued Inspect methods retain their original input because original-schema validation runs first. Malformed Inspect text retains its ordinary validation error; malformed or mismatched Define text reports the field that failed. The generic validation mechanism remains strict, as established by the [runtime argument validation note](../architecture/2026-06-11-runtime-arg-validation.md).
+Valid string-valued Inspect methods retain their original input because original-schema validation runs first. Malformed Inspect text retains its ordinary validation error; malformed or mismatched Define text reports the field that failed. The generic validation mechanism remains strict, as established by the [runtime argument validation note](../../archived/architecture/2026-06-11-runtime-arg-validation.md).

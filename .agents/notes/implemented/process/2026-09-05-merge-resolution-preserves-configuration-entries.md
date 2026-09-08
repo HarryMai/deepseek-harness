@@ -14,7 +14,7 @@ A resolved configuration or compiler-reference hunk preserves every non-conflict
 
 The Web bundle's `connection` neighborhood contains the independently mounted `mcp-settings-probe`, `file-upload`, and `ui-settings-mcp` entries. A package dependency makes their modules resolvable but does not mount their Cordis services. The [Web roster spec](../../../../packages/bundle/web-app/tests/settings-mcp-roster.spec.ts) asserts all three entries, including the `file-upload` provider required by Session Controller. The [shipped tool rosters decision](../feature/2026-07-31-even-out-shipped-tool-rosters.md) owns the MCP settings group and probe behavior, and the [generic file-upload decision](../feature/2026-08-26-generic-file-upload.md) owns file-upload behavior. The MCP client's direct project references and public-subpath source aliases, plus the MCP settings page's hand-written source-path alias, remain part of the complete package integration; the [public package subpaths decision](../bug-fix/2026-09-03-public-package-subpaths.md) owns the subpath tuple.
 
-The [incremental base-retargeting decision](2026-07-26-incremental-pr-base-retargeting.md) continues to own merge checkpoints. This note owns preservation and validation of independent additions inside one resolved checkpoint.
+The [incremental base-retargeting decision](../../archived/process/2026-07-26-incremental-pr-base-retargeting.md) continues to own merge checkpoints. This note owns preservation and validation of independent additions inside one resolved checkpoint.
 
 ## Alternatives considered
 
