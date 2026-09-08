@@ -1,10 +1,12 @@
 /** Build and launch the unpackaged Electron shell against the current workspace. */
 
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import { fileURLToPath } from 'node:url'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../src/host-protocol.ts'
 import type { DesktopRelease } from '../src/release.ts'
 import { prepareDevelopmentProject } from './development-project.ts'
@@ -18,14 +20,40 @@ interface PackageManifest {
   readonly version?: string
 }
 
+/** Launch mode for an unpackaged Desktop process. */
+export type DesktopDevelopmentLaunchMode = 'isolated' | 'compatibility'
+
+/** Resolved Electron process settings for an unpackaged Desktop launch. */
+export interface DesktopDevelopmentLaunch {
+  /** Harness home passed to the Desktop main process and Host child. */
+  readonly home: string
+  /** Explicit Electron user-data directory, when the launch mode requires one. */
+  readonly userData: string | undefined
+  /** Environment inherited by Electron. */
+  readonly environment: NodeJS.ProcessEnv
+  /** Electron arguments, including the application root. */
+  readonly arguments: readonly string[]
+}
+
+/**
+ * Allocate the disposable npm project directory for an unpackaged launch.
+ * @param mode - Isolated development or compatibility launch mode.
+ * @returns A project directory for the selected launch.
+ */
+export function createDevelopmentProjectDirectory(mode: DesktopDevelopmentLaunchMode): string {
+  if (mode === 'isolated') return join(DEVELOPMENT_ROOT, 'project')
+  mkdirSync(DEVELOPMENT_ROOT, { recursive: true })
+  return mkdtempSync(join(DEVELOPMENT_ROOT, 'compatibility-project-'))
+}
+
 function packageVersion(path: string, subject: string): string {
   const manifest = JSON.parse(readFileSync(path, 'utf8')) as PackageManifest
   if (typeof manifest.version !== 'string') throw new Error(`desktop development: ${subject} has no version`)
   return manifest.version
 }
 
-function debugPort(name: string, fallback: number): number {
-  const value = process.env[name]
+function debugPort(name: string, fallback: number, environment = process.env): number {
+  const value = environment[name]
   if (value === undefined || value === '') return fallback
   const port = Number(value)
   if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
@@ -53,36 +81,86 @@ async function runPackageScript(script: string, cwd: string): Promise<void> {
   await run(process.execPath, [packageManager, 'run', script], cwd)
 }
 
-async function launchElectron(projectDir: string): Promise<void> {
-  const require = createRequire(import.meta.url)
-  const electron: unknown = require('electron')
-  if (typeof electron !== 'string') throw new Error('desktop development: electron executable is unavailable')
-  const mainPort = debugPort('DSH_DESKTOP_MAIN_INSPECT_PORT', 9229)
-  const rendererPort = debugPort('DSH_DESKTOP_RENDERER_DEBUG_PORT', 9222)
-  const hostPort = debugPort('DSH_DESKTOP_HOST_INSPECT_PORT', 9230)
-  const home = resolve(process.env.DSH_HOME ?? join(DEVELOPMENT_ROOT, 'home'))
-  const userData = join(DEVELOPMENT_ROOT, 'electron-user-data')
-  const environment: NodeJS.ProcessEnv = {
-    ...process.env,
-    DSH_HOME: home,
-    DSH_DESKTOP_DEV_PROJECT_DIR: projectDir,
-    DSH_DESKTOP_HOST_INSPECT_PORT: String(hostPort),
-    DSH_DESKTOP_NODE_BINARY: process.execPath,
-    DSH_DESKTOP_OPEN_DEVTOOLS: process.env.DSH_DESKTOP_OPEN_DEVTOOLS ?? '1',
-    ELECTRON_ENABLE_LOGGING: process.env.ELECTRON_ENABLE_LOGGING ?? '1',
+/**
+ * Resolve the process settings used by an unpackaged Desktop launch.
+ *
+ * Isolated mode uses disposable Harness and Electron data directories with
+ * debug endpoints. Compatibility mode uses the resolved shared Harness home,
+ * Electron's default user-data directory, and no debug endpoints.
+ * @param mode - Isolated development mode or the root-command compatibility mode.
+ * @param projectDir - Prepared development project passed to the main process.
+ * @param environment - Environment to inherit and resolve launch overrides from.
+ * @returns The resolved home, environment, and Electron arguments.
+ */
+export function resolveDevelopmentLaunch(
+  mode: DesktopDevelopmentLaunchMode,
+  projectDir: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): DesktopDevelopmentLaunch {
+  const compatibility = mode === 'compatibility'
+  const home = compatibility
+    ? resolveDshHome(undefined, environment)
+    : resolve(environment.DSH_HOME ?? join(DEVELOPMENT_ROOT, 'home'))
+  if (compatibility) {
+    return {
+      home,
+      userData: undefined,
+      environment: {
+        ...environment,
+        DSH_HOME: home,
+        DSH_DESKTOP_DEV_PROJECT_DIR: projectDir,
+        DSH_DESKTOP_NODE_BINARY: process.execPath,
+        DSH_DESKTOP_OPEN_DEVTOOLS: '0',
+      },
+      arguments: [APP_ROOT],
+    }
   }
-  console.log(`desktop development: DSH_HOME=${home}`)
-  console.log(`desktop development: inspectors main=${String(mainPort)}, renderer=${String(rendererPort)}, host=${String(hostPort)}`)
-  await run(electron, [
+
+  const mainPort = debugPort('DSH_DESKTOP_MAIN_INSPECT_PORT', 9229, environment)
+  const rendererPort = debugPort('DSH_DESKTOP_RENDERER_DEBUG_PORT', 9222, environment)
+  const hostPort = debugPort('DSH_DESKTOP_HOST_INSPECT_PORT', 9230, environment)
+  const userData = join(DEVELOPMENT_ROOT, 'electron-user-data')
+  const launchArguments = [
     `--inspect=127.0.0.1:${String(mainPort)}`,
     `--remote-debugging-port=${String(rendererPort)}`,
     `--user-data-dir=${userData}`,
     APP_ROOT,
-  ], APP_ROOT, environment)
+  ]
+  return {
+    home,
+    userData,
+    environment: {
+      ...environment,
+      DSH_HOME: home,
+      DSH_DESKTOP_DEV_PROJECT_DIR: projectDir,
+      DSH_DESKTOP_HOST_INSPECT_PORT: String(hostPort),
+      DSH_DESKTOP_NODE_BINARY: process.execPath,
+      DSH_DESKTOP_OPEN_DEVTOOLS: environment.DSH_DESKTOP_OPEN_DEVTOOLS ?? '1',
+      ELECTRON_ENABLE_LOGGING: environment.ELECTRON_ENABLE_LOGGING ?? '1',
+    },
+    arguments: launchArguments,
+  }
+}
+
+async function launchElectron(projectDir: string, mode: DesktopDevelopmentLaunchMode): Promise<void> {
+  const require = createRequire(import.meta.url)
+  const electron: unknown = require('electron')
+  if (typeof electron !== 'string') throw new Error('desktop development: electron executable is unavailable')
+  const launch = resolveDevelopmentLaunch(mode, projectDir)
+  console.log(`desktop development: DSH_HOME=${launch.home}`)
+  if (mode === 'isolated') {
+    console.log(`desktop development: inspectors main=${launch.arguments[0]?.split(':').at(-1)}, renderer=${launch.arguments[1]?.split('=').at(-1)}, host=${launch.environment.DSH_DESKTOP_HOST_INSPECT_PORT}`)
+  }
+  await run(electron, launch.arguments, APP_ROOT, launch.environment)
 }
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { 'skip-build': { type: 'boolean', default: false } } })
+  const { values } = parseArgs({
+    options: {
+      'skip-build': { type: 'boolean', default: false },
+      compatibility: { type: 'boolean', default: false },
+    },
+  })
   if (!values['skip-build']) {
     await runPackageScript('build', REPOSITORY_ROOT)
     await runPackageScript('build', APP_ROOT)
@@ -102,17 +180,25 @@ async function main(): Promise<void> {
     nodeVersion: process.versions.node,
     pnpmVersion,
   }
-  const projectDir = prepareDevelopmentProject({
-    projectDir: join(DEVELOPMENT_ROOT, 'project'),
-    cliDir: join(REPOSITORY_ROOT, 'apps', 'cli'),
-    hostDir: join(REPOSITORY_ROOT, 'apps', 'desktop-host'),
-    dependencyDir: join(REPOSITORY_ROOT, 'node_modules', '.pnpm', 'node_modules'),
-    release,
-  })
-  await launchElectron(projectDir)
+  const mode = values.compatibility ? 'compatibility' : 'isolated'
+  const projectDir = createDevelopmentProjectDirectory(mode)
+  try {
+    prepareDevelopmentProject({
+      projectDir,
+      cliDir: join(REPOSITORY_ROOT, 'apps', 'cli'),
+      hostDir: join(REPOSITORY_ROOT, 'apps', 'desktop-host'),
+      dependencyDir: join(REPOSITORY_ROOT, 'node_modules', '.pnpm', 'node_modules'),
+      release,
+    })
+    await launchElectron(projectDir, mode)
+  } finally {
+    if (mode === 'compatibility') rmSync(projectDir, { recursive: true, force: true })
+  }
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error)
-  process.exitCode = 1
-})
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : error)
+    process.exitCode = 1
+  })
+}

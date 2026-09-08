@@ -53,6 +53,14 @@ The process-lifetime Electron lock is the primary desktop owner. The transaction
 
 ## Develop
 
+`pnpm desktop` launches the existing workspace build with persistent user state:
+
+```sh
+pnpm desktop
+```
+
+This command resolves the normal Harness home, which defaults to `~/.dsh`, so sessions, settings, credentials, and MCP configuration use the same directory. An explicit `DSH_HOME` replaces that default. Electron keeps its platform user-data location, Renderer DevTools stays closed, and no process debugger is enabled. The generated npm project is unique to the launch and is removed after Electron exits; build artifacts must already exist.
+
 `dev:desktop` builds the current Host, client bundles, Web frontend, and Electron shell, projects the built CLI and private Desktop Host packages with their workspace dependencies into a disposable desktop npm project, and launches Electron without downloading the packaged Node.js runtime or resolving dsh from npm:
 
 ```sh

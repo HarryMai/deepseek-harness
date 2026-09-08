@@ -10,6 +10,7 @@
     "build": "tsc -b && tsdown",
     "dev": "tsx scripts/dev.ts",
     "start": "tsx scripts/dev.ts --skip-build",
+    "start:compatibility": "tsx scripts/dev.ts --skip-build --compatibility",
     "prepare:runtime": "tsx scripts/prepare-runtime.ts",
     "prepare:packages": "tsx scripts/prepare-package-set.ts",
     "prepare:seed": "tsx scripts/prepare-seed.ts",

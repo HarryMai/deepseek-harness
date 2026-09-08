@@ -65,6 +65,14 @@ export interface DesktopHostReady {
   readonly dshVersion: string
 }
 
+/** Optional child-process launch settings for a Desktop Host. */
+export interface DesktopHostProcessOptions {
+  /** Optional loopback inspector port for workspace development. */
+  readonly inspectPort?: number
+  /** Whether the child may resolve a linked workspace development profile. */
+  readonly allowLinkedProfile?: boolean
+}
+
 /** One dsh backend running under the bundled upstream Node.js executable. */
 export class DesktopHostProcess {
   private child: ChildProcess | undefined
@@ -87,12 +95,12 @@ export class DesktopHostProcess {
   /**
    * @param node - absolute bundled upstream Node.js executable.
    * @param projectDir - active or staged desktop npm project.
-   * @param inspectPort - optional loopback inspector port for workspace development.
+   * @param options - optional child-process launch settings.
    */
   constructor(
     private readonly node: string,
     private readonly projectDir: string,
-    private readonly inspectPort?: number,
+    private readonly options: DesktopHostProcessOptions = {},
   ) {}
 
   /** Start the child once and resolve only after its complete composition is active. */
@@ -100,10 +108,10 @@ export class DesktopHostProcess {
     if (this.child !== undefined) return this.readyPromise
     const entry = join(this.projectDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')
     const child = spawn(this.node, [
-      ...(this.inspectPort === undefined ? [] : [`--inspect=127.0.0.1:${String(this.inspectPort)}`]),
+      ...(this.options.inspectPort === undefined ? [] : [`--inspect=127.0.0.1:${String(this.options.inspectPort)}`]),
       entry,
       this.projectDir,
-      ...(this.inspectPort === undefined ? [] : ['--allow-linked-profile']),
+      ...(this.options.allowLinkedProfile === true ? ['--allow-linked-profile'] : []),
     ], {
       cwd: this.projectDir,
       env: Object.fromEntries(Object.entries(process.env).filter(([name]) => (

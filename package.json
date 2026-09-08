@@ -175,7 +175,7 @@
     "dsh": "node --import tsx/esm apps/cli/src/bin.ts",
     "demo:ptc": "node scripts/demo-ptc.mjs",
     "demo:inspector": "node --import tsx/esm apps/cli/src/bin.ts web --patch ./packages/experimental/inspector/cordis.source.patch.yml",
-    "desktop": "pnpm run start:desktop",
+    "desktop": "pnpm --filter @deepseek-ai/dsh-desktop run start:compatibility",
     "desktop:make:win:x64": "pnpm --filter @deepseek-ai/dsh-desktop run make:win:x64",
     "desktop:make:mac": "pnpm --filter @deepseek-ai/dsh-desktop run make:mac",
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",

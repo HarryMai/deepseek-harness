@@ -136,6 +136,7 @@ async function main(): Promise<void> {
   const development = developmentProject()
   const activeProject = development ?? paths.profile
   const hostInspectPort = developmentHostInspectPort(development !== undefined)
+  const allowLinkedProfile = development !== undefined
   const manager = new DesktopProjectManager(paths, resources)
   if (development === undefined) manager.recover()
   let host: DesktopHostProcess | undefined
@@ -157,7 +158,10 @@ async function main(): Promise<void> {
   }
 
   const startHost = async (projectDir = activeProject): Promise<DesktopHostProcess> => {
-    const next = new DesktopHostProcess(resources.node, projectDir, hostInspectPort)
+    const next = new DesktopHostProcess(resources.node, projectDir, {
+      ...(hostInspectPort === undefined ? {} : { inspectPort: hostInspectPort }),
+      allowLinkedProfile,
+    })
     await next.start()
     return next
   }

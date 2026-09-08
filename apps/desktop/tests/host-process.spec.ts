@@ -60,6 +60,15 @@ process.on('message', message => {
 })
 `
 
+const LAUNCH_ARGUMENT_REPORTER = `
+process.send({
+  type: 'ready',
+  protocolVersion: 3,
+  dshVersion: JSON.stringify({ argv: process.argv.slice(1), execArgv: process.execArgv }),
+})
+function onRequestFrame() {}
+`
+
 function projectWithHost(source: string): string {
   const project = mkdtempSync(join(tmpdir(), 'dsh-desktop-host-test-'))
   roots.push(project)
@@ -75,6 +84,59 @@ afterEach(() => {
 })
 
 describe('desktop host process', () => {
+  it('allows linked development profiles without enabling an inspector', async () => {
+    const linked = new DesktopHostProcess(process.execPath, projectWithHost(LAUNCH_ARGUMENT_REPORTER), {
+      allowLinkedProfile: true,
+    })
+    try {
+      const ready = await linked.start()
+      const launch = JSON.parse(ready.dshVersion) as { argv: string[]; execArgv: string[] }
+      expect(launch.argv).toContain('--allow-linked-profile')
+      expect(launch.execArgv.some(argument => argument.startsWith('--inspect='))).toBe(false)
+    } finally {
+      await linked.stop().catch(() => undefined)
+    }
+
+    const packaged = new DesktopHostProcess(process.execPath, projectWithHost(LAUNCH_ARGUMENT_REPORTER))
+    try {
+      const ready = await packaged.start()
+      const launch = JSON.parse(ready.dshVersion) as { argv: string[]; execArgv: string[] }
+      expect(launch.argv).not.toContain('--allow-linked-profile')
+      expect(launch.execArgv.some(argument => argument.startsWith('--inspect='))).toBe(false)
+    } finally {
+      await packaged.stop().catch(() => undefined)
+    }
+  })
+
+  it('passes an inspector without implicitly allowing linked profiles', async () => {
+    const host = new DesktopHostProcess(process.execPath, projectWithHost(LAUNCH_ARGUMENT_REPORTER), {
+      inspectPort: 0,
+    })
+    try {
+      const ready = await host.start()
+      const launch = JSON.parse(ready.dshVersion) as { argv: string[]; execArgv: string[] }
+      expect(launch.execArgv).toContain('--inspect=127.0.0.1:0')
+      expect(launch.argv).not.toContain('--allow-linked-profile')
+    } finally {
+      await host.stop().catch(() => undefined)
+    }
+  })
+
+  it('passes an inspector and linked-profile allowance when both are enabled', async () => {
+    const host = new DesktopHostProcess(process.execPath, projectWithHost(LAUNCH_ARGUMENT_REPORTER), {
+      inspectPort: 0,
+      allowLinkedProfile: true,
+    })
+    try {
+      const ready = await host.start()
+      const launch = JSON.parse(ready.dshVersion) as { argv: string[]; execArgv: string[] }
+      expect(launch.execArgv).toContain('--inspect=127.0.0.1:0')
+      expect(launch.argv).toContain('--allow-linked-profile')
+    } finally {
+      await host.stop().catch(() => undefined)
+    }
+  })
+
   it('carries raw request and response bytes and shuts the child down cleanly', async () => {
     const project = projectWithHost(`
 const bodies = new Map()

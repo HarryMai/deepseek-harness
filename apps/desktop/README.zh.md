@@ -53,6 +53,14 @@ GUI 插件修改会在把 registry 包安装到共享 Desktop pnpm store 后，�
 
 ## 开发
 
+`pnpm desktop` 会使用持久用户状态启动 workspace 中已有的构建产物：
+
+```sh
+pnpm desktop
+```
+
+该命令按常规规则解析 Harness home，默认使用 `~/.dsh`，因此会话、设置、凭据和 MCP 配置都使用同一个目录；显式 `DSH_HOME` 可以替换该默认值。Electron 继续使用平台默认的用户数据位置，Renderer DevTools 保持关闭，也不会启用任何进程调试器。每次启动使用独立的临时 npm 项目，并在 Electron 退出后将其删除；执行前必须已有构建产物。
+
 `dev:desktop` 会构建当前 Host、客户端 bundle、Web 前端和 Electron 壳，把已构建的 CLI 包、私有 Desktop Host 包及其 workspace 依赖投影为一次性桌面 npm 项目，然后直接启动 Electron；这条路径不下载安装包内的 Node.js，也不从 npm 解析 dsh：
 
 ```sh
