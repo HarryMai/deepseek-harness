@@ -67,14 +67,19 @@ function mirrorDependencyLinks(sourceRoot: string, destinationRoot: string): voi
     if (entry.name === '.bin') continue
     const source = join(sourceRoot, entry.name)
     if (entry.name.startsWith('@') && (entry.isDirectory() || entry.isSymbolicLink())) {
+      if (entry.isSymbolicLink() && !existsSync(source)) continue
       mkdirSync(join(destinationRoot, entry.name), { recursive: true })
       for (const scoped of readdirSync(source, { withFileTypes: true })) {
         if (!scoped.isDirectory() && !scoped.isSymbolicLink()) continue
-        linkDirectory(join(source, scoped.name), join(destinationRoot, entry.name, scoped.name))
+        const scopedSource = join(source, scoped.name)
+        if (scoped.isSymbolicLink() && !existsSync(scopedSource)) continue
+        linkDirectory(scopedSource, join(destinationRoot, entry.name, scoped.name))
       }
       continue
     }
-    if (entry.isDirectory() || entry.isSymbolicLink()) linkDirectory(source, join(destinationRoot, entry.name))
+    if ((entry.isDirectory() || entry.isSymbolicLink()) && !(entry.isSymbolicLink() && !existsSync(source))) {
+      linkDirectory(source, join(destinationRoot, entry.name))
+    }
   }
 }
 

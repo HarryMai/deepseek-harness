@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -46,6 +46,22 @@ describe('desktop development project', () => {
     writeFileSync(join(dependencies, 'plain-dependency', 'package.json'), '{}\n')
     mkdirSync(join(dependencies, '@scope', 'dependency'))
     writeFileSync(join(dependencies, '@scope', 'dependency', 'package.json'), '{}\n')
+    const unavailableScope = join(root, 'missing-optional-scope')
+    const unavailablePackage = join(root, 'missing-optional-package')
+    mkdirSync(unavailableScope)
+    mkdirSync(unavailablePackage)
+    symlinkSync(
+      unavailableScope,
+      join(dependencies, '@unavailable'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
+    symlinkSync(
+      unavailablePackage,
+      join(dependencies, '@scope', 'unavailable'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
+    rmSync(unavailableScope, { recursive: true })
+    rmSync(unavailablePackage, { recursive: true })
 
     const project = prepareDevelopmentProject({
       projectDir: join(root, 'development'),
@@ -60,6 +76,8 @@ describe('desktop development project', () => {
       .toBe(realpathSync(join(dependencies, 'plain-dependency')))
     expect(realpathSync(join(project, 'node_modules', '@scope', 'dependency')))
       .toBe(realpathSync(join(dependencies, '@scope', 'dependency')))
+    expect(existsSync(join(project, 'node_modules', '@unavailable'))).toBe(false)
+    expect(existsSync(join(project, 'node_modules', '@scope', 'unavailable'))).toBe(false)
     const manifest = JSON.parse(readFileSync(join(project, 'package.json'), 'utf8')) as {
       dependencies: Record<string, string>
     }
