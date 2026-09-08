@@ -96,6 +96,23 @@ describe('virtualManifest', () => {
     }
   })
 
+  it('skips a prefix-matching directory without an installed platform payload', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-notices-missing-payload-'))
+    try {
+      const name = '@scope/pkg'
+      const version = '2.0.0'
+      const store = join(root, 'store')
+      mkdirSync(join(store, `${name.replace('/', '+')}@1.0.0`), { recursive: true })
+      const manifestDir = join(store, `${name.replace('/', '+')}@${version}`, 'node_modules', name)
+      mkdirSync(manifestDir, { recursive: true })
+      writeFileSync(join(manifestDir, 'package.json'), JSON.stringify({ name, version, license: 'MIT' }))
+
+      expect(virtualManifest(store, name)).toMatchObject({ name, version, license: 'MIT' })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('falls back to a content scan when pnpm 11 truncates the store directory name', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-notices-truncated-'))
     try {
