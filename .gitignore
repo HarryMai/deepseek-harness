@@ -46,3 +46,4 @@ apps/desktop/out/
 worktrees/
 .agents/worktrees/
 .typert-*/
+native/system/test/bin/
