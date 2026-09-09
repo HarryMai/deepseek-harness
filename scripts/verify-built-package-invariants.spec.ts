@@ -110,19 +110,19 @@ describe('built package invariant verifier', () => {
     expect(result.stderr).toContain('chunk.js')
   })
 
-  it('checks declared lib entries even when a package has no companion', () => {
+  it('checks declared lib entries even when a package has no companion', ({ task }) => {
     const { root, loaderUrl } = fixture({
       companion: false,
       entryDeclared: true,
       entrySource: "export * from './chunk.js'\n",
       runtimeChunk: "export const value = 'chunk'\n",
     })
-    const result = verify(root, loaderUrl)
+    const result = verify(root, loaderUrl, task.timeout)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('lib/index.js -> ./chunk.js')
   })
 
-  it('accepts a non-companion entry when its runtime chunk is declared', () => {
+  it('accepts a non-companion entry when its runtime chunk is declared', ({ task }) => {
     const { root, loaderUrl } = fixture({
       companion: false,
       entryDeclared: true,
@@ -130,7 +130,7 @@ describe('built package invariant verifier', () => {
       runtimeChunk: "export const value = 'chunk'\n",
       runtimeChunkDeclared: true,
     })
-    const result = verify(root, loaderUrl)
+    const result = verify(root, loaderUrl, task.timeout)
     expect(result.status, result.stderr).toBe(0)
   })
 })

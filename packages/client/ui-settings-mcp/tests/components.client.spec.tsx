@@ -4,12 +4,16 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { McpSettingsSection } from '../src/client/McpSettingsSection.tsx'
 import type { McpSettingsSectionProps } from '../src/client/McpSettingsSection.tsx'
 import { DEFAULT_MCP_SETTINGS, McpSettingsController } from '../src/client/settings.ts'
 import type { McpConnectionTester, McpSettings } from '../src/client/settings.ts'
 import { zh, type McpSettingsKey } from '../src/client/locales.ts'
+
+// Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
+const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
 
 afterEach(cleanup)
 
@@ -58,6 +62,7 @@ function renderSection(scope = new MemoryScope(), tester?: McpConnectionTester) 
     useMcpSettings: bindSnapshotSelector(controller.store),
     useSessions: unusedHook,
     useSessionPendingInteraction: unusedHook,
+    useResource,
     useWorkspaces: unusedHook,
     t: (key, values) => (zh[key as McpSettingsKey] ?? '').replace(/\{(\w+)\}/gu, (_match, name: string) => {
       const value = values?.[name]
