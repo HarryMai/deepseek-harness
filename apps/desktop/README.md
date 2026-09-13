@@ -29,7 +29,7 @@ Electron chooses typed English or Chinese shell copy from its application locale
 
 ### Seed installation
 
-The packaged seed is an installation kit, not a ready-to-run `node_modules` tree. Packaging creates the lockfile, materializes the production graph online with lifecycle scripts disabled, deletes `node_modules` and every temporary pnpm cache, config, and state directory, and proves one complete installation offline from the final store alone with the private Desktop Host entry and overlay present. A macOS build stages every Mach-O object from pnpm's content-addressed store, Developer ID signs at most four independent copies concurrently, and updates the affected SHA-512 index records only after all signers succeed. Another offline install proves the rewritten store before sharding; preparation then extracts the final archives and verifies every embedded signature. The signed seed retains the release identity, local first-party tarballs and their descriptor, project metadata, lockfile, integrity inventory, and pnpm store content required to repeat that installation on the user's machine.
+The packaged seed is an installation kit, not a ready-to-run `node_modules` tree. Packaging creates the lockfile, materializes the production graph online with lifecycle scripts disabled, deletes `node_modules` and every temporary pnpm cache, config, and state directory, and validates installation from the final store alone with the private Desktop Host entry and overlay present. That validation runs lifecycle scripts only when the build host can execute the target Node.js runtime; a cross-architecture host keeps them disabled rather than execute target code under the wrong CPU, and the target runtime executes them at first profile installation. A macOS build stages every Mach-O object from pnpm's content-addressed store, Developer ID signs at most four independent copies concurrently, and updates the affected SHA-512 index records only after all signers succeed. Another offline install proves the rewritten store before sharding; preparation then extracts the final archives and verifies every embedded signature. The signed seed retains the release identity, local first-party tarballs and their descriptor, project metadata, lockfile, integrity inventory, and pnpm store content required to repeat that installation on the user's machine.
 
 | Seed content | Writable destination or use |
 |---|---|
@@ -79,7 +79,24 @@ Workspace development runs the current CLI and private Desktop Host packages und
 
 ## Package
 
-The normal packaging path is one complete command. It performs release preparation before creating the host platform's installers and update metadata. Every target requires a reverse-DNS `DSH_DESKTOP_APP_ID`. macOS targets additionally require the electron-builder certificate qualifier in `DSH_DESKTOP_MACOS_SIGNING_IDENTITY`, its 10-character Apple Team ID in `DSH_DESKTOP_MACOS_TEAM_ID`, and one complete notarytool credential strategy. The App Store Connect API-key strategy uses these variables:
+### Installer output and signing
+
+Every package command writes installers and electron-builder metadata to `apps/desktop/out`. Each target owns only its preparation state under `apps/desktop/.desktop-build/<target>`; the Node.js archive cache stays shared under `.desktop-build/downloads`.
+
+A non-empty macOS `DSH_DESKTOP_MACOS_SIGNING_IDENTITY` enables certificate signing. When it is absent, the same package command produces an unsigned DMG with certificate discovery, signing, notarization, update publishing, and the upload completion record disabled. A non-empty Windows `DSH_DESKTOP_WINDOWS_CER_FILE` similarly enables Windows signing; when it is absent, the same command produces an unsigned NSIS installer. An unsigned downloaded DMG may require Finder's **Open** action or approval in **System Settings → Privacy & Security** after its origin is verified, and Windows may show an unknown-publisher SmartScreen warning.
+
+### Package commands
+
+Package from a Mac or Windows host with one platform command:
+
+```sh
+pnpm desktop:make:mac
+pnpm desktop:make:win
+```
+
+`desktop:make:mac` builds both `mac-arm64` and `mac-x64` installers on a Mac. Target-specific seed preparation selects each architecture explicitly. `desktop:make:win` builds Windows x64. Linux is not a supported Desktop release target.
+
+Absent certificate selectors produce unsigned installers without requiring `DSH_DESKTOP_APP_ID` or update-deployment variables. In that case, electron-builder supplies its default application identifier. Supplying `DSH_DESKTOP_APP_ID` remains an optional unsigned override and must use reverse-DNS form; it does not select signing. A selected macOS or Windows certificate requires that application identifier. macOS signing also requires `DSH_DESKTOP_MACOS_TEAM_ID` and one complete notarytool credential strategy. The App Store Connect API-key strategy uses these variables:
 
 ```sh
 export DSH_DESKTOP_APP_ID='<reverse-DNS application ID>'
@@ -90,27 +107,11 @@ export APPLE_API_KEY_ID='<App Store Connect API Key ID>'
 export APPLE_API_ISSUER='<App Store Connect issuer UUID>'
 ```
 
-`prepare:desktop` is not a prerequisite:
-
-```sh
-pnpm run package:desktop
-```
-
-Release automation uses fixed target commands so runtime preparation, seed installation, and electron-builder receive the same platform and architecture:
-
-```sh
-pnpm run package:desktop:mac:arm64
-pnpm run package:desktop:mac:x64
-pnpm run package:desktop:win:x64
-```
-
-The macOS arm64 command requires Apple Silicon. The macOS x64 command runs on Intel macOS or Apple Silicon with Rosetta. The Windows x64 command requires Windows x64. Linux is not a supported Desktop release target.
-
-Each target owns its packed package inputs, prepared runtime, package set, seed, pnpm preparation state, unpacked application, update metadata, and final artifacts under `apps/desktop/.desktop-build/targets/<target>/`. The Node.js archive cache remains shared under `.desktop-build/downloads` because every archive name includes its version, platform, and architecture and is verified before extraction. A target build never consumes another target's mutable preparation state.
+`prepare:desktop` is not a prerequisite; each make command performs the official build and package preparation itself.
 
 ### Upload updates
 
-`DSH_DESKTOP_AUTO_UPDATE_ENV` selects `test` or `production` for both the URL embedded during packaging and the later COS upload; an absent value selects `test`. Test packaging requires its HTTPS origin in `DOWNLOAD_TEST_ORIGIN`, while the production origin remains `https://download.deepseek.com`. Upload additionally requires the selected deployment's COS bucket in `DOWNLOAD_TEST_COS_BUCKET` or `DOWNLOAD_PROD_COS_BUCKET`. The target path is `_/harness/desktop/stable/<target>/`, where `target` is `mac-arm64`, `mac-x64`, or `win-x64`.
+For signed packages and COS upload, `DSH_DESKTOP_AUTO_UPDATE_ENV` selects `test` or `production`; an absent value selects `test`. Test signed packaging requires its HTTPS origin in `DOWNLOAD_TEST_ORIGIN`, while the production origin remains `https://download.deepseek.com`. Upload additionally requires the selected deployment's COS bucket in `DOWNLOAD_TEST_COS_BUCKET` or `DOWNLOAD_PROD_COS_BUCKET`. The target path is `_/harness/desktop/stable/<target>/`, where `target` is `mac-arm64`, `mac-x64`, or `win-x64`.
 
 The update destination and upload credentials follow the selected deployment:
 
@@ -119,44 +120,41 @@ The update destination and upload credentials follow the selected deployment:
 | `test` or unset | `DOWNLOAD_TEST_ORIGIN` | `DOWNLOAD_TEST_COS_BUCKET` | `DOWNLOAD_TEST_COS_SECRET_ID`, `DOWNLOAD_TEST_COS_SECRET_KEY` |
 | `production` | `https://download.deepseek.com` | `DOWNLOAD_PROD_COS_BUCKET` | `DOWNLOAD_PROD_COS_SECRET_ID`, `DOWNLOAD_PROD_COS_SECRET_KEY` |
 
-Package and upload one target under the same environment. For example, the default test deployment uses:
+Package every release target and upload each target under the same environment. For example, the default test deployment uses:
 
 ```sh
 export DOWNLOAD_TEST_ORIGIN='https://desktop-updates.example.com'
-pnpm run package:desktop:mac:arm64
+pnpm desktop:make:mac
 
 export DOWNLOAD_TEST_COS_BUCKET='<test COS bucket>'
 export DOWNLOAD_TEST_COS_SECRET_ID='<test COS SecretId>'
 export DOWNLOAD_TEST_COS_SECRET_KEY='<test COS SecretKey>'
 pnpm run upload:mac:arm64
+pnpm run upload:mac:x64
 ```
 
-Set `DSH_DESKTOP_AUTO_UPDATE_ENV=production` before packaging, then provide `DOWNLOAD_PROD_COS_BUCKET` and the production credential pair before running `upload:mac:arm64`, `upload:mac:x64`, or `upload:win:x64`. Packaging does not require a COS bucket or credentials. It explicitly disables electron-builder publishing, strips all four COS credential fields from its subprocesses, and writes a target completion record only after electron-builder and every signing or notarization hook succeeds. Upload requires that record to match the selected environment, target, public URL, and current dsh version; it also requires the root dsh version, Desktop version, channel metadata version, artifact names, sizes, and SHA-512 values to agree before it reads the selected COS credential pair. It uploads only that target's immutable versioned artifacts, uploads the version-derived channel metadata last with `no-cache`, and never deletes historical objects. Stable releases use `latest-mac.yml` or `latest.yml`; a prerelease such as `alpha` uses `alpha-mac.yml` or `alpha.yml`, matching electron-builder's emitted filename.
+Set `DSH_DESKTOP_AUTO_UPDATE_ENV=production` before packaging, then provide `DOWNLOAD_PROD_COS_BUCKET` and the production credential pair before running `upload:mac:arm64`, `upload:mac:x64`, or `upload:win:x64`. Packaging does not require a COS bucket or credentials. It explicitly disables electron-builder publishing and strips all four COS credential fields from its subprocesses. A signed package writes a target completion record only after electron-builder and every signing or notarization hook succeeds; an unsigned package writes no record and cannot qualify for upload. Upload requires that record to match the selected environment, target, public URL, and current dsh version; it also requires the root dsh version, Desktop version, channel metadata version, artifact names, sizes, and SHA-512 values to agree before it reads the selected COS credential pair. It uploads only that target's immutable versioned artifacts, uploads the version-derived channel metadata last with `no-cache`, and never deletes historical objects. Stable releases use `latest-mac.yml` or `latest.yml`; a prerelease such as `alpha` uses `alpha-mac.yml` or `alpha.yml`, matching electron-builder's emitted filename.
 
-The macOS configuration uses the required release environment instead of accepting whichever certificate appears first in a keychain. It rejects empty values, a malformed Team ID, a signing identity that includes electron-builder's unsupported `Developer ID Application:` prefix, and incomplete notarization credentials. macOS packaging requires the configured identity and its private key. Seed preparation applies that identity, a secure timestamp, and hardened runtime to every embedded Mach-O file; after signing the application, a deep strict check rejects any other leaf authority or Team ID before artifact creation. Electron-builder notarizes and staples the application before packaging and signs the DMG. The DMG artifact-completion hook then notarizes and staples it before requiring its exact identity, ticket, and Gatekeeper acceptance; only after the hook succeeds can electron-builder publish the file. The private key can come from the login keychain or electron-builder's standard `CSC_LINK` input; ambient `CSC_NAME` and certificate discovery order do not select the release owner. Notary credentials may instead use electron-builder's complete Apple ID or keychain-profile strategy. The two macOS identity variables are also required when repeating the application check manually with `pnpm --dir apps/desktop run verify:mac-signature -- <path-to-app>`.
+When `DSH_DESKTOP_MACOS_SIGNING_IDENTITY` is non-empty, the macOS configuration uses that explicit identity rather than accepting whichever certificate appears first in a keychain. It rejects a malformed Team ID, a signing identity that includes electron-builder's unsupported `Developer ID Application:` prefix, and incomplete notarization credentials. Seed preparation applies that identity, a secure timestamp, and hardened runtime to every embedded Mach-O file; after signing the application, a deep strict check rejects any other leaf authority or Team ID before artifact creation. Electron-builder notarizes and staples the application before packaging and signs the DMG. The DMG artifact-completion hook then notarizes and staples it before requiring its exact identity, ticket, and Gatekeeper acceptance. When the identity is absent, the configuration explicitly disables certificate discovery, signing, notarization, publication metadata, and the release hooks. The private key can come from the login keychain or electron-builder's standard `CSC_LINK` input; ambient `CSC_NAME` and certificate discovery order do not select the release owner. Notary credentials may instead use electron-builder's complete Apple ID or keychain-profile strategy. The two macOS identity variables are also required when repeating the application check manually with `pnpm --dir apps/desktop run verify:mac-signature -- <path-to-app>`.
 
 ### Windows EV signing
 
-Windows release packaging requires `DSH_DESKTOP_WINDOWS_CER_FILE` to identify the public GlobalSign EV leaf certificate, `DSH_DESKTOP_WINDOWS_SIGNTOOL` to identify the SafeNet-compatible SignTool executable, `DSH_DESKTOP_WINDOWS_KEY_CONTAINER` to identify the matching private-key container, and `DSH_DESKTOP_WINDOWS_TOKEN_PIN` to contain the SafeNet Token Password. The certificate file remains outside source control, and the matching private key stays on the USB token. Set the four inputs before running the fixed Windows target:
+A non-empty `DSH_DESKTOP_WINDOWS_CER_FILE` enables Windows signing. When it is set, `DSH_DESKTOP_WINDOWS_SIGNTOOL` identifies the SafeNet-compatible SignTool executable, `DSH_DESKTOP_WINDOWS_KEY_CONTAINER` identifies the matching private-key container, and `DSH_DESKTOP_WINDOWS_TOKEN_PIN` contains the SafeNet Token Password. The certificate file remains outside source control, and the matching private key stays on the USB token. Set the application identifier and four signing inputs before running the Windows command:
 
 ```powershell
+$env:DSH_DESKTOP_APP_ID = '<reverse-DNS application ID>'
 $env:DSH_DESKTOP_WINDOWS_CER_FILE = 'C:\path\to\server.cer'
 $env:DSH_DESKTOP_WINDOWS_SIGNTOOL = 'C:\path\to\the\validated\signtool.exe'
 $env:DSH_DESKTOP_WINDOWS_KEY_CONTAINER = '<SafeNet private-key container name>'
 $env:DSH_DESKTOP_WINDOWS_TOKEN_PIN = '<SafeNet Token Password>'
-pnpm run package:desktop:win:x64
+pnpm desktop:make:win
 ```
 
-Insert and unlock the token before packaging. The electron-builder hook passes each artifact to the CRLF `scripts/windows-sign.cmd`, which invokes the configured SignTool once with `/f`, SafeNet `/kc "[{{PIN}}]=container"`, `/csp "eToken Base Cryptographic Provider"`, a SHA-256 file digest, and a DigiCert SHA-256 RFC 3161 timestamp. The hook never substitutes electron-builder's bundled SignTool and never retries a failed signing request. Windows packaging fails instead of emitting unsigned artifacts when the SignTool, certificate, container, PIN, token, or signature is unavailable.
+Insert and unlock the token before packaging. The electron-builder hook passes each artifact to the CRLF `scripts/windows-sign.cmd`, which invokes the configured SignTool once with `/f`, SafeNet `/kc "[{{PIN}}]=container"`, `/csp "eToken Base Cryptographic Provider"`, a SHA-256 file digest, and a DigiCert SHA-256 RFC 3161 timestamp. The hook never substitutes electron-builder's bundled SignTool and never retries a failed signing request. Once signing is enabled, Windows packaging fails rather than downgrading when the SignTool, certificate, container, PIN, token, or signature is unavailable.
+
+The fail-closed signer behavior applies only after `DSH_DESKTOP_WINDOWS_CER_FILE` enables signing. Without that certificate field, the shared package command emits an unsigned NSIS installer and no upload completion record.
 
 The PIN cannot contain `]`, a quote, or a line break because those characters delimit the SafeNet `/kc` value or its CMD argument. The CMD disables delayed expansion so a PIN containing `!` reaches SafeNet unchanged. Packaging withholds every `DSH_DESKTOP_WINDOWS_*` field from build and seed-preparation subprocesses, gives electron-builder only the four configured inputs, gives the signing CMD only the validated signing fields in an otherwise scrubbed environment, clears those fields before SignTool starts, and redacts SignTool diagnostics. SafeNet still requires the PIN in the SignTool process command line. Inject it as an ephemeral secret only on a controlled self-hosted Windows runner with the physical token attached; never commit it, put it in `.env`, or persist it as a Windows user or system environment variable.
-
-Create a runnable application directory instead of an installer by using the matching `:dir` command, such as:
-
-```sh
-pnpm run package:desktop:dir
-pnpm run package:desktop:mac:arm64:dir
-```
 
 To inspect or troubleshoot the prepared host-target resources without invoking electron-builder, stop the same pipeline after preparation:
 
@@ -164,9 +162,9 @@ To inspect or troubleshoot the prepared host-target resources without invoking e
 pnpm run prepare:desktop
 ```
 
-This diagnostic command is an alternative stopping point, not the first half of a two-command build. A later `package:desktop*` command repeats the official build and preparation so it cannot consume stale dsh packages, runtime files, or seed content.
+This diagnostic command is an alternative stopping point, not the first half of a two-command build. A later `desktop:make:mac` or `desktop:make:win` command repeats the official build and preparation so it cannot consume stale dsh packages, runtime files, or seed content.
 
-Every package command performs the official repository build, packs the dsh and vendored package families, locally packs the private Desktop Host package, and packs the Landlock entry before preparing release resources. `prepare:packages` selects the union of the first-party production closures rooted at `@deepseek-ai/dsh` and `@deepseek-ai/dsh-desktop-host`, verifies that the private Host tarball contains `lib/index.js` and `config/desktop.cordis.patch.yml`, copies the selected tarballs into the seed input, and records their sizes and SHA-512 integrity. The Host package is never published to npm; its `files` manifest contains only that runtime entry and overlay. Public package tarballs remain the official `pnpm pack` outputs governed by each package's publication manifest, so Desktop adds no second filter, retains published declarations such as `lib/types`, and neither strips nor adds source maps independently. Registry packages likewise retain their published package bytes in pnpm's content-addressed store. The dsh release bump updates both private Desktop manifests together with the root and publishable workspaces; packaging also requires the root dsh package, Desktop Host package, and Electron package to have the same version. Neither dsh nor the private Host needs to be published to npm before the Desktop application is built. `prepare:runtime` downloads Node.js 24.17.0 from the official Node.js release service, verifies its SHA-256 entry before extraction, and executes the prepared target binary on a compatible build host to verify its reported version. It copies the pnpm version declared by the desktop package and records both runtime versions in the release seed. `prepare:seed` runs that target Node.js and bundled pnpm, so platform- and CPU-filtered optional dependencies make the pnpm store and seed target-specific. It generates local core-package mappings, disables the global virtual store, materializes external production dependencies from npm without lifecycle scripts, deletes `node_modules` and all temporary pnpm cache, config, and state, proves the complete graph installs offline with the private Host entry and overlay, performs the macOS rewrite when applicable, proves the rewritten store with another offline installation, removes temporary pnpm project registrations, and replaces the loose store with 16 deterministic uncompressed tar shards. It extracts those final shards and verifies every embedded macOS signature before inventory generation. Later GUI plugin operations retain the local core mappings while resolving plugin packages and their external dependencies from the fixed Desktop npm registry. `electron-builder` emits each target's platform artifacts under `apps/desktop/.desktop-build/targets/<target>/artifacts`; a later version keeps differently named immutable installers and blockmaps while replacing that target's unpacked application, diagnostics, completion record, and channel metadata.
+Every package command performs the official repository build, packs the dsh and vendored package families, locally packs the private Desktop Host package, and packs the Landlock entry before preparing package resources. `prepare:packages` selects the union of the first-party production closures rooted at `@deepseek-ai/dsh` and `@deepseek-ai/dsh-desktop-host`, verifies that the private Host tarball contains `lib/index.js` and `config/desktop.cordis.patch.yml`, copies the selected tarballs into the seed input, and records their sizes and SHA-512 integrity. The Host package is never published to npm; its `files` manifest contains only that runtime entry and overlay. Public package tarballs remain the official `pnpm pack` outputs governed by each package's publication manifest, so Desktop adds no second filter, retains published declarations such as `lib/types`, and neither strips nor adds source maps independently. Registry packages likewise retain their published package bytes in pnpm's content-addressed store. The dsh release bump updates both private Desktop manifests together with the root and publishable workspaces; packaging also requires the root dsh package, Desktop Host package, and Electron package to have the same version. Neither dsh nor the private Host needs to be published to npm before the Desktop application is built. `prepare:runtime` downloads Node.js 24.17.0 from the official Node.js release service, verifies its SHA-256 entry before extraction, and executes the prepared target binary on a compatible build host to verify its reported version. It copies the pnpm version declared by the desktop package and records both runtime versions in the release seed. `prepare:seed` runs bundled pnpm through the target Node.js when it is executable, otherwise through the host Node.js with explicit target operating-system and CPU selectors, so platform- and CPU-filtered optional dependencies make the pnpm store and seed target-specific. It generates local core-package mappings, disables the global virtual store, materializes external production dependencies from npm without lifecycle scripts, deletes `node_modules` and all temporary pnpm cache, config, and state, and validates the complete graph offline with the private Host entry and overlay. That validation executes lifecycle scripts only when the target Node.js runtime is executable on the build host; otherwise it keeps them disabled and the first target startup executes them. Preparation rewrites macOS store objects only when signing is enabled, validates the rewritten store again, removes temporary pnpm project registrations, and replaces the loose store with 16 deterministic uncompressed tar shards. Signed macOS builds extract those final shards and verify every embedded macOS signature before inventory generation. Later GUI plugin operations retain the local core mappings while resolving plugin packages and their external dependencies from the fixed Desktop npm registry. `electron-builder` writes each target's installer artifacts and metadata to `apps/desktop/out`, while `apps/desktop/.desktop-build/<target>` retains only target preparation state.
 
 An unpacked artifact contains four independent size contributors: Electron, the offline seed store shards and local dsh tarballs, the upstream Node.js and pnpm runtime, and the small shell application. The shards are uncompressed so the outer DMG, ZIP, or NSIS compressor and differential updater can operate on stable ranges. Filesystem size is not installer download size, so measure both separately. First packaged startup also extracts the seed store into `$DSH_HOME/desktop/pnpm/store` before installing the writable profile, so release qualification must measure both application and Harness-home disk use.
 
@@ -174,7 +172,7 @@ An unpacked artifact contains four independent size contributors: Electron, the 
 
 A packaged application checks its target-specific release stream ten seconds after the main window opens; the localized **Check for Updates…** menu item triggers the same check manually. An available release opens one native confirmation dialog. Accepting it waits for an in-flight check, downloads and verifies the signed Desktop release, stops the dsh child, and hands installation plus restart to electron-updater. The next launch reconciles the version-bound seed before reopening the product window.
 
-Electron-builder always emits generic-provider channel metadata for the deployment selected by `DSH_DESKTOP_AUTO_UPDATE_ENV`. NSIS differential packages and the macOS ZIP target allow electron-updater to reuse unchanged blocks; the manually installed DMG is notarized without a blockmap because it is not a macOS updater payload. The seed and shell still form one signed Desktop release. macOS signing and notarization credentials use electron-builder's standard environment; Windows EV signing uses the public certificate, validated SignTool, SafeNet container, and runner PIN described above. The required Desktop release environment selects the application and platform signature identities that the build verifies.
+Electron-builder emits generic-provider channel metadata only for signed packages using the deployment selected by `DSH_DESKTOP_AUTO_UPDATE_ENV`. NSIS differential packages and the macOS ZIP target allow electron-updater to reuse unchanged blocks; the manually installed DMG is notarized without a blockmap because it is not a macOS updater payload. The seed and shell form one signed Desktop release when certificate inputs are present. macOS signing and notarization credentials use electron-builder's standard environment; Windows EV signing uses the public certificate, validated SignTool, SafeNet container, and runner PIN described above. The configured certificate inputs select the platform signature identities that the build verifies.
 
 ## Low-level development overrides
 

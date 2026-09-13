@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-`pnpm deploy` 和 `npm pack` 按清单的 `files` 列表复制包，而本仓库的惯例是逐文件枚举构建入口（`lib/index.js`、`lib/invariant.js`……），而不是写一个 `lib` 目录。Rolldown 会把包的多个入口之间共享的模块拆成按内容哈希命名的兄弟 chunk，例如 `lib/process-inspector-DNK_Zw9B.js`，而清单无法写出一个随内容变化的哈希。当 `@deepseek-ai/dsh-subprocess-local` 增加第二个 rolldown 入口时，它的 chunk 落在了 `files` 列表之外，于是桌面打包器 stage 出来的 `index.js` 引用了一个 tarball 从未携带的文件；故障直到 packaged-Host 冒烟测试中才以 Cordis loader 的 `ERR_MODULE_NOT_FOUND` 形式暴露（见 [macOS 打包 Agent Note](../architecture/2026-08-17-unsigned-macos-dmg-packaging.zh.md)）。
+`pnpm deploy` 和 `npm pack` 按清单的 `files` 列表复制包，而本仓库的惯例是逐文件枚举构建入口（`lib/index.js`、`lib/invariant.js`……），而不是写一个 `lib` 目录。Rolldown 会把包的多个入口之间共享的模块拆成按内容哈希命名的兄弟 chunk，例如 `lib/process-inspector-DNK_Zw9B.js`，而清单无法写出一个随内容变化的哈希。当 `@deepseek-ai/dsh-subprocess-local` 增加第二个 rolldown 入口时，它的 chunk 落在了 `files` 列表之外，于是桌面打包器 stage 出来的 `index.js` 引用了一个 tarball 从未携带的文件；故障直到 packaged-Host 冒烟测试中才以 Cordis loader 的 `ERR_MODULE_NOT_FOUND` 形式暴露（见[已归档的 macOS 打包 Agent Note](../../archived/architecture/2026-08-17-unsigned-macos-dmg-packaging.md)）。
 
 `verify-built-package-invariants` 门禁本就是为这一类问题而建——它刻意只 stage 清单声明的 lib 视图，让未声明的运行时 chunk 暴露——但它只导入 `./invariant` 伴随模块，而该模块与主入口不共享 chunk，所以门禁通过了。
 

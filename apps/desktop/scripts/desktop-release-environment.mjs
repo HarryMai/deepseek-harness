@@ -33,16 +33,36 @@ function requireEnvironmentValue(env, name) {
 }
 
 /**
- * Resolve and validate the application identifier shared by every platform target.
+ * Resolve and validate an explicitly supplied application identifier.
  * @param {NodeJS.ProcessEnv} env - Packaging environment.
- * @returns {string} Reverse-DNS application identifier.
+ * @returns {string | undefined} Reverse-DNS application identifier, when supplied.
  */
-export function resolveDesktopAppId(env) {
-  const appId = requireEnvironmentValue(env, DESKTOP_APP_ID_ENV)
+export function resolveOptionalDesktopAppId(env) {
+  const appId = env[DESKTOP_APP_ID_ENV]?.trim()
+  if (appId === undefined || appId === '') return undefined
   if (!/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/u.test(appId)) {
     throw new Error(`desktop release environment: ${DESKTOP_APP_ID_ENV} must be a reverse-DNS identifier`)
   }
   return appId
+}
+
+/**
+ * Resolve and validate the application identifier required by a signed release.
+ * @param {NodeJS.ProcessEnv} env - Packaging environment.
+ * @returns {string} Reverse-DNS application identifier.
+ */
+export function resolveDesktopAppId(env) {
+  return resolveOptionalDesktopAppId(env) ?? requireEnvironmentValue(env, DESKTOP_APP_ID_ENV)
+}
+
+/**
+ * Report whether a macOS certificate identity was supplied for this package.
+ * @param {NodeJS.ProcessEnv} env - Packaging environment.
+ * @returns {boolean} Whether macOS signing is requested.
+ */
+export function hasMacOSSigningIdentity(env) {
+  const signingIdentity = env[MACOS_SIGNING_IDENTITY_ENV]?.trim()
+  return signingIdentity !== undefined && signingIdentity !== ''
 }
 
 /**
@@ -60,6 +80,15 @@ export function resolveMacOSSigningEnvironment(env) {
     throw new Error(`desktop release environment: ${MACOS_TEAM_ID_ENV} must contain 10 uppercase letters or digits`)
   }
   return { signingIdentity, teamId }
+}
+
+/**
+ * Resolve macOS signing only when a certificate identity was supplied.
+ * @param {NodeJS.ProcessEnv} env - Packaging environment.
+ * @returns {{ signingIdentity: string, teamId: string } | undefined} The selected signing identity, if any.
+ */
+export function resolveOptionalMacOSSigningEnvironment(env) {
+  return hasMacOSSigningIdentity(env) ? resolveMacOSSigningEnvironment(env) : undefined
 }
 
 /**

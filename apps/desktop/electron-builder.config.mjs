@@ -1,19 +1,24 @@
 import {
   resolveDesktopAppId,
+  resolveOptionalDesktopAppId,
   resolveMacOSNotarizationEnvironment,
-  resolveMacOSSigningEnvironment,
+  resolveOptionalMacOSSigningEnvironment,
 } from './scripts/desktop-release-environment.mjs'
 import { notarizeMacOSDiskImageArtifact } from './scripts/notarize-macos-disk-images.mjs'
 import { verifyMacOSSignatureAfterSign } from './scripts/verify-macos-signature.mjs'
 import {
   createWindowsTokenSigner,
+  hasWindowsSigningCertificate,
   installWindowsNsisBootstrapSigner,
 } from './scripts/windows-sign.mjs'
-import { resolveDesktopAutoUpdateConfig } from './scripts/desktop-auto-update-environment.mjs'
-import { desktopTargetBuildPaths } from './scripts/desktop-build-paths.mjs'
+import {
+  resolveDesktopAutoUpdateConfig,
+  resolveDesktopAutoUpdateTarget,
+} from './scripts/desktop-auto-update-environment.mjs'
+import { DESKTOP_OUTPUT_DIR, desktopTargetBuildPaths } from './scripts/desktop-build-paths.mjs'
 
 /**
- * Create electron-builder configuration from one release environment.
+ * Create electron-builder configuration from one packaging environment.
  * @param {NodeJS.ProcessEnv} env - Packaging environment.
  * @param {NodeJS.Platform} hostPlatform - Build-host platform used when no explicit target is present.
  * @param {string} hostArch - Build-host architecture used when no explicit target is present.
@@ -24,15 +29,14 @@ export function createElectronBuilderConfig(
   hostPlatform = process.platform,
   hostArch = process.arch,
 ) {
-  const appId = resolveDesktopAppId(env)
   const targetPlatform = env.DSH_DESKTOP_TARGET_PLATFORM
   const resolvedPlatform = targetPlatform ?? hostPlatform
   const resolvedArch = env.DSH_DESKTOP_TARGET_ARCH ?? hostArch
   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
   const packagesWindows = targetPlatform === 'win32'
-  const macOSSigning = packagesMacOS ? resolveMacOSSigningEnvironment(env) : undefined
-  if (packagesMacOS) resolveMacOSNotarizationEnvironment(env)
-  const windowsSigner = packagesWindows
+  const macOSSigning = packagesMacOS ? resolveOptionalMacOSSigningEnvironment(env) : undefined
+  if (macOSSigning !== undefined) resolveMacOSNotarizationEnvironment(env)
+  const windowsSigner = packagesWindows && hasWindowsSigningCertificate(env)
     ? createWindowsTokenSigner({
         certificateFile: env.DSH_DESKTOP_WINDOWS_CER_FILE,
         signTool: env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
@@ -43,13 +47,15 @@ export function createElectronBuilderConfig(
   if (windowsSigner !== undefined) {
     installWindowsNsisBootstrapSigner({ sign: windowsSigner })
   }
-  const update = resolveDesktopAutoUpdateConfig(env, resolvedPlatform, resolvedArch)
-  const buildPaths = desktopTargetBuildPaths(update.target)
+  const signed = macOSSigning !== undefined || windowsSigner !== undefined
+  const appId = signed ? resolveDesktopAppId(env) : resolveOptionalDesktopAppId(env)
+  const update = signed ? resolveDesktopAutoUpdateConfig(env, resolvedPlatform, resolvedArch) : undefined
+  const buildPaths = desktopTargetBuildPaths(resolveDesktopAutoUpdateTarget(resolvedPlatform, resolvedArch))
   return {
-    appId,
+    ...(appId === undefined ? {} : { appId }),
     productName: 'DeepSeek Harness',
     artifactName: 'deepseek-harness-${version}-${os}-${arch}.${ext}',
-    directories: { output: buildPaths.artifacts },
+    directories: { output: DESKTOP_OUTPUT_DIR },
     asar: true,
     files: [
       'lib/*.js',
@@ -63,34 +69,33 @@ export function createElectronBuilderConfig(
     ],
     mac: {
       category: 'public.app-category.developer-tools',
-      identity: macOSSigning?.signingIdentity,
-      forceCodeSigning: true,
-      hardenedRuntime: true,
-      notarize: true,
+      identity: macOSSigning?.signingIdentity ?? null,
+      forceCodeSigning: macOSSigning !== undefined,
+      hardenedRuntime: macOSSigning !== undefined,
+      notarize: macOSSigning !== undefined,
+      sign: macOSSigning === undefined ? null : undefined,
       target: ['dmg', 'zip'],
     },
     dmg: {
-      sign: true,
+      sign: macOSSigning !== undefined,
       writeUpdateInfo: false,
     },
-    afterSign: context => {
-      if (context.electronPlatformName !== 'darwin') return
-      verifyMacOSSignatureAfterSign(context, macOSSigning ?? resolveMacOSSigningEnvironment(env))
-    },
-    artifactBuildCompleted: artifact => {
-      if (!artifact.file.endsWith('.dmg')) return
-      return notarizeMacOSDiskImageArtifact(
-        artifact,
-        env,
-        macOSSigning ?? resolveMacOSSigningEnvironment(env),
-      )
-    },
-    win: {
-      forceCodeSigning: true,
-      signtoolOptions: {
-        sign: windowsSigner,
-        signingHashAlgorithms: ['sha256'],
+    ...(macOSSigning === undefined ? {} : {
+      afterSign: context => {
+        if (context.electronPlatformName !== 'darwin') return
+        verifyMacOSSignatureAfterSign(context, macOSSigning)
       },
+      artifactBuildCompleted: artifact => {
+        if (!artifact.file.endsWith('.dmg')) return
+        return notarizeMacOSDiskImageArtifact(artifact, env, macOSSigning)
+      },
+    }),
+    win: {
+      forceCodeSigning: windowsSigner !== undefined,
+      signExecutable: windowsSigner !== undefined,
+      signtoolOptions: windowsSigner === undefined
+        ? null
+        : { sign: windowsSigner, signingHashAlgorithms: ['sha256'] },
       target: ['nsis'],
     },
     linux: {
@@ -100,9 +105,9 @@ export function createElectronBuilderConfig(
     nsis: {
       oneClick: false,
       allowToChangeInstallationDirectory: true,
-      differentialPackage: true,
+      differentialPackage: windowsSigner !== undefined,
     },
-    publish: [{ provider: 'generic', url: update.publicUrl }],
+    publish: update === undefined ? null : [{ provider: 'generic', url: update.publicUrl }],
   }
 }
 

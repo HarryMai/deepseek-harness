@@ -2,7 +2,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { NotarizeOptions } from '@electron/notarize'
 import {
   resolveDesktopAppId,
+  resolveOptionalDesktopAppId,
   resolveMacOSNotarizationEnvironment,
+  resolveOptionalMacOSSigningEnvironment,
   resolveMacOSSigningEnvironment,
 } from '../scripts/desktop-release-environment.mjs'
 import { notarizeMacOSDiskImageArtifact } from '../scripts/notarize-macos-disk-images.mjs'
@@ -36,15 +38,15 @@ describe('desktop macOS release signature', () => {
     vi.unstubAllEnvs()
   })
 
-  it('loads release identifiers from the environment and requires code signing', async () => {
+  it('loads signing identifiers from the environment and requires code signing', async () => {
     const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
     const config = createElectronBuilderConfig(RELEASE_ENVIRONMENT, 'darwin', 'arm64')
-    expect(portablePath(config.directories.output)).toContain('/.desktop-build/targets/mac-arm64/artifacts')
+    expect(portablePath(config.directories.output)).toContain('/apps/desktop/out')
     expect(config.extraResources).toHaveLength(2)
     expect(config.extraResources[0]?.to).toBe('runtime')
     expect(config.extraResources[1]?.to).toBe('seed')
-    expect(portablePath(config.extraResources[0]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/runtime')
-    expect(portablePath(config.extraResources[1]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/seed')
+    expect(portablePath(config.extraResources[0]?.from ?? '')).toContain('/.desktop-build/mac-arm64/runtime')
+    expect(portablePath(config.extraResources[1]?.from ?? '')).toContain('/.desktop-build/mac-arm64/seed')
     expect(config).toMatchObject({
       appId: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
       mac: {
@@ -64,12 +66,44 @@ describe('desktop macOS release signature', () => {
     expect(typeof config.artifactBuildCompleted).toBe('function')
   })
 
-  it('validates Windows signing without requiring macOS identifiers for a Windows target', async () => {
+  it('builds unsigned macOS artifacts when the signing identity is absent', async () => {
     const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
-    expect(() => createElectronBuilderConfig({
-      DSH_DESKTOP_APP_ID: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
+    const config = createElectronBuilderConfig({
+      DSH_DESKTOP_TARGET_PLATFORM: 'darwin',
+      DSH_DESKTOP_TARGET_ARCH: 'arm64',
+    }, 'darwin', 'arm64')
+    expect(config).toMatchObject({
+      mac: {
+        identity: null,
+        forceCodeSigning: false,
+        hardenedRuntime: false,
+        notarize: false,
+        sign: null,
+      },
+      dmg: { sign: false, writeUpdateInfo: false },
+      publish: null,
+    })
+    expect(config).not.toHaveProperty('appId')
+    expect(config).not.toHaveProperty('afterSign')
+    expect(config).not.toHaveProperty('artifactBuildCompleted')
+  })
+
+  it('builds unsigned Windows artifacts when the certificate is absent', async () => {
+    const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
+    const config = createElectronBuilderConfig({
       DSH_DESKTOP_TARGET_PLATFORM: 'win32',
-    }, 'win32')).toThrow(/DSH_DESKTOP_WINDOWS_CER_FILE/u)
+      DSH_DESKTOP_TARGET_ARCH: 'x64',
+    }, 'win32', 'x64')
+    expect(config).toMatchObject({
+      win: {
+        forceCodeSigning: false,
+        signExecutable: false,
+        signtoolOptions: null,
+      },
+      nsis: { differentialPackage: false },
+      publish: null,
+    })
+    expect(config).not.toHaveProperty('appId')
   })
 
   it('accepts the configured authority and team', () => {
@@ -122,6 +156,11 @@ describe('desktop macOS release signature', () => {
   it('rejects missing and malformed release identifiers', () => {
     expect(() => resolveDesktopAppId({})).toThrow(/DSH_DESKTOP_APP_ID/u)
     expect(() => resolveDesktopAppId({ DSH_DESKTOP_APP_ID: 'not-a-bundle-id' })).toThrow(/reverse-DNS/u)
+    expect(resolveOptionalDesktopAppId({})).toBeUndefined()
+    expect(resolveOptionalDesktopAppId({ DSH_DESKTOP_APP_ID: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID }))
+      .toBe(RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID)
+    expect(() => resolveOptionalDesktopAppId({ DSH_DESKTOP_APP_ID: 'not-a-bundle-id' })).toThrow(/reverse-DNS/u)
+    expect(resolveOptionalMacOSSigningEnvironment({})).toBeUndefined()
     expect(() => resolveMacOSSigningEnvironment({})).toThrow(/DSH_DESKTOP_MACOS_SIGNING_IDENTITY/u)
     expect(() => resolveMacOSSigningEnvironment({
       DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Developer ID Application: Example Company (TEAMID1234)',

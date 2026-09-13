@@ -33,6 +33,6 @@ describe('desktop build child commands', () => {
 
   it('rejects launchers that bypass the pnpm package script', () => {
     expect(() => pnpmBuildCommand(['run', 'build'], {}, process.execPath))
-      .toThrow(/invoke the builder through `pnpm desktop:make:\*` scripts/)
+      .toThrow(/invoke the builder through a pnpm package script/u)
   })
 })

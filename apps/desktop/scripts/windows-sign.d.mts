@@ -43,6 +43,13 @@ export function createWindowsTokenSigner(options: {
 export function scrubWindowsSigningEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv
 
 /**
+ * Report whether a Windows certificate was supplied for this package.
+ * @param environment - Packaging environment.
+ * @returns Whether Windows signing is requested.
+ */
+export function hasWindowsSigningCertificate(environment: NodeJS.ProcessEnv): boolean
+
+/**
  * Replace a SignTool failure with a diagnostic that cannot retain its command line.
  *
  * @param error SignTool process failure.

@@ -1,6 +1,9 @@
 import type { DesktopAutoUpdateTarget } from './desktop-auto-update-environment.mjs'
 
-/** Mutable target directories plus the shared immutable download cache. */
+/** Electron-builder output directory for every Desktop installer. */
+export const DESKTOP_OUTPUT_DIR: string
+
+/** Target-local preparation paths plus shared installer output and download cache. */
 export interface DesktopTargetBuildPaths {
   readonly root: string
   readonly artifacts: string
@@ -29,9 +32,9 @@ export function resolveDesktopBuildTarget(
 ): DesktopAutoUpdateTarget
 
 /**
- * Return the mutable preparation and artifact directories owned by one release target.
+ * Return target-scoped preparation paths plus the shared installer output directory.
  * @param target - Supported Desktop target name.
- * @returns Target paths plus the shared immutable download cache.
+ * @returns Target paths plus shared installer output and immutable download cache.
  */
 export function desktopTargetBuildPaths(target: DesktopAutoUpdateTarget): DesktopTargetBuildPaths
 

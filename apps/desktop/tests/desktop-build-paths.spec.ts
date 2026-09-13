@@ -1,6 +1,7 @@
-import { join, sep } from 'node:path'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  DESKTOP_OUTPUT_DIR,
   desktopTargetBuildPaths,
   resolveDesktopBuildTarget,
 } from '../scripts/desktop-build-paths.mjs'
@@ -12,7 +13,6 @@ describe('desktop build paths', () => {
     const windows = desktopTargetBuildPaths('win-x64')
     const mutableKeys = [
       'root',
-      'artifacts',
       'runtime',
       'packageSet',
       'seed',
@@ -26,16 +26,26 @@ describe('desktop build paths', () => {
     for (const key of mutableKeys) {
       expect(new Set([arm64[key], x64[key], windows[key]]).size).toBe(3)
     }
-    expect(arm64.artifacts).toContain(join('targets', 'mac-arm64', 'artifacts'))
-    expect(x64.seed).toContain(join('targets', 'mac-x64', 'seed'))
-    expect(windows.runtime).toContain(join('targets', 'win-x64', 'runtime'))
+    expect(arm64.root).toContain(join('.desktop-build', 'mac-arm64'))
+    expect(x64.seed).toContain(join('.desktop-build', 'mac-x64', 'seed'))
+    expect(windows.runtime).toContain(join('.desktop-build', 'win-x64', 'runtime'))
   })
 
   it('shares only the immutable upstream download cache', () => {
     const arm64 = desktopTargetBuildPaths('mac-arm64')
     const x64 = desktopTargetBuildPaths('mac-x64')
     expect(arm64.downloads).toBe(x64.downloads)
-    expect(arm64.downloads).not.toContain(`${sep}targets${sep}`)
+    expect(arm64.downloads).not.toContain(join('.desktop-build', 'mac-arm64'))
+  })
+
+  it('uses one installer output directory for every target', () => {
+    const arm64 = desktopTargetBuildPaths('mac-arm64')
+    const x64 = desktopTargetBuildPaths('mac-x64')
+    const windows = desktopTargetBuildPaths('win-x64')
+    expect(arm64.artifacts).toBe(DESKTOP_OUTPUT_DIR)
+    expect(x64.artifacts).toBe(DESKTOP_OUTPUT_DIR)
+    expect(windows.artifacts).toBe(DESKTOP_OUTPUT_DIR)
+    expect(DESKTOP_OUTPUT_DIR).toContain(join('apps', 'desktop', 'out'))
   })
 
   it('resolves environment overrides and rejects unsupported targets', () => {

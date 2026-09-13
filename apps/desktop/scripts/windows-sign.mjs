@@ -32,6 +32,16 @@ export function scrubWindowsSigningEnvironment(environment) {
       && !name.startsWith(WINDOWS_SIGNING_ENVIRONMENT_PREFIX)))
 }
 
+/**
+ * Report whether a Windows certificate was supplied for this package.
+ * @param {NodeJS.ProcessEnv} environment - Packaging environment.
+ * @returns {boolean} Whether Windows signing is requested.
+ */
+export function hasWindowsSigningCertificate(environment) {
+  const certificateFile = environment.DSH_DESKTOP_WINDOWS_CER_FILE?.trim()
+  return certificateFile !== undefined && certificateFile !== ''
+}
+
 function resolveTokenIdentity(input) {
   const keyContainer = input.keyContainer?.trim()
   if (!keyContainer) {

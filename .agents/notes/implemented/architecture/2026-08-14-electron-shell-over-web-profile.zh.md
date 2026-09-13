@@ -22,11 +22,11 @@ BrowserWindow 从该 URL 加载现有静态前端、`/api` HTTP route 和 WebSoc
 
 应用退出时向 Host 子进程发送一次关闭请求。在 POSIX 上，主进程会在发送该请求前保留 Host 及其后代的精确身份，并且不会跟随复用的 pid；Windows 使用 `taskkill /T /F`。现有 profile 关闭控制器会释放 Cordis 树与 WebServer；六秒后主进程会强制终止已保留的进程树，并等待进程句柄关闭。`exit` 事件不能代替 `close`。强制终止未完成时，桌面壳保持打开并报告错误。启动等待以 60 秒为界，进程创建错误与 Host 提前退出都会被报告，第二次启动桌面应用会聚焦现有窗口。
 
-workspace 本地的 Windows x64 构建读取 `apps/desktop/desktop-build.config.json`，使用 `@electron/packager` 打包已 bundle 的 Electron main，再用 `electron-winstaller` 创建无签名的当前用户 Squirrel 安装程序。应用源目录不包含 Harness 运行时依赖。构建器从 workspace 部署现有 `@deepseek-ai/dsh` 包到外部 Host 运行时目录，并把构建机上与配置完全匹配的普通 Node 可执行文件复制到旁边。打包后的 main 通过 `process.resourcesPath` 解析二者；开发启动器继续传递自身 Node 可执行文件。因此，安装程序在不从 npm 解析桌面应用的前提下维持同一套 Host 进程和 Node ABI 分离。
+Desktop 打包由 [Electron 打包与更新 Agent Note](2026-08-25-electron-desktop-packaging-and-updates.zh.md) 负责。已签名发布命令与本地未签名安装程序命令都会把目标平台的普通 Node.js、pnpm、离线 dsh seed 与私有 Desktop Host 作为资源放在 Electron 应用旁边。打包后的 main 通过 `process.resourcesPath` 解析它们；开发启动器继续传递自身 Node 可执行文件。因此，每个安装程序都能在不从 npm 解析桌面应用的前提下维持同一套 Host 进程和 Node ABI 分离。
 
 ## 验证
 
-纯运行时测试固定启动器参数分离、patch 解析、临时回环默认值、开发态与打包态 Node 可执行文件选择、Host 消息校验、启动失败、关闭升级、同 origin 导航和外部协议过滤。配置测试会拒绝未知字段、未支持的签名与更新模式、不安全的可执行文件名和非 ICO Windows 图标。桌面 TypeScript 项目、workspace 约束、包构建、构建后 Host snapshot 和打包入口探测覆盖面向发布的应用边界。现有 Web 测试继续作为 UI、HTTP、WebSocket 与 profile 行为的权威验证，因为这些路径没有变化。
+纯运行时测试固定启动器参数分离、patch 解析、临时回环默认值、开发态与打包态 Node 可执行文件选择、Host 消息校验、启动失败、关闭升级、同 origin 导航和外部协议过滤。桌面 TypeScript 项目、workspace 约束、包构建、构建后 Host snapshot、打包入口探测与平台打包测试覆盖应用边界。现有 Web 测试继续作为 UI、HTTP、WebSocket 与 profile 行为的权威验证，因为这些路径没有变化。
 
 ## 曾考虑的替代方案
 
@@ -41,4 +41,4 @@ workspace 本地的 Windows x64 构建读取 `apps/desktop/desktop-build.config.
 - 浏览器与桌面入口使用同一套前端产物、插件图、HTTP API、WebSocket stream、配置、持久化和关闭实现。
 - Electron 保持在核心逻辑之外，不能悄然用自己的 Node 运行时替换需要普通 Node 的提供方运行时。
 - 桌面 renderer 仍使用回环网络 socket。IPC 传输仍是可选的未来优化，不是提供桌面窗口的前置条件。
-- workspace 可以在不改变产品传输或 Host 组合的情况下生成无签名 Windows x64 安装程序。代码签名、自动更新、其他架构和 macOS 以外的 OS 包仍属于独立发布工作；无签名 macOS 磁盘映像经 [macOS 打包 Agent Note](2026-08-17-unsigned-macos-dmg-packaging.zh.md) 交付。
+- 本地 macOS 与 Windows 安装程序无需平台证书即可保持产品传输与 Host 组合。签名由证书是否可用决定，而不是由独立的本地流水线或输出目录决定；该规则由[按证书选择的 Desktop 打包 Agent Note](2026-09-11-certificate-selected-desktop-packaging.zh.md)负责。

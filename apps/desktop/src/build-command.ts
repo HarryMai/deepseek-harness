@@ -21,7 +21,7 @@ export function pnpmBuildCommand(
   const entrypoint = environment.npm_execpath
   if (entrypoint === undefined || entrypoint.trim() === '') {
     throw new Error(
-      'desktop installer: npm_execpath is unavailable; invoke the builder through `pnpm desktop:make:*` scripts',
+      'desktop installer: npm_execpath is unavailable; invoke the builder through a pnpm package script',
     )
   }
   if (!/\.[cm]?js$/u.test(entrypoint)) return { command: entrypoint, args: [...args] }

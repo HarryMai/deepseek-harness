@@ -1,6 +1,6 @@
-/** Electron-builder fields asserted by the Desktop release tests. */
+/** Electron-builder fields asserted by the Desktop packaging tests. */
 export interface DesktopElectronBuilderConfig {
-  readonly appId: string
+  readonly appId?: string
   readonly directories: {
     readonly output: string
   }
@@ -9,20 +9,31 @@ export interface DesktopElectronBuilderConfig {
     { readonly from: string, readonly to: 'seed' },
   ]
   readonly mac: {
-    readonly identity: string | undefined
+    readonly identity: string | null
     readonly forceCodeSigning: boolean
+    readonly hardenedRuntime: boolean
     readonly notarize: boolean
+    readonly sign: null | undefined
   }
   readonly dmg: {
     readonly sign: boolean
     readonly writeUpdateInfo: boolean
   }
-  readonly artifactBuildCompleted: (artifact: { readonly file: string }) => Promise<void> | undefined
-  readonly publish: readonly [{ readonly provider: 'generic', readonly url: string }]
+  readonly win: {
+    readonly forceCodeSigning: boolean
+    readonly signExecutable: boolean
+    readonly signtoolOptions: { readonly sign: unknown, readonly signingHashAlgorithms: readonly ['sha256'] } | null
+  }
+  readonly nsis: {
+    readonly differentialPackage: boolean
+  }
+  readonly afterSign?: (context: unknown) => void
+  readonly artifactBuildCompleted?: (artifact: { readonly file: string }) => Promise<void> | undefined
+  readonly publish: readonly [{ readonly provider: 'generic', readonly url: string }] | null
 }
 
 /**
- * Create electron-builder configuration from one release environment.
+ * Create electron-builder configuration from one packaging environment.
  * @param env - Packaging environment.
  * @param hostPlatform - Build-host platform used when no explicit target is present.
  * @param hostArch - Build-host architecture used when no explicit target is present.

@@ -23,7 +23,7 @@ import {
 } from '../src/seed-store.ts'
 import {
   resolveDesktopAppId,
-  resolveMacOSSigningEnvironment,
+  resolveOptionalMacOSSigningEnvironment,
 } from './desktop-release-environment.mjs'
 import {
   signMacOSSeedStore,
@@ -39,8 +39,29 @@ const STORE_ROOT = join(SEED_ROOT, 'store')
 const RUNTIME_ROOT = BUILD_PATHS.runtime
 const PNPM_BUILD_STATE = BUILD_PATHS.seedPnpm
 const PACKAGE_SET_ROOT = BUILD_PATHS.packageSet
-const NODE = join(RUNTIME_ROOT, 'node', process.platform === 'win32' ? 'node.exe' : 'node')
+const TARGET_PLATFORM = process.env.DSH_DESKTOP_TARGET_PLATFORM ?? process.platform
+const TARGET_ARCH = process.env.DSH_DESKTOP_TARGET_ARCH ?? process.arch
+const TARGET_NODE = join(RUNTIME_ROOT, 'node', TARGET_PLATFORM === 'win32' ? 'node.exe' : 'node')
 const PNPM = join(RUNTIME_ROOT, 'pnpm', 'bin', 'pnpm.mjs')
+
+function targetNodeCanExecute(): boolean {
+  return TARGET_PLATFORM === process.platform
+    && (TARGET_ARCH === process.arch || (TARGET_PLATFORM === 'darwin' && TARGET_ARCH === 'x64' && process.arch === 'arm64'))
+}
+
+const TARGET_NODE_IS_EXECUTABLE = targetNodeCanExecute()
+
+// Cross-architecture seed preparation keeps the target dependency selection while running pnpm through an executable host Node.js.
+const NODE = TARGET_NODE_IS_EXECUTABLE ? TARGET_NODE : process.execPath
+
+const OFFLINE_INSTALL_ARGUMENTS = [
+  'install',
+  '--offline',
+  '--frozen-lockfile',
+  '--trust-lockfile',
+  // A host Node.js must not execute lifecycle scripts for a target CPU it cannot run.
+  ...(TARGET_NODE_IS_EXECUTABLE ? [] : ['--ignore-scripts']),
+] as const
 
 function manifestVersion(path: string, subject: string): string {
   const manifest = JSON.parse(readFileSync(path, 'utf8')) as { version?: unknown }
@@ -74,6 +95,8 @@ function runPnpm(args: readonly string[]): Promise<void> {
     writeFileSync(userConfig, '')
     const child = spawn(NODE, [
       PNPM,
+      `--os=${TARGET_PLATFORM}`,
+      `--cpu=${TARGET_ARCH}`,
       '--config.registry=https://registry.npmjs.org/',
       `--config.store-dir=${STORE_ROOT}`,
       '--config.enable-global-virtual-store=false',
@@ -128,7 +151,7 @@ function inventory(root: string): readonly { path: string; bytes: number; sha256
 async function verifyOfflineInstallation(release: DesktopRelease): Promise<void> {
   const installedModules = join(SEED_ROOT, 'node_modules')
   try {
-    await runPnpm(['install', '--offline', '--frozen-lockfile', '--trust-lockfile'])
+    await runPnpm(OFFLINE_INSTALL_ARGUMENTS)
     const hostRoot = join(installedModules, ...DESKTOP_HOST_PACKAGE.split('/'))
     for (const file of DESKTOP_HOST_RUNTIME_FILES) {
       if (!existsSync(join(hostRoot, file))) {
@@ -159,21 +182,22 @@ async function main(): Promise<void> {
     rmSync(installedModules, { recursive: true, force: true })
     rmSync(PNPM_BUILD_STATE, { recursive: true, force: true })
     await verifyOfflineInstallation(release)
-    const targetPlatform = process.env.DSH_DESKTOP_TARGET_PLATFORM ?? process.platform
     let signedMachOFiles: number | undefined
-    let macOSSigning: ReturnType<typeof resolveMacOSSigningEnvironment> | undefined
-    if (targetPlatform === 'darwin') {
-      macOSSigning = resolveMacOSSigningEnvironment(process.env)
-      const signing = await signMacOSSeedStore(
-        STORE_ROOT,
-        resolveDesktopAppId(process.env),
-        macOSSigning,
-      )
-      signedMachOFiles = signing.signedFiles
-      process.stdout.write(
-        `desktop seed: signed ${signing.signedFiles} Mach-O files, updated ${signing.updatedIndexRows} pnpm index records, and pruned ${signing.prunedOrphans} native orphans\n`,
-      )
-      await verifyOfflineInstallation(release)
+    let macOSSigning: ReturnType<typeof resolveOptionalMacOSSigningEnvironment>
+    if (TARGET_PLATFORM === 'darwin') {
+      macOSSigning = resolveOptionalMacOSSigningEnvironment(process.env)
+      if (macOSSigning !== undefined) {
+        const signing = await signMacOSSeedStore(
+          STORE_ROOT,
+          resolveDesktopAppId(process.env),
+          macOSSigning,
+        )
+        signedMachOFiles = signing.signedFiles
+        process.stdout.write(
+          `desktop seed: signed ${signing.signedFiles} Mach-O files, updated ${signing.updatedIndexRows} pnpm index records, and pruned ${signing.prunedOrphans} native orphans\n`,
+        )
+        await verifyOfflineInstallation(release)
+      }
     }
     removePnpmProjectRegistrations(STORE_ROOT)
     archivePnpmStore(SEED_ROOT, STORE_ROOT)

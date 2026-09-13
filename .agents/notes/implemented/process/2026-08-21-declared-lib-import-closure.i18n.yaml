@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-21-declared-lib-import-closure.md
-2026-08-21-declared-lib-import-closure.md: 40fa396c472c2605979d351399b2482566fde666
-2026-08-21-declared-lib-import-closure.zh.md: df7a1038be60897264076224b5a5937287d620fe
+2026-08-21-declared-lib-import-closure.md: bab6537bc01f69ad6153ffd71f0c4015d5171469
+2026-08-21-declared-lib-import-closure.zh.md: 7a9758248c65fbd4f4cbb09aa207236a8e3e8144
