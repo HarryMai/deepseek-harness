@@ -54,7 +54,6 @@ describe('browser dependency discovery', () => {
   it('records runtime imports through the client config without following upstream dependencies or erased types', async () => {
     const root = fixture()
     library(root, 'browser-lib', 'export { value } from "transitive-lib"')
-    library(root, 'transitive-lib')
     dynamicPlugin(root, [
       'import type { MissingType } from "type-only-lib"',
       'import { value } from "browser-lib"',

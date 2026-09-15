@@ -45,6 +45,9 @@ function recorder(seen: Set<string>, workspaceNames: ReadonlySet<string>, follow
         if (name !== undefined && workspaceNames.has(name)) {
           return followWorkspace ? null : { id: source, external: true }
         }
+        // Third-party implementation imports do not disclose another direct
+        // browser dependency and may not be installed beside that importer.
+        if (browserPackageOfFile(importer) !== undefined) return { id: source, external: true }
         const resolved = await this.resolve(source, importer, { skipSelf: true })
         if (resolved === null) throw new Error(`browser notices: cannot resolve ${source} from ${importer}`)
         const owner = browserPackageOfFile(resolved.id)
@@ -121,6 +124,17 @@ interface ViteApi {
   build(config: Record<string, unknown>): Promise<unknown>
 }
 
+/** Replace application-specific script entries with the HTML entries used for the dependency walk. */
+function htmlInputs(pages: Record<string, string>) {
+  return {
+    name: 'dsh-browser-html-inputs',
+    enforce: 'post' as const,
+    configResolved(config: { build: { rollupOptions: { input?: unknown } } }) {
+      config.build.rollupOptions.input = pages
+    },
+  }
+}
+
 async function collectShell(
   root: string,
   workspaceNames: ReadonlySet<string>,
@@ -134,21 +148,27 @@ async function collectShell(
     const vite = await import(pathToFileURL(vitePath).href) as ViteApi
     const config = await vite.resolveConfig({ root: dir, logLevel: 'error' }, 'build')
     const input = config.build.rollupOptions?.input
-    const entries = typeof input === 'string' ? [input] : Object.values(input ?? {})
-    const pages = entries.filter(entry => entry.endsWith('.html'))
-    if (pages.length === 0) throw new Error(`browser notices: ${manifest.name} has no HTML build entry`)
+    const entries = typeof input === 'string'
+      ? [['index', input] as const]
+      : Array.isArray(input)
+        ? input.map((entry, index) => [String(index), entry] as const)
+        : Object.entries(input ?? {})
+    const pages = Object.fromEntries(entries
+      .filter(([, entry]) => entry.endsWith('.html'))
+      .map(([name, entry]) => [name, resolve(dir, entry)]))
+    if (Object.keys(pages).length === 0) throw new Error(`browser notices: ${manifest.name} has no HTML build entry`)
     await vite.build({
       root: dir,
       logLevel: 'error',
-      plugins: [recorder(seen, workspaceNames, true)],
-      resolve: { alias: browserSourceAliases(root) },
+      plugins: [htmlInputs(pages), recorder(seen, workspaceNames, true)],
+      resolve: { alias: browserSourceAliases(root), preserveSymlinks: true },
       build: {
         write: false,
         minify: false,
         sourcemap: false,
         reportCompressedSize: false,
         rollupOptions: {
-          input: pages.length === 1 ? pages[0] : pages,
+          input: pages,
           // Chunk coloring expects full third-party bodies; the disclosure walk stops at their imports.
           output: { manualChunks: () => undefined },
         },

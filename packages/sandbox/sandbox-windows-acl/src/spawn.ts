@@ -13,7 +13,6 @@
  * @module @deepseek-ai/dsh-sandbox-windows-acl/spawn
  */
 
-import koffi from 'koffi'
 import {
   spawnInheritedJobProcess,
   spawnPipedProcess,
@@ -24,6 +23,7 @@ import type {
   SpawnedJobProcess,
   SpawnedPipedProcess,
 } from '@deepseek-ai/dsh-win32-process'
+import { encodeStartupInfoDesktop } from './ffi.ts'
 import type { Win32Bindings } from './ffi.ts'
 
 export { drainPipe } from '@deepseek-ai/dsh-win32-process'
@@ -32,12 +32,6 @@ export { drainPipe } from '@deepseek-ai/dsh-win32-process'
 export interface SpawnedNative extends SpawnedPipedProcess {}
 /** Restricted-token child assigned to a kill-on-close Job. */
 export interface SpawnedInherited extends SpawnedJobProcess {}
-
-const PVOID = koffi.pointer('void')
-// STARTUPINFOW has a four-byte cb followed by padding, then lpReserved and
-// lpDesktop pointers. The shared process owner encodes lpDesktop as str16;
-// this adapter replaces that field with the caller-owned UTF-16 buffer.
-const STARTUPINFO_LP_DESKTOP_OFFSET = 16
 
 type CreateProcessAsUserW = Win32Bindings['createProcessAsUserW']
 
@@ -64,7 +58,7 @@ function withDesktop<T>(api: Win32Bindings, desktop: string | undefined, action:
     startupInfo,
     processInfo,
   ) => {
-    koffi.encode(startupInfo, STARTUPINFO_LP_DESKTOP_OFFSET, PVOID, desktopBuffer)
+    encodeStartupInfoDesktop(startupInfo, desktopBuffer)
     return api.createProcessAsUserW(
       token,
       applicationName,

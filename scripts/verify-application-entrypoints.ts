@@ -32,6 +32,8 @@ const MANIFEST_BIN_ALLOWLIST = new Map<string, ManifestBin>([
 /** Every JavaScript executable in an application or packaging workspace has one explicit role. */
 const EXECUTABLE_SOURCE_ALLOWLIST = new Map<string, string>([
   ['apps/cli/src/bin.ts', 'supported dsh application launcher'],
+  ['apps/desktop/src/bin.ts', 'private Electron application launcher'],
+  ['apps/desktop/src/host.ts', 'private Desktop Host child'],
   ['packages/context/time-context/tests/fixtures/driver.ts', 'test-only subprocess driver'],
   ['packages/experimental/webworker-packer/bin.js', 'private build-only wrapper'],
   ['packages/experimental/webworker-packer/src/bin.ts', 'private build-only implementation'],

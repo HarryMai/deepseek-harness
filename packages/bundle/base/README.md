@@ -9,9 +9,9 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Every base-backed `dsh --profile` surface runs on `dsh-base`, so those surfaces share a model connection, the full tool set, durable session history, and workspace safety defaults. The shipped `sdk-minimal` profile deliberately uses a complete standalone tree instead. You rarely touch this bundle directly — shipped base-backed profiles already include it, and a custom base-backed profile names it first. When you need different defaults, change your profile patch or add a later bundle; this package is not a library you import.
+`dsh-base` gives base-backed `dsh --profile` surfaces a shared model connection, full tool set, durable sessions, and workspace safety defaults. Shipped `web`, `headless`, `sdk`, and `acp` profiles include it; `sdk-minimal` does not. Put it first in a custom base-backed profile, then use a profile patch or later bundle to change defaults. It is a bundle, not an importable library.
 
-The `mcp-settings` row is a settings-backed empty Loader group, not a configured MCP server. Its default `mcp-client` section is disabled and contains no command or endpoint, so it starts no local process or HTTP client until a user saves complete records, enables the master switch, and enables each intended record. New record switches default to off and persist with the records; the group then owns each record's dynamic client lifecycle. `dsh-web-app` supplies the corresponding **Custom Configuration** Settings page.
+`mcp-settings` starts disabled with no command or endpoint, so it launches no MCP process until the user saves valid records, enables the master switch, and enables selected records. Record switches default off and persist; `dsh-web-app` supplies the **Custom Configuration** Settings page.
 
 ## Table of Contents
 

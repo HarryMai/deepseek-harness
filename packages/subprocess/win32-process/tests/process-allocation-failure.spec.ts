@@ -7,14 +7,16 @@ import {
   waitForProcessExit,
 } from '../src/index.ts'
 import * as ffi from '../src/ffi.ts'
-import { PROCESS_INFORMATION } from '../src/ffi.ts'
+import { processInformationStruct } from '../src/ffi.ts'
 import type { NativePtr, Win32ProcessBindings } from '../src/ffi.ts'
 
 vi.mock('../src/ffi.ts', { spy: true })
 
 const PVOID = koffi.pointer('void')
+const PROCESS_INFORMATION = processInformationStruct()
 
 afterEach(() => {
+  vi.clearAllMocks()
   vi.restoreAllMocks()
 })
 
@@ -29,7 +31,7 @@ describe('spawnInheritedJobProcess allocation cleanup', () => {
       getLastError: vi.fn(() => 5),
       formatMessageW: vi.fn(() => 0),
     } as unknown as Win32ProcessBindings
-    const free = vi.spyOn(koffi, 'free')
+    const free = vi.mocked(ffi.freeNative)
     vi.mocked(ffi.allocProcessInfo).mockImplementationOnce(() => { throw new Error('process-info allocation failed') })
     expect(() => spawnInheritedJobProcess(api, {
       command: 'cmd.exe',
@@ -37,7 +39,7 @@ describe('spawnInheritedJobProcess allocation cleanup', () => {
       cwd: 'C:\\',
       token: 70n as NativePtr,
     })).toThrow('process-info allocation failed')
-    expect(free).toHaveBeenCalledOnce()
+    expect(free.mock.calls.filter(([pointer]) => pointer !== undefined)).toHaveLength(1)
   })
 
   it('frees process info after a successful inherited spawn', () => {
@@ -61,7 +63,7 @@ describe('spawnInheritedJobProcess allocation cleanup', () => {
       getLastError: vi.fn(() => 5),
       formatMessageW: vi.fn(() => 0),
     } as unknown as Win32ProcessBindings
-    const free = vi.spyOn(koffi, 'free')
+    const free = vi.mocked(ffi.freeNative)
     expect(spawnInheritedJobProcess(api, {
       command: 'cmd.exe',
       args: [],
@@ -95,7 +97,7 @@ describe('shared process allocation cleanup', () => {
       getLastError: vi.fn(() => 5),
       formatMessageW: vi.fn(() => 0),
     } as unknown as Win32ProcessBindings
-    const free = vi.spyOn(koffi, 'free')
+    const free = vi.mocked(ffi.freeNative)
     expect(spawnPipedProcess(api, {
       command: 'cmd.exe',
       args: [],
@@ -122,8 +124,8 @@ describe('shared process allocation cleanup', () => {
       getLastError: vi.fn(() => 109),
       closeHandle: vi.fn(() => 1),
     } as unknown as Win32ProcessBindings
-    const alloc = vi.spyOn(koffi, 'alloc')
-    const free = vi.spyOn(koffi, 'free')
+    const alloc = vi.mocked(ffi.allocUint32)
+    const free = vi.mocked(ffi.freeNative)
     await expect(drainPipe(api, 70n as NativePtr)).resolves.toEqual(Buffer.from('a'))
     expect(alloc).toHaveBeenCalledOnce()
     expect(free).toHaveBeenCalledOnce()
@@ -138,7 +140,7 @@ describe('shared process allocation cleanup', () => {
       }),
       closeHandle: vi.fn(() => 1),
     } as unknown as Win32ProcessBindings
-    const free = vi.spyOn(koffi, 'free')
+    const free = vi.mocked(ffi.freeNative)
     expect(waitForProcessExit(api, 60n as NativePtr)).toBe(42)
     expect(free).toHaveBeenCalledOnce()
   })

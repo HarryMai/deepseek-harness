@@ -17,9 +17,10 @@ import {
 } from '../src/index.ts'
 import type { NativePtr, Win32ProcessBindings } from '../src/index.ts'
 import * as abi from '../src/abi.ts'
-import { PROCESS_INFORMATION } from '../src/ffi.ts'
+import { processInformationStruct } from '../src/ffi.ts'
 
 const PVOID = koffi.pointer('void')
+const PROCESS_INFORMATION = processInformationStruct()
 
 /** The stub the CreateProcessAsUserW failure branch needs: pipes "succeed", the spawn fails with Win32 5. */
 function pipeFailureApi(): { api: Win32ProcessBindings; closed: bigint[]; closeHandle: ReturnType<typeof vi.fn> } {

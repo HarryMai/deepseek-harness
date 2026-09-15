@@ -7,10 +7,11 @@ import {
   spawnPipedProcess,
 } from '../src/index.ts'
 import { CREATE_SUSPENDED } from '../src/abi.ts'
-import { PROCESS_INFORMATION } from '../src/ffi.ts'
+import { processInformationStruct } from '../src/ffi.ts'
 import type { NativePtr, Win32ProcessBindings } from '../src/index.ts'
 
 const PVOID = koffi.pointer('void')
+const PROCESS_INFORMATION = processInformationStruct()
 
 function inheritedApi(overrides: Partial<Win32ProcessBindings> = {}): {
   api: Win32ProcessBindings

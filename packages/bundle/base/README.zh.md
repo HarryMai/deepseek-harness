@@ -9,9 +9,9 @@ kind: "package-bundle"
 
 ## 概述
 
-每个基于 base 的 `dsh --profile` 表层都运行在 `dsh-base` 上，因此这些表层共享模型连接、完整工具集、持久会话历史和 workspace 安全默认值。随附的 `sdk-minimal` profile 刻意改用完整的独立配置树。你通常不直接操作本组合包——随发行版交付的基于 base 的 profile 已经包含它，自定义的基于 base 的 profile 则把它放在第一位。需要其他默认值时，应修改自己的 profile patch 或添加后续组合包；本包不是供导入的库。
+`dsh-base` 让基于它的 `dsh --profile` 表层共享模型连接、完整工具集、持久会话和 workspace 安全默认值。随附的 `web`、`headless`、`sdk` 与 `acp` profile 已包含它；`sdk-minimal` 不包含。自定义基于 base 的 profile 应把它放在首位，再通过 profile patch 或后续组合包修改默认值。本包是组合包，不是可导入的库。
 
-`mcp-settings` 行是一个受 settings 驱动的空 Loader group，不是一台已经配置好的 MCP 服务器。其默认的 `mcp-client` 分节处于关闭状态，不包含命令或端点，因此在用户保存完整记录、打开总开关并启用每个目标记录之前，不会启动本地进程或 HTTP 客户端。新记录的独立开关默认关闭并与记录一起持久化；之后由这个 group 负责每个记录的动态客户端生命周期。`dsh-web-app` 提供相应的**自定义配置** Settings 页面。
+`mcp-settings` 默认关闭且没有命令或端点，因此在用户保存有效记录、打开总开关并启用目标记录之前不会启动 MCP 本地进程或 HTTP 客户端。记录开关默认关闭并持久化；`dsh-web-app` 提供**自定义配置** Settings 页面。
 
 ## 目录
 

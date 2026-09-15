@@ -1,6 +1,7 @@
 /** Lazy Koffi bindings for generic Win32 process, stdio, and Job operations. */
 
-import koffi from 'koffi'
+import { createRequire } from 'node:module'
+import type koffi from 'koffi'
 import * as abi from './abi.ts'
 import { Win32Error } from './errors.ts'
 
@@ -8,19 +9,43 @@ declare const nativePtr: unique symbol
 /** Koffi native pointer branded against accidental numeric use. */
 export type NativePtr = bigint & { readonly [nativePtr]: true }
 
-type Ptr = ReturnType<typeof koffi.pointer>
-const PVOID: Ptr = koffi.pointer('void')
-const PPVOID: Ptr = koffi.pointer(PVOID)
+type KoffiModule = typeof koffi
+type Ptr = ReturnType<KoffiModule['pointer']>
+type KoffiStruct = ReturnType<KoffiModule['struct']>
+type KoffiLibrary = ReturnType<KoffiModule['load']>
+
+const requireModule = createRequire(import.meta.url)
+let cachedKoffi: KoffiModule | undefined
+
+function isKoffiModule(value: unknown): value is KoffiModule {
+  return typeof value === 'object' && value !== null
+    && typeof (value as { pointer?: unknown }).pointer === 'function'
+    && typeof (value as { struct?: unknown }).struct === 'function'
+    && typeof (value as { load?: unknown }).load === 'function'
+}
+
+function loadKoffi(): KoffiModule {
+  if (cachedKoffi !== undefined) return cachedKoffi
+  const loaded: unknown = requireModule('koffi')
+  const candidate = isKoffiModule(loaded)
+    ? loaded
+    : typeof loaded === 'object' && loaded !== null && 'default' in loaded
+      ? (loaded as { default: unknown }).default
+      : undefined
+  if (!isKoffiModule(candidate)) throw new Error('koffi did not expose the expected native API')
+  cachedKoffi = candidate
+  return candidate
+}
 
 /** Loaded Win32 libraries and the shared stdcall binder used by process extensions. */
 export interface Win32BindingContext {
   /** Kernel process, handle, pipe, and Job APIs. */
-  readonly kernel32: ReturnType<typeof koffi.load>
+  readonly kernel32: KoffiLibrary
   /** Token and security APIs. */
-  readonly advapi32: ReturnType<typeof koffi.load>
+  readonly advapi32: KoffiLibrary
   /** Bind one stdcall function from a loaded Win32 library. */
   readonly bind: (
-    library: ReturnType<typeof koffi.load>,
+    library: KoffiLibrary,
     name: string,
     result: Ptr | string,
     args: Array<Ptr | string>,
@@ -125,50 +150,83 @@ export interface CurrentTokenProcessBindings extends Win32ProcessBindings {
   uvGetOsfhandle(fileDescriptor: number): NativePtr | null
 }
 
-/** Koffi STARTUPINFOW layout. */
-export const STARTUPINFOW = koffi.struct('DSH_STARTUPINFOW', {
-  cb: 'uint32',
-  lpReserved: 'str16',
-  lpDesktop: 'str16',
-  lpTitle: 'str16',
-  dwX: 'uint32',
-  dwY: 'uint32',
-  dwXSize: 'uint32',
-  dwYSize: 'uint32',
-  dwXCountChars: 'uint32',
-  dwYCountChars: 'uint32',
-  dwFillAttribute: 'uint32',
-  dwFlags: 'uint32',
-  wShowWindow: 'uint16',
-  cbReserved2: 'uint16',
-  lpReserved2: koffi.pointer('uint8'),
-  hStdInput: PVOID,
-  hStdOutput: PVOID,
-  hStdError: PVOID,
-})
-
-/** Koffi PROCESS_INFORMATION layout. */
-export const PROCESS_INFORMATION = koffi.struct('DSH_PROCESS_INFORMATION', {
-  hProcess: PVOID,
-  hThread: PVOID,
-  dwProcessId: 'uint32',
-  dwThreadId: 'uint32',
-})
-
-/* v8 ignore start -- ABI guards are pinned by native header probes. */
-if (STARTUPINFOW.size !== abi.STARTUPINFOW_SIZE) {
-  throw new Error(`STARTUPINFOW layout mismatch: koffi computed ${STARTUPINFOW.size}, expected ${abi.STARTUPINFOW_SIZE}`)
+interface NativeTypes {
+  koffi: KoffiModule
+  PVOID: Ptr
+  PPVOID: Ptr
+  STARTUPINFOW: KoffiStruct
+  PROCESS_INFORMATION: KoffiStruct
 }
-if (PROCESS_INFORMATION.size !== abi.PROCESS_INFORMATION_SIZE) {
-  throw new Error(`PROCESS_INFORMATION layout mismatch: koffi computed ${PROCESS_INFORMATION.size}, expected ${abi.PROCESS_INFORMATION_SIZE}`)
+
+let cachedTypes: NativeTypes | undefined
+
+/** Resolve the Koffi pointer and struct types on the first native operation. */
+function nativeTypes(): NativeTypes {
+  if (cachedTypes !== undefined) return cachedTypes
+  const koffi = loadKoffi()
+  const PVOID: Ptr = koffi.pointer('void')
+  const PPVOID: Ptr = koffi.pointer(PVOID)
+  const STARTUPINFOW = koffi.struct('DSH_STARTUPINFOW', {
+    cb: 'uint32',
+    lpReserved: 'str16',
+    lpDesktop: 'str16',
+    lpTitle: 'str16',
+    dwX: 'uint32',
+    dwY: 'uint32',
+    dwXSize: 'uint32',
+    dwYSize: 'uint32',
+    dwXCountChars: 'uint32',
+    dwYCountChars: 'uint32',
+    dwFillAttribute: 'uint32',
+    dwFlags: 'uint32',
+    wShowWindow: 'uint16',
+    cbReserved2: 'uint16',
+    lpReserved2: koffi.pointer('uint8'),
+    hStdInput: PVOID,
+    hStdOutput: PVOID,
+    hStdError: PVOID,
+  })
+  const PROCESS_INFORMATION = koffi.struct('DSH_PROCESS_INFORMATION', {
+    hProcess: PVOID,
+    hThread: PVOID,
+    dwProcessId: 'uint32',
+    dwThreadId: 'uint32',
+  })
+
+  /* v8 ignore start -- ABI guards are pinned by native header probes. */
+  if (STARTUPINFOW.size !== abi.STARTUPINFOW_SIZE) {
+    throw new Error(`STARTUPINFOW layout mismatch: koffi computed ${STARTUPINFOW.size}, expected ${abi.STARTUPINFOW_SIZE}`)
+  }
+  if (PROCESS_INFORMATION.size !== abi.PROCESS_INFORMATION_SIZE) {
+    throw new Error(`PROCESS_INFORMATION layout mismatch: koffi computed ${PROCESS_INFORMATION.size}, expected ${abi.PROCESS_INFORMATION_SIZE}`)
+  }
+  /* v8 ignore stop */
+  cachedTypes = { koffi, PVOID, PPVOID, STARTUPINFOW, PROCESS_INFORMATION }
+  return cachedTypes
 }
-/* v8 ignore stop */
+
+/**
+ * Resolve the Koffi STARTUPINFOW type for native tests and encoding.
+ * @returns the STARTUPINFOW struct type.
+ */
+export function startupInfoStruct(): KoffiStruct {
+  return nativeTypes().STARTUPINFOW
+}
+
+/**
+ * Resolve the Koffi PROCESS_INFORMATION type for native tests and decoding.
+ * @returns the PROCESS_INFORMATION struct type.
+ */
+export function processInformationStruct(): KoffiStruct {
+  return nativeTypes().PROCESS_INFORMATION
+}
 
 /**
  * Allocate a pointer-sized out-parameter slot.
  * @returns allocated native slot.
  */
 export function allocPtrSlot(): NativePtr {
+  const { koffi, PVOID } = nativeTypes()
   return koffi.alloc(PVOID, 1) as NativePtr
 }
 
@@ -177,7 +235,16 @@ export function allocPtrSlot(): NativePtr {
  * @returns allocated native slot.
  */
 export function allocUint32(): NativePtr {
+  const { koffi } = nativeTypes()
   return koffi.alloc('uint32', 1) as NativePtr
+}
+
+/**
+ * Release a Koffi allocation when it was created.
+ * @param pointer - optional native allocation.
+ */
+export function freeNative(pointer: NativePtr | undefined): void {
+  if (pointer !== undefined) nativeTypes().koffi.free(pointer)
 }
 
 /**
@@ -186,6 +253,7 @@ export function allocUint32(): NativePtr {
  * @returns decoded pointer, or null for address zero.
  */
 export function decodePtr(slot: NativePtr): NativePtr | null {
+  const { koffi, PVOID } = nativeTypes()
   const value = koffi.decode(slot, PVOID) as NativePtr | null
   return isNullPtr(value) ? null : value
 }
@@ -196,6 +264,7 @@ export function decodePtr(slot: NativePtr): NativePtr | null {
  * @returns decoded unsigned value.
  */
 export function decodeUint32(slot: NativePtr): number {
+  const { koffi } = nativeTypes()
   return koffi.decode(slot, 'uint32') as number
 }
 
@@ -204,6 +273,7 @@ export function decodeUint32(slot: NativePtr): number {
  * @returns allocated struct pointer.
  */
 export function allocStartupInfo(): NativePtr {
+  const { koffi, STARTUPINFOW } = nativeTypes()
   return koffi.alloc(STARTUPINFOW, 1) as NativePtr
 }
 
@@ -213,6 +283,7 @@ export function allocStartupInfo(): NativePtr {
  * @param fields - fields required for inherited stdio.
  */
 export function encodeStartupInfo(startupInfo: NativePtr, fields: StartupInfoInput): void {
+  const { koffi, STARTUPINFOW } = nativeTypes()
   koffi.encode(startupInfo, STARTUPINFOW, fields)
 }
 
@@ -221,6 +292,7 @@ export function encodeStartupInfo(startupInfo: NativePtr, fields: StartupInfoInp
  * @returns allocated struct pointer.
  */
 export function allocProcessInfo(): NativePtr {
+  const { koffi, PROCESS_INFORMATION } = nativeTypes()
   return koffi.alloc(PROCESS_INFORMATION, 1) as NativePtr
 }
 
@@ -230,6 +302,7 @@ export function allocProcessInfo(): NativePtr {
  * @returns process/thread handles and ids.
  */
 export function decodeProcessInfo(processInfo: NativePtr): ProcessInfoOutput {
+  const { koffi, PROCESS_INFORMATION } = nativeTypes()
   return koffi.decode(processInfo, PROCESS_INFORMATION) as ProcessInfoOutput
 }
 
@@ -239,10 +312,11 @@ let cached: CurrentTokenProcessBindings | undefined
 /* v8 ignore start -- exercised by native Windows ABI and sandbox jobs. */
 function bindingContext(): Win32BindingContext {
   if (cachedContext !== undefined) return cachedContext
+  const { koffi } = nativeTypes()
   const kernel32 = koffi.load('kernel32.dll')
   const advapi32 = koffi.load('advapi32.dll')
   const bind = (
-    lib: ReturnType<typeof koffi.load>,
+    lib: KoffiLibrary,
     name: string,
     result: Ptr | string,
     args: Array<Ptr | string>,
@@ -253,6 +327,7 @@ function bindingContext(): Win32BindingContext {
 
 function bindings(): CurrentTokenProcessBindings {
   if (cached !== undefined) return cached
+  const { koffi, PVOID, PPVOID, STARTUPINFOW, PROCESS_INFORMATION } = nativeTypes()
   const { kernel32, advapi32, bind } = bindingContext()
   const node = koffi.load(null)
   cached = {

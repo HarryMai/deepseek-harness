@@ -192,6 +192,7 @@ seam 先把确定性工作区 SID 的 ACE 常驻物化（每个工作区每服�
 - **读侧隔离与网络策略不在范围内** —— `WRITE_RESTRICTED` 只交叉检查写访问；将此后端与读侧策略配对以获得更强隔离。
 - **宽目录与 FAT 卷警告已推迟；FAT 类目标保持可写。** 对异常宽的目录或 FAT 类（非 ACL）卷的 UI 侧警告尚未实现，且 FAT 卷作为授权**根**只会大声失败（无 ACL 支持）。授权根**之外**的 FAT 类目标则不同：它没有安全描述符，因此受限令牌的写检查通过（Everyone 在两种列表中都在）——此类目标在**两种**受限模式下都可写。FAT 被视为遗留残留——不受支持、不围绕它设计；此处记录的是这种仅警告的立场，而非缓解措施。
 - **PowerShell 语言模式因受限模式而异。** 在 `read-only` 下，PowerShell 无法在临时目录中创建 AppLocker 探针文件，因此会保守地以 ConstrainedLanguage 启动：`Add-Type`（C# 编译、P/Invoke）、非核心 .NET 静态调用（`[System.IO.*]::`、`[math]::`、`[Environment]::`）、COM 对象与反射以 `Cannot create type` / `Cannot invoke method`（「only core types」）错误失败，且 `$ExecutionContext.SessionState.LanguageMode = 'FullLanguage'` 被拒绝。交付的 `workspace-write` 路径拥有私有临时目录能力，可使该探针完成，因此除非主机范围的 WDAC/AppLocker 策略另有规定，否则 pwsh 保持 FullLanguage；直接使用 `AclSandbox` 并配置 `tempDir: null` 时则没有这一保证，探针可能像 read-only 一样失败并按 fail-closed 处理。这一区别属于 PowerShell 启动行为，不是 ACL 写入边界的一部分。`pwsh` 工具描述向模型传授这些交付模式；`danger-full-access` 调用不受限地在 FullLanguage 下运行。
+
 <a id="dev-note"></a>
 ### 开发备注
 

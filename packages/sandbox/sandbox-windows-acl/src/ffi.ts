@@ -449,6 +449,16 @@ export function encodeStartupInfo(startupInfo: NativePtr, fields: StartupInfoInp
 }
 
 /**
+ * Encode a caller-owned desktop buffer into STARTUPINFOW.lpDesktop.
+ * @param startupInfo - allocated STARTUPINFOW pointer.
+ * @param desktop - NUL-terminated UTF-16LE desktop buffer retained by the caller.
+ */
+export function encodeStartupInfoDesktop(startupInfo: NativePtr, desktop: Buffer): void {
+  const { koffi, PVOID } = nativeTypes()
+  koffi.encode(startupInfo, 16, PVOID, desktop)
+}
+
+/**
  * Allocate a zeroed PROCESS_INFORMATION.
  * @returns the allocated struct pointer.
  */

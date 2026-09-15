@@ -17,12 +17,15 @@ import {
   JobObjectBasicAccountingInformation,
   WAIT_TIMEOUT,
 } from '../src/abi.ts'
-import { PROCESS_INFORMATION, STARTUPINFOW } from '../src/ffi.ts'
+import { processInformationStruct, startupInfoStruct } from '../src/ffi.ts'
 import type {
   CurrentTokenProcessSpawnOptions,
   CurrentTokenProcessBindings,
   NativePtr,
 } from '../src/index.ts'
+
+const PROCESS_INFORMATION = processInformationStruct()
+const STARTUPINFOW = startupInfoStruct()
 
 function options(
   overrides: Partial<CurrentTokenProcessSpawnOptions> = {},

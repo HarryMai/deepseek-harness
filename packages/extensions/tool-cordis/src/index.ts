@@ -12,8 +12,8 @@ import type { DynamicCordisReference } from '@deepseek-ai/dsh-cordis-host-runner
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
-import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { ToolExecution } from '@deepseek-ai/dsh-tools'
+import { defineTool, validateJsonSchemaValue, valueSchemaSpecToJsonSchema } from '@deepseek-ai/dsh-tools'
+import type { JsonSchemaNode, ToolExecution, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
 import { missingServices, providedServices } from './inspect.ts'
 import {
   presentDefineCall, presentInspectListCall, presentInspectQueryCall, presentInspectSelfCall, presentRunCall,
@@ -25,9 +25,84 @@ import { hostInspectProviders } from './providers.ts'
 export const name = 'tool-cordis'
 export const inject = ['tools', 'systemPrompt', 'dynamicCordisRunner', 'cordisInspect']
 
+const DEFINE_PLUGIN_OBJECT_SCHEMA = {
+  oneOf: [
+    {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        kind: { type: 'string', const: 'new', required: true },
+        idPrefix: {
+          type: 'string',
+          required: true,
+          description: 'Suggested semantic prefix of 3–6 lowercase English letters; the Host adds a unique numeric suffix.',
+        },
+      },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        kind: { type: 'string', const: 'existing', required: true },
+        pluginId: { type: 'string', required: true, description: 'Exact ID of an existing Plugin; the new Package is appended to that instance.' },
+      },
+    },
+  ],
+} as const satisfies ValueSchemaSpec
+
+const DEFINE_CODE_OBJECT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    host: { type: 'string', description: 'Plain JavaScript function body that returns the Host-half Cordis Plugin.' },
+    client: { type: 'string', description: 'Plain JavaScript function body that returns the browser Client-half Cordis Plugin.' },
+  },
+} as const satisfies ValueSchemaSpec
+
+const DEFINE_PLUGIN_JSON_SCHEMA = valueSchemaSpecToJsonSchema(DEFINE_PLUGIN_OBJECT_SCHEMA)
+const DEFINE_CODE_JSON_SCHEMA = valueSchemaSpecToJsonSchema(DEFINE_CODE_OBJECT_SCHEMA)
+
+type DefinePlugin =
+  | { readonly kind: 'new'; readonly idPrefix: string }
+  | { readonly kind: 'existing'; readonly pluginId: string }
+
+interface DefineCode {
+  readonly host?: string
+  readonly client?: string
+}
+
 function requireAgent(exec: ToolExecution): Agent {
   if (exec.agent === undefined) throw new Error('Cordis dynamic tools require an Agent-backed session')
   return exec.agent
+}
+
+/** Recover one accidentally JSON-encoded structured Define field after exact schema validation. */
+function decodeDefineJsonText(value: string, schema: JsonSchemaNode, field: 'plugin' | 'code'): JsonValue {
+  let decoded: JsonValue
+  try {
+    decoded = JSON.parse(value) as JsonValue
+  } catch {
+    throw new Error(`cordis_define \`${field}\` JSON text must encode valid JSON`)
+  }
+  const violations = validateJsonSchemaValue(schema, decoded, field)
+  if (violations.length > 0) {
+    throw new Error(`cordis_define \`${field}\` JSON text is invalid: ${violations.join('; ')}`)
+  }
+  return decoded
+}
+
+/** Normalize the validated Plugin selector without loosening the typed tool schema. */
+function definePlugin(value: DefinePlugin | string): DefinePlugin {
+  return typeof value === 'string'
+    ? decodeDefineJsonText(value, DEFINE_PLUGIN_JSON_SCHEMA, 'plugin') as unknown as DefinePlugin
+    : value
+}
+
+/** Normalize the validated source-object argument without treating ordinary source strings as JSON. */
+function defineCode(value: DefineCode | string): DefineCode {
+  return typeof value === 'string'
+    ? decodeDefineJsonText(value, DEFINE_CODE_JSON_SCHEMA, 'code') as unknown as DefineCode
+    : value
 }
 
 /** Register the Cordis tools and explicit `@pluginId` context injection. */
@@ -163,38 +238,24 @@ export function apply(ctx: Context): void {
       plugin: {
         required: true,
         oneOf: [
+          ...DEFINE_PLUGIN_OBJECT_SCHEMA.oneOf,
           {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              kind: { type: 'string', const: 'new', required: true },
-              idPrefix: {
-                type: 'string',
-                required: true,
-                description: 'Suggested semantic prefix of 3–6 lowercase English letters; the Host adds a unique numeric suffix.',
-              },
-            },
-          },
-          {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              kind: { type: 'string', const: 'existing', required: true },
-              pluginId: { type: 'string', required: true, description: 'Exact ID of an existing Plugin; the new Package is appended to that instance.' },
-            },
+            type: 'string',
+            description: 'Compatibility input: JSON text encoding one valid new or existing Plugin selector. Pass an object directly in new calls.',
           },
         ],
       },
       name: { type: 'string', required: true, description: 'Short, readable Package name.' },
       purpose: { type: 'string', required: true, description: 'One-sentence, user-facing description of the Package purpose.' },
       code: {
-        type: 'object',
-        additionalProperties: false,
         required: true,
-        properties: {
-          host: { type: 'string', description: 'Plain JavaScript function body that returns the Host-half Cordis Plugin.' },
-          client: { type: 'string', description: 'Plain JavaScript function body that returns the browser Client-half Cordis Plugin.' },
-        },
+        oneOf: [
+          DEFINE_CODE_OBJECT_SCHEMA,
+          {
+            type: 'string',
+            description: 'Compatibility input: JSON text encoding a source object. Pass an object with host and/or client directly in new calls.',
+          },
+        ],
       },
     },
     output: {
@@ -218,17 +279,19 @@ export function apply(ctx: Context): void {
       presentationMeta: (_args, value) => ({ pluginId: value.pluginId, packageId: value.packageId }),
     },
     execute(args, exec) {
-      const plugin = args.plugin.kind === 'new'
-        ? { kind: 'new' as const, idPrefix: args.plugin.idPrefix }
-        : { kind: 'existing' as const, pluginId: CordisDynamicPluginId(args.plugin.pluginId) }
+      const selector = definePlugin(args.plugin)
+      const code = defineCode(args.code)
+      const plugin = selector.kind === 'new'
+        ? { kind: 'new' as const, idPrefix: selector.idPrefix }
+        : { kind: 'existing' as const, pluginId: CordisDynamicPluginId(selector.pluginId) }
       const receipt = ctx.dynamicCordisRunner.define({
         sessionId: requireAgent(exec).id,
         plugin,
         name: args.name,
         purpose: args.purpose,
         code: {
-          ...args.code.host === undefined ? {} : { host: args.code.host },
-          ...args.code.client === undefined ? {} : { client: args.code.client },
+          ...code.host === undefined ? {} : { host: code.host },
+          ...code.client === undefined ? {} : { client: code.client },
         },
       })
       return Promise.resolve({

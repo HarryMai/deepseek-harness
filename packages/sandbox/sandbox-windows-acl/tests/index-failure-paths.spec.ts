@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Win32Error } from '@deepseek-ai/dsh-win32-process'
 import { ERROR_BROKEN_PIPE } from '@deepseek-ai/dsh-win32-process/src/abi.ts'
-import { PROCESS_INFORMATION } from '@deepseek-ai/dsh-win32-process/src/ffi.ts'
+import { processInformationStruct } from '@deepseek-ai/dsh-win32-process/src/ffi.ts'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import koffi from 'koffi'
 
@@ -22,6 +22,7 @@ import { AclSandbox } from '../src/index.ts'
 import * as abi from '../src/win32-abi.ts'
 
 const PVOID = koffi.pointer('void')
+const PROCESS_INFORMATION = processInformationStruct()
 
 type MockFn = ReturnType<typeof vi.fn>
 
