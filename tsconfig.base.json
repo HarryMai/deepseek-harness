@@ -256,6 +256,9 @@
       // resolver maps their files explicitly outside the bare-package generator.
       "@deepseek-ai/dsh-mcp-client/settings": ["./packages/mcp/mcp-client/src/settings.ts"],
       "@deepseek-ai/dsh-mcp-client/probe": ["./packages/mcp/mcp-client/src/probe.ts"],
+      // session-log-export lives under session-query/, so the generated aliases map only its
+      // bare name; the browser half needs this explicit subpath for source-mode dynamic imports.
+      "@deepseek-ai/dsh-session-log-export/client": ["./packages/session-query/session-log-export/src/client"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],
@@ -343,6 +346,7 @@
       "@deepseek-ai/dsh-plan-mode/invariant": ["./packages/plan/plan-mode/src/invariant.ts"],
       "@deepseek-ai/dsh-plugin-package-inventory-deepseek": ["./packages/llm/plugin-package-inventory-deepseek/src"],
       "@deepseek-ai/dsh-pwsh-sandbox": ["./packages/shell/pwsh-sandbox/src"],
+      "@deepseek-ai/dsh-remote-mock": ["./packages/test-support/remote-mock/src"],
       "@deepseek-ai/dsh-repeat-tool-reminder": ["./packages/guard/repeat-tool-reminder/src"],
       "@deepseek-ai/dsh-sandbox": ["./packages/sandbox/sandbox/src"],
       "@deepseek-ai/dsh-sandbox-local": ["./packages/sandbox/sandbox-local/src"],
