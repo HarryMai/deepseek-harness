@@ -85,6 +85,36 @@ describe('desktop development project', () => {
     expect(manifest.dependencies['@deepseek-ai/dsh-desktop-host']).toBe('1.2.3')
   })
 
+  it('ignores a legacy scoped directory without a package manifest', () => {
+    const root = temporaryRoot()
+    const cli = join(root, 'apps', 'cli')
+    const host = join(root, 'apps', 'desktop-host')
+    const dependencies = join(root, 'workspace-dependencies')
+    mkdirSync(join(cli, 'lib'), { recursive: true })
+    mkdirSync(join(host, 'lib'), { recursive: true })
+    mkdirSync(join(dependencies, '@deepseek-ai', 'dsh'), { recursive: true })
+    mkdirSync(join(dependencies, '@deepseek-ai', 'legacy-without-manifest'), { recursive: true })
+    mkdirSync(join(dependencies, 'plain-dependency'))
+    writeFileSync(join(cli, 'package.json'), '{"name":"@deepseek-ai/dsh","version":"1.2.3"}\n')
+    writeFileSync(join(host, 'package.json'), '{"name":"@deepseek-ai/dsh-desktop-host","version":"1.2.3"}\n')
+    writeFileSync(join(host, 'lib', 'index.js'), '')
+    writeFileSync(join(dependencies, '@deepseek-ai', 'dsh', 'package.json'), '{}\n')
+    writeFileSync(join(dependencies, 'plain-dependency', 'package.json'), '{}\n')
+
+    const project = prepareDevelopmentProject({
+      projectDir: join(root, 'development'),
+      cliDir: cli,
+      hostDir: host,
+      dependencyDir: dependencies,
+      release: release(),
+    })
+    expect(realpathSync(join(project, 'node_modules', '@deepseek-ai', 'dsh'))).toBe(realpathSync(cli))
+    expect(realpathSync(join(project, 'node_modules', '@deepseek-ai', 'dsh-desktop-host'))).toBe(realpathSync(host))
+    expect(existsSync(join(project, 'node_modules', '@deepseek-ai', 'legacy-without-manifest'))).toBe(false)
+    expect(realpathSync(join(project, 'node_modules', 'plain-dependency')))
+      .toBe(realpathSync(join(dependencies, 'plain-dependency')))
+  })
+
   it('rejects a CLI package from another release', () => {
     const root = temporaryRoot()
     const cli = join(root, 'apps', 'cli')

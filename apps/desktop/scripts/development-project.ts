@@ -84,6 +84,7 @@ function mirrorDependencyLinks(sourceRoot: string, destinationRoot: string): voi
         if (!scoped.isDirectory() && !scoped.isSymbolicLink()) continue
         const scopedSource = join(source, scoped.name)
         if (scoped.isSymbolicLink() && !existsSync(scopedSource)) continue
+        if (!existsSync(join(scopedSource, 'package.json'))) continue
         linkDirectory(scopedSource, join(destinationRoot, entry.name, scoped.name))
       }
       continue
@@ -118,7 +119,9 @@ function linkedWorkspacePackages(dependencyDir: string): Map<string, WorkspaceRu
     if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
     const path = join(scope, entry.name)
     if (!existsSync(path)) continue
-    const workspacePackage = runtimePackage(path, readManifest(join(path, 'package.json')))
+    const manifestPath = join(path, 'package.json')
+    if (!existsSync(manifestPath)) continue
+    const workspacePackage = runtimePackage(path, readManifest(manifestPath))
     if (workspacePackage !== undefined) packages.set(workspacePackage.manifest.name, workspacePackage)
   }
   return packages
