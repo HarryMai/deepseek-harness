@@ -1,11 +1,12 @@
 /** Resolve direct third-party browser inputs through the shipping build configurations, without emitting files. */
 
-import { globSync, readFileSync } from 'node:fs'
+import { globSync, readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Rolldown, type UserConfigExport } from 'tsdown'
 import ts from 'typescript'
+import { browserDependencyAnalysis } from '../apps/web/product-isolation.ts'
 
 interface Manifest {
   name: string
@@ -45,9 +46,6 @@ function recorder(seen: Set<string>, workspaceNames: ReadonlySet<string>, follow
         if (name !== undefined && workspaceNames.has(name)) {
           return followWorkspace ? null : { id: source, external: true }
         }
-        // Third-party implementation imports do not disclose another direct
-        // browser dependency and may not be installed beside that importer.
-        if (browserPackageOfFile(importer) !== undefined) return { id: source, external: true }
         const resolved = await this.resolve(source, importer, { skipSelf: true })
         if (resolved === null) throw new Error(`browser notices: cannot resolve ${source} from ${importer}`)
         const owner = browserPackageOfFile(resolved.id)
@@ -120,19 +118,10 @@ interface ShellConfig {
 }
 
 interface ViteApi {
-  resolveConfig(config: Record<string, unknown>, command: 'build'): Promise<ShellConfig>
+  resolveConfig(
+    config: Record<string, unknown>, command: 'build', defaultMode: string, defaultNodeEnv: string,
+  ): Promise<ShellConfig>
   build(config: Record<string, unknown>): Promise<unknown>
-}
-
-/** Replace application-specific script entries with the HTML entries used for the dependency walk. */
-function htmlInputs(pages: Record<string, string>) {
-  return {
-    name: 'dsh-browser-html-inputs',
-    enforce: 'post' as const,
-    configResolved(config: { build: { rollupOptions: { input?: unknown } } }) {
-      config.build.rollupOptions.input = pages
-    },
-  }
 }
 
 async function collectShell(
@@ -146,29 +135,23 @@ async function collectShell(
     if (manifest.private === true || manifest.exports?.['./dist/*'] === undefined) continue
     const vitePath = createRequire(resolve(dir, 'package.json')).resolve('vite')
     const vite = await import(pathToFileURL(vitePath).href) as ViteApi
-    const config = await vite.resolveConfig({ root: dir, logLevel: 'error' }, 'build')
+    const config = await vite.resolveConfig({ root: dir, logLevel: 'error' }, 'build', 'production', 'production')
     const input = config.build.rollupOptions?.input
-    const entries = typeof input === 'string'
-      ? [['index', input] as const]
-      : Array.isArray(input)
-        ? input.map((entry, index) => [String(index), entry] as const)
-        : Object.entries(input ?? {})
-    const pages = Object.fromEntries(entries
-      .filter(([, entry]) => entry.endsWith('.html'))
-      .map(([name, entry]) => [name, resolve(dir, entry)]))
-    if (Object.keys(pages).length === 0) throw new Error(`browser notices: ${manifest.name} has no HTML build entry`)
+    const entries = typeof input === 'string' ? [input] : Object.values(input ?? {})
+    const pages = entries.filter(entry => entry.endsWith('.html'))
+    if (pages.length === 0) throw new Error(`browser notices: ${manifest.name} has no HTML build entry`)
     await vite.build({
       root: dir,
       logLevel: 'error',
-      plugins: [htmlInputs(pages), recorder(seen, workspaceNames, true)],
-      resolve: { alias: browserSourceAliases(root), preserveSymlinks: true },
+      plugins: [browserDependencyAnalysis(), recorder(seen, workspaceNames, true)],
+      resolve: { alias: browserSourceAliases(root) },
       build: {
         write: false,
         minify: false,
         sourcemap: false,
         reportCompressedSize: false,
         rollupOptions: {
-          input: pages,
+          input: pages.length === 1 ? pages[0] : pages,
           // Chunk coloring expects full third-party bodies; the disclosure walk stops at their imports.
           output: { manualChunks: () => undefined },
         },
@@ -179,10 +162,12 @@ async function collectShell(
 
 /**
  * Direct third-party packages resolved by published browser builds.
- * @param root - Repository root with installed build dependencies; lib/ is not required.
+ * @param root - Repository root, possibly symlinked, with installed build dependencies; lib/ is not required.
  * @returns Names of distributed browser inputs, excluding workspace packages and erased types.
  */
 export async function browserBundledExternals(root: string): Promise<Set<string>> {
+  // Vite resolves HTML through native realpath, including Windows 8.3 alias expansion.
+  root = realpathSync.native(root)
   const manifests = new Map<string, Manifest>()
   for (const glob of ['packages/*/*/package.json', 'vendor/*/package.json']) {
     for (const path of globSync(glob, { cwd: root }).sort()) {

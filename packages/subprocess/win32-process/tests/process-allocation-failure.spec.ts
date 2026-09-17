@@ -1,5 +1,5 @@
 import koffi from 'koffi'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   drainPipe,
   spawnInheritedJobProcess,
@@ -7,16 +7,20 @@ import {
   waitForProcessExit,
 } from '../src/index.ts'
 import * as ffi from '../src/ffi.ts'
-import { processInformationStruct } from '../src/ffi.ts'
+import { processInformationType } from '../src/ffi.ts'
+import * as koffiLoader from '../src/koffi.ts'
 import type { NativePtr, Win32ProcessBindings } from '../src/ffi.ts'
 
 vi.mock('../src/ffi.ts', { spy: true })
+vi.mock('../src/koffi.ts', { spy: true })
 
 const PVOID = koffi.pointer('void')
-const PROCESS_INFORMATION = processInformationStruct()
+
+beforeEach(() => {
+  vi.mocked(koffiLoader.requireKoffi).mockReturnValue(koffi)
+})
 
 afterEach(() => {
-  vi.clearAllMocks()
   vi.restoreAllMocks()
 })
 
@@ -31,7 +35,7 @@ describe('spawnInheritedJobProcess allocation cleanup', () => {
       getLastError: vi.fn(() => 5),
       formatMessageW: vi.fn(() => 0),
     } as unknown as Win32ProcessBindings
-    const free = vi.mocked(ffi.freeNative)
+    const free = vi.spyOn(koffi, 'free')
     vi.mocked(ffi.allocProcessInfo).mockImplementationOnce(() => { throw new Error('process-info allocation failed') })
     expect(() => spawnInheritedJobProcess(api, {
       command: 'cmd.exe',
@@ -39,7 +43,7 @@ describe('spawnInheritedJobProcess allocation cleanup', () => {
       cwd: 'C:\\',
       token: 70n as NativePtr,
     })).toThrow('process-info allocation failed')
-    expect(free.mock.calls.filter(([pointer]) => pointer !== undefined)).toHaveLength(1)
+    expect(free).toHaveBeenCalledOnce()
   })
 
   it('frees process info after a successful inherited spawn', () => {
@@ -49,7 +53,7 @@ describe('spawnInheritedJobProcess allocation cleanup', () => {
       getStdHandle: vi.fn((selector: number) => BigInt(100 - selector)),
       setHandleInformation: vi.fn(() => 1),
       createProcessAsUserW: vi.fn((_token, _app, _line, _pa, _ta, _inherit, _flags, _env, _cwd, _startup, info) => {
-        koffi.encode(info, PROCESS_INFORMATION, {
+        koffi.encode(info, processInformationType(), {
           hProcess: 60n,
           hThread: 61n,
           dwProcessId: 1234,
@@ -63,7 +67,7 @@ describe('spawnInheritedJobProcess allocation cleanup', () => {
       getLastError: vi.fn(() => 5),
       formatMessageW: vi.fn(() => 0),
     } as unknown as Win32ProcessBindings
-    const free = vi.mocked(ffi.freeNative)
+    const free = vi.spyOn(koffi, 'free')
     expect(spawnInheritedJobProcess(api, {
       command: 'cmd.exe',
       args: [],
@@ -85,7 +89,7 @@ describe('shared process allocation cleanup', () => {
       }),
       setHandleInformation: vi.fn(() => 1),
       createProcessAsUserW: vi.fn((_token, _app, _line, _pa, _ta, _inherit, _flags, _env, _cwd, _startup, info) => {
-        koffi.encode(info, PROCESS_INFORMATION, {
+        koffi.encode(info, processInformationType(), {
           hProcess: 60n,
           hThread: 61n,
           dwProcessId: 1234,
@@ -97,7 +101,7 @@ describe('shared process allocation cleanup', () => {
       getLastError: vi.fn(() => 5),
       formatMessageW: vi.fn(() => 0),
     } as unknown as Win32ProcessBindings
-    const free = vi.mocked(ffi.freeNative)
+    const free = vi.spyOn(koffi, 'free')
     expect(spawnPipedProcess(api, {
       command: 'cmd.exe',
       args: [],
@@ -124,8 +128,8 @@ describe('shared process allocation cleanup', () => {
       getLastError: vi.fn(() => 109),
       closeHandle: vi.fn(() => 1),
     } as unknown as Win32ProcessBindings
-    const alloc = vi.mocked(ffi.allocUint32)
-    const free = vi.mocked(ffi.freeNative)
+    const alloc = vi.spyOn(koffi, 'alloc')
+    const free = vi.spyOn(koffi, 'free')
     await expect(drainPipe(api, 70n as NativePtr)).resolves.toEqual(Buffer.from('a'))
     expect(alloc).toHaveBeenCalledOnce()
     expect(free).toHaveBeenCalledOnce()
@@ -140,7 +144,7 @@ describe('shared process allocation cleanup', () => {
       }),
       closeHandle: vi.fn(() => 1),
     } as unknown as Win32ProcessBindings
-    const free = vi.mocked(ffi.freeNative)
+    const free = vi.spyOn(koffi, 'free')
     expect(waitForProcessExit(api, 60n as NativePtr)).toBe(42)
     expect(free).toHaveBeenCalledOnce()
   })
