@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to keep an ordered, persistent list of project directories and the sessions run in each directory. Hosts can build project sidebars, hide sessions from grouping without deleting their histories, and remove projects without deleting folders, files, or sessions. Re-adding a removed directory creates a fresh project, while sessions whose directories cannot be validated remain ungrouped. Choose it for GUI or host workflows that need durable project grouping; it is invisible to models and adds no prompt or request-context cost, but requires session persistence and storage backends.
+Use this package to keep an ordered, persistent list of project directories and the sessions run in each directory. Hosts can archive sessions into a retained recycle bin without deleting their histories, restore them before retention expires, and remove projects without deleting folders, files, or sessions. Re-adding a removed directory creates a fresh project, while sessions whose directories cannot be validated remain ungrouped. Choose it for GUI or host workflows that need durable project grouping; it is invisible to models and adds no prompt or request-context cost, but requires session persistence and storage backends.
 
 ## Table of Contents
 
@@ -33,7 +33,7 @@ Use it when the product shows a persistent workspace surface — a sidebar, sess
 
 ### Setting up
 
-The package takes no configuration of its own; it needs a session store, a session persistence backend, and the storage rows that keep its records. A minimal composition:
+The registry needs a session store, a session persistence backend, and the storage rows that keep its records. It keeps archived sessions recoverable for 30 full days by default. `@deepseek-ai/dsh-settings` supplies the shared settings seam; when its file provider `@deepseek-ai/dsh-settings-file` is mounted, the positive whole-day `workspace-recycle-bin.retentionDays` preference shares MCP's user document, by default `$DSH_HOME/settings.yaml`. Without a settings provider, the default remains active. A minimal composition:
 
 ```yaml
 - name: '@deepseek-ai/dsh-session'
@@ -65,7 +65,7 @@ A session joins the project of the directory it runs in: create a session in a p
 
 ### Hiding sessions and removing projects
 
-Hide a session from the grouping when it should stop appearing there: it disappears from the visible list, while its session, history, and place in the project stay intact. Remove a project when it is no longer needed: it leaves the list, and its folder, files, and session histories are never touched — those sessions become ungrouped. Adding the same directory again afterwards starts a fresh project without the old sessions.
+Archive a session when it should stop appearing in grouping surfaces: it disappears from the visible list while its session, history, and place in the project stay intact. An archive timestamp makes it recoverable through the recycle bin until the configured retention expires; restoring removes the archive filter and returns the session to that existing position. Expiry and clearing remove only application-level recovery metadata, leaving the session archived and its history untouched. Remove a project when it is no longer needed: it leaves the list, and its folder, files, and session histories are never touched — those sessions become ungrouped. Adding the same directory again afterwards starts a fresh project without the old sessions.
 
 -----
 
@@ -102,7 +102,7 @@ The API is one small family with two owners: `WorkspaceRegistry` creates, orders
 
 ### Durable shape
 
-The registry opens the `workspace` domain (version 2): a `workspaces` table keyed by `WorkspaceId` plus one global state holding `workspaceIds` (the authoritative display order), `archivedSessionIds`, and the optional `pendingMutation` marker. Records written before `archivedSessionIds` existed parse with an empty set through the schema default.
+The registry opens the `workspace` domain (version 2): a `workspaces` table keyed by `WorkspaceId` plus one global state holding `workspaceIds` (the authoritative display order), `archivedSessionIds`, recoverable `recycleBinEntries`, cleared archive tombstones, and the optional `pendingMutation` marker. Earlier state records parse the new collections as empty; legacy archived ids receive a recovery timestamp unless a tombstone records that recovery was cleared.
 
 ### Lifecycle
 
@@ -130,6 +130,7 @@ Read these pages when this package's view is not enough: the subsystem reference
 - [domain KV storage Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md) — why project records use the domain data form.
 - [Workspace UI product-flow Agent Note](../../../.agents/notes/archived/feature/2026-07-25-workspace-ui-product-flow.md) — how the first start builds projects from session history and how the GUI orders them.
 - [Workspace registration deletion decision](../../../.agents/notes/implemented/feature/2026-07-27-workspace-registration-deletion.md) — why removing a project never deletes its folder or sessions.
+- [Session recycle-bin decision](../../../.agents/notes/implemented/feature/2026-09-18-session-recycle-bin.md) — why clearing recovery leaves session logs intact.
 
 -----
 
@@ -160,7 +161,7 @@ These limits define when the project list is a poor fit or needs special operati
 - **Removal never deletes data** — removing a project leaves its folder, files, and session histories in place; those sessions become ungrouped, and session deletion or folder removal are separate, absent capabilities ([decision](../../../.agents/notes/implemented/feature/2026-07-27-workspace-registration-deletion.md)).
 - **A session joins only with a recorded directory** — a session belongs to a project only when its record carries a directory that resolves to the project's path; sessions without one stay ungrouped, and a session from another directory cannot be moved in.
 - **External changes are seen late** — if another process deletes or damages a directory, the project reflects it only at the next refresh or restart.
-- **Archiving is one-way** — a hidden session keeps its history and its place, but no unarchive action exists yet; the archive set is a durable display filter.
+- **Clearing recovery does not delete a Session** — a recovered session returns to its existing place, but an expired or cleared entry remains archived and cannot be restored through the application; its session log remains intact.
 - **Re-adding a directory starts fresh** — after removal, adding the same directory again creates a new project with an empty session list; the old sessions do not come back automatically.
 
 <a id="dev-note"></a>

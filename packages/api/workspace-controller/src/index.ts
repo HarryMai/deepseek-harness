@@ -8,6 +8,7 @@ import { WorkspaceFeed } from './feed.ts'
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
+  WorkspaceClearRecycleBinRequest,
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
@@ -17,6 +18,7 @@ import type {
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
   WorkspaceRenameRequest,
+  WorkspaceRestoreArchivedSessionsRequest,
   WorkspaceValue,
 } from './types.ts'
 
@@ -107,6 +109,28 @@ export class WorkspaceController extends TypertRemoteService {
   @Remote('archiveSession')
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
     return this.commands.archiveSession(request)
+  }
+
+  /**
+   * Restore explicitly confirmed archived Sessions from the recycle bin.
+   * @param request - Session identities and user confirmation.
+   * @returns the complete resulting archive projection.
+   */
+  @Remote('restoreArchivedSessions')
+  restoreArchivedSessions(
+    request: WorkspaceRestoreArchivedSessionsRequest,
+  ): Promise<WorkspaceArchiveValue> {
+    return this.commands.restoreArchivedSessions(request)
+  }
+
+  /**
+   * Clear every recoverable archived Session after explicit user confirmation.
+   * @param request - user confirmation.
+   * @returns the complete resulting archive projection.
+   */
+  @Remote('clearRecycleBin')
+  clearRecycleBin(request: WorkspaceClearRecycleBinRequest): Promise<WorkspaceArchiveValue> {
+    return this.commands.clearRecycleBin(request)
   }
 
   /**

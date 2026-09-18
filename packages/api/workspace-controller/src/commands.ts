@@ -3,6 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import {
+  WorkspaceArchivedSessionUnavailableError,
   WorkspaceId,
   WorkspaceMoveInvalidError,
   WorkspaceOrderInvalidError,
@@ -13,6 +14,7 @@ import { workspaceView } from './feed.ts'
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
+  WorkspaceClearRecycleBinRequest,
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
@@ -21,6 +23,7 @@ import type {
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
   WorkspaceRenameRequest,
+  WorkspaceRestoreArchivedSessionsRequest,
   WorkspaceValue,
 } from './types.ts'
 
@@ -150,14 +153,57 @@ export class WorkspaceCommands {
    * @param request - Session identity to archive.
    * @returns the complete resulting archive set.
    */
-  async archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
-    try {
-      await this.ctx.workspaceRegistry.archiveSession(request.sessionId)
-    } catch (error) {
-      if (!(error instanceof WorkspaceUnknownSessionError)) throw error
-      throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId }, { cause: error })
+  archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
+    return this.enqueue(async () => {
+      try {
+        await this.ctx.workspaceRegistry.archiveSession(request.sessionId)
+      } catch (error) {
+        if (!(error instanceof WorkspaceUnknownSessionError)) throw error
+        throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId }, { cause: error })
+      }
+      return this.archiveValue()
+    })
+  }
+
+  /**
+   * Restore every explicitly confirmed Session from the active recycle bin.
+   * @param request - Session identities and user confirmation.
+   * @returns the complete resulting archive and recycle-bin projection.
+   */
+  restoreArchivedSessions(
+    request: WorkspaceRestoreArchivedSessionsRequest,
+  ): Promise<WorkspaceArchiveValue> {
+    if (!hasRecycleBinConfirmation(request)) return Promise.reject(recycleBinConfirmationRequired('restore'))
+    return this.enqueue(async () => {
+      try {
+        await this.ctx.workspaceRegistry.restoreArchivedSessions(request.sessionIds)
+      } catch (error) {
+        if (!(error instanceof WorkspaceArchivedSessionUnavailableError)) throw error
+        throw new RemoteError('session/not-found', error.message, { sessionId: error.sessionId }, { cause: error })
+      }
+      return this.archiveValue()
+    })
+  }
+
+  /**
+   * Remove every recoverable Session from the active recycle bin.
+   * @param _request - explicit user confirmation.
+   * @returns the complete resulting archive and recycle-bin projection.
+   */
+  clearRecycleBin(request: WorkspaceClearRecycleBinRequest): Promise<WorkspaceArchiveValue> {
+    if (!hasRecycleBinConfirmation(request)) return Promise.reject(recycleBinConfirmationRequired('clear'))
+    return this.enqueue(async () => {
+      await this.ctx.workspaceRegistry.clearRecycleBin()
+      return this.archiveValue()
+    })
+  }
+
+  /** Read a detached archive projection after one durable mutation. */
+  private archiveValue(): WorkspaceArchiveValue {
+    return {
+      archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds],
+      recycleBinEntries: this.ctx.workspaceRegistry.recycleBinEntries.map(entry => ({ ...entry })),
     }
-    return { archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds] }
   }
 
   private requireWorkspace(workspaceId: WorkspaceId): Workspace {
@@ -183,4 +229,17 @@ function workspaceNotFound(workspaceId: WorkspaceId): RemoteError<'workspace/not
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function recycleBinConfirmationRequired(operation: 'restore' | 'clear'): RemoteError<'gateway/bad-request'> {
+  return new RemoteError(
+    'gateway/bad-request',
+    `Recycle-bin ${operation} requires explicit confirmation`,
+    {},
+  )
+}
+
+function hasRecycleBinConfirmation(request: { readonly confirmed: true }): boolean {
+  const confirmed: unknown = request.confirmed
+  return confirmed === true
 }

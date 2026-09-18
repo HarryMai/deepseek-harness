@@ -218,9 +218,74 @@ describe('WorkspaceController commands', () => {
     })).rejects.toMatchObject({ code: 'workspace/not-found' })
 
     await expect(controller.archiveSession({ sessionId: session.id }))
-      .resolves.toEqual({ archivedSessionIds: [session.id] })
+      .resolves.toMatchObject({
+        archivedSessionIds: [session.id],
+        recycleBinEntries: [{ sessionId: session.id, archivedAt: expect.any(String) as unknown as string }],
+      })
     await expect(controller.archiveSession({ sessionId: SessionId('unknown') }))
       .rejects.toMatchObject({ code: 'session/not-found' })
+  })
+
+  it('rejects unconfirmed recycle-bin mutations before touching the registry', async () => {
+    const { controller, ctx, root } = await harness()
+    const created = await controller.create({ path: stageDir(root, 'confirmed') })
+    const session = ctx.sessions.create(SessionId('confirmed-session'), {
+      meta: { cwd: created.workspace.path },
+    })
+    await controller.archiveSession({ sessionId: session.id })
+
+    const restore = vi.spyOn(ctx.workspaceRegistry, 'restoreArchivedSessions')
+    const clear = vi.spyOn(ctx.workspaceRegistry, 'clearRecycleBin')
+    await expect(controller.restoreArchivedSessions({
+      sessionIds: [session.id],
+      confirmed: false as unknown as true,
+    })).rejects.toMatchObject({ code: 'gateway/bad-request' })
+    await expect(controller.clearRecycleBin({
+      confirmed: false as unknown as true,
+    })).rejects.toMatchObject({ code: 'gateway/bad-request' })
+
+    expect(restore).not.toHaveBeenCalled()
+    expect(clear).not.toHaveBeenCalled()
+    expect(ctx.workspaceRegistry.archivedSessionIds).toEqual([session.id])
+  })
+
+  it('serializes archive, restore, and clear command results', async () => {
+    const { controller, ctx, root } = await harness()
+    const created = await controller.create({ path: stageDir(root, 'serialized') })
+    const session = ctx.sessions.create(SessionId('serialized-session'), {
+      meta: { cwd: created.workspace.path },
+    })
+    const calls: string[] = []
+    const gate = deferred<undefined>()
+    const originalArchive = ctx.workspaceRegistry.archiveSession.bind(ctx.workspaceRegistry)
+    const originalRestore = ctx.workspaceRegistry.restoreArchivedSessions.bind(ctx.workspaceRegistry)
+    const originalClear = ctx.workspaceRegistry.clearRecycleBin.bind(ctx.workspaceRegistry)
+    vi.spyOn(ctx.workspaceRegistry, 'archiveSession').mockImplementation(async (sessionId) => {
+      calls.push('archive')
+      await gate.promise
+      return originalArchive(sessionId)
+    })
+    vi.spyOn(ctx.workspaceRegistry, 'restoreArchivedSessions').mockImplementation(async (sessionIds) => {
+      calls.push('restore')
+      return originalRestore(sessionIds)
+    })
+    vi.spyOn(ctx.workspaceRegistry, 'clearRecycleBin').mockImplementation(async () => {
+      calls.push('clear')
+      return originalClear()
+    })
+
+    const archive = controller.archiveSession({ sessionId: session.id })
+    const restore = controller.restoreArchivedSessions({ sessionIds: [session.id], confirmed: true })
+    const clear = controller.clearRecycleBin({ confirmed: true })
+    await Promise.resolve()
+    expect(calls).toEqual(['archive'])
+
+    gate.resolve(undefined)
+    const [archiveValue, restoreValue, clearValue] = await Promise.all([archive, restore, clear])
+    expect(calls).toEqual(['archive', 'restore', 'clear'])
+    expect(archiveValue.archivedSessionIds).toEqual([session.id])
+    expect(restoreValue.archivedSessionIds).toEqual([])
+    expect(clearValue.archivedSessionIds).toEqual([])
   })
 })
 
@@ -243,6 +308,8 @@ describe('WorkspaceController follow', () => {
           initialized: true,
           workspaceIds: ['missing'],
           archivedSessionIds: [],
+          recycleBinEntries: [],
+          clearedArchivedSessionIds: [],
         },
       })
     }).toThrow('references missing Workspace "missing"')
@@ -254,7 +321,7 @@ describe('WorkspaceController follow', () => {
     const iterator = controller.follow(abort.signal)[Symbol.asyncIterator]()
     await expect(nextFrame(iterator)).resolves.toEqual({
       type: 'baseline',
-      value: { items: [], archivedSessionIds: [] },
+      value: { items: [], archivedSessionIds: [], recycleBinEntries: [] },
     })
 
     const first = await controller.create({ path: stageDir(root, 'first') })
@@ -289,8 +356,10 @@ describe('WorkspaceController follow', () => {
       meta: { cwd: first.workspace.path },
     })
     await controller.archiveSession({ sessionId: session.id })
-    await expect(nextFrame(iterator)).resolves.toEqual({
-      type: 'archived', archivedSessionIds: [session.id],
+    await expect(nextFrame(iterator)).resolves.toMatchObject({
+      type: 'archived',
+      archivedSessionIds: [session.id],
+      recycleBinEntries: [{ sessionId: session.id, archivedAt: expect.any(String) as unknown as string }],
     })
     await controller.delete({ workspaceId: second.workspace.workspaceId })
     await expect(nextFrame(iterator)).resolves.toEqual({

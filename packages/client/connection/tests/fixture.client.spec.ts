@@ -194,6 +194,18 @@ interface FixtureWorkspaceRequests {
     readonly beforeSessionId?: SessionId
   }
   archiveSession: { readonly sessionId: SessionId }
+  restoreArchivedSessions: { readonly sessionIds: readonly SessionId[]; readonly confirmed: true }
+  clearRecycleBin: { readonly confirmed: true }
+}
+
+interface FixtureWorkspaceRecycleBinEntry {
+  readonly sessionId: SessionId
+  readonly archivedAt: string
+}
+
+interface FixtureWorkspaceArchiveValue {
+  readonly archivedSessionIds: readonly SessionId[]
+  readonly recycleBinEntries: readonly FixtureWorkspaceRecycleBinEntry[]
 }
 
 interface FixtureWorkspaceValues {
@@ -202,7 +214,9 @@ interface FixtureWorkspaceValues {
   delete: { readonly deleted: true }
   insertBefore: { readonly workspaceIds: readonly WorkspaceId[] }
   insertSessionBefore: { readonly workspace: FixtureWorkspaceView }
-  archiveSession: { readonly archivedSessionIds: readonly SessionId[] }
+  archiveSession: FixtureWorkspaceArchiveValue
+  restoreArchivedSessions: FixtureWorkspaceArchiveValue
+  clearRecycleBin: FixtureWorkspaceArchiveValue
 }
 
 type FixtureWorkspaceApi = {
@@ -225,12 +239,17 @@ type FixtureWorkspaceFrame =
     readonly value: {
       readonly items: readonly FixtureWorkspaceView[]
       readonly archivedSessionIds: readonly SessionId[]
+      readonly recycleBinEntries: readonly FixtureWorkspaceRecycleBinEntry[]
     }
   }
   | { readonly type: 'upsert'; readonly workspace: FixtureWorkspaceView }
   | { readonly type: 'remove'; readonly workspaceId: WorkspaceId }
   | { readonly type: 'order'; readonly workspaceIds: readonly WorkspaceId[] }
-  | { readonly type: 'archived'; readonly archivedSessionIds: readonly SessionId[] }
+  | {
+    readonly type: 'archived'
+    readonly archivedSessionIds: readonly SessionId[]
+    readonly recycleBinEntries: readonly FixtureWorkspaceRecycleBinEntry[]
+  }
 
 interface FixtureWorkspaceRemote {
   follow(signal: AbortSignal): AsyncIterable<FixtureWorkspaceFrame>
@@ -471,6 +490,8 @@ function createWorkspaceApi(rpc: ClientConnectionRpc): FixtureWorkspaceApi {
     insertBefore: (request, signal) => call('insertBefore', request, signal),
     insertSessionBefore: (request, signal) => call('insertSessionBefore', request, signal),
     archiveSession: (request, signal) => call('archiveSession', request, signal),
+    restoreArchivedSessions: (request, signal) => call('restoreArchivedSessions', request, signal),
+    clearRecycleBin: (request, signal) => call('clearRecycleBin', request, signal),
   }
 }
 
@@ -483,6 +504,8 @@ function createWorkspaceClient(rpc: ClientConnectionRpc): FixtureWorkspaceClient
     insertBefore: (request, signal) => api.insertBefore(req(request), signal),
     insertSessionBefore: (request, signal) => api.insertSessionBefore(req(request), signal),
     archiveSession: (request, signal) => api.archiveSession(req(request), signal),
+    restoreArchivedSessions: (request, signal) => api.restoreArchivedSessions(req(request), signal),
+    clearRecycleBin: (request, signal) => api.clearRecycleBin(req(request), signal),
   }
 }
 
@@ -1315,6 +1338,39 @@ describe('createFixtureApi', () => {
     expect(sessions.result.value.items.map(session => session.sessionId)).toContain('fx-alpha')
   })
 
+  it('exposes confirmed batch recovery and clearing through the Workspace fixture API', async () => {
+    const api = createFixtureApi()
+    const alpha = sid('fx-alpha')
+    const beta = sid('fx-beta')
+
+    await expect(api.workspace.archiveSession(req({ sessionId: alpha }))).resolves.toMatchObject({
+      result: {
+        ok: true,
+        value: { archivedSessionIds: [alpha], recycleBinEntries: [{ sessionId: alpha }] },
+      },
+    })
+    await expect(api.workspace.archiveSession(req({ sessionId: beta }))).resolves.toMatchObject({
+      result: { ok: true, value: { archivedSessionIds: [alpha, beta] } },
+    })
+
+    await expect(api.workspace.restoreArchivedSessions(req({
+      sessionIds: [alpha, beta], confirmed: true,
+    }))).resolves.toMatchObject({
+      result: { ok: true, value: { archivedSessionIds: [], recycleBinEntries: [] } },
+    })
+
+    await api.workspace.archiveSession(req({ sessionId: alpha }))
+    await api.workspace.archiveSession(req({ sessionId: beta }))
+    await expect(api.workspace.clearRecycleBin(req({ confirmed: true }))).resolves.toMatchObject({
+      result: { ok: true, value: { archivedSessionIds: [alpha, beta], recycleBinEntries: [] } },
+    })
+    await expect(api.workspace.restoreArchivedSessions(req({
+      sessionIds: [alpha], confirmed: true,
+    }))).resolves.toMatchObject({
+      result: { ok: false, error: { code: 'session/not-found', details: { sessionId: alpha } } },
+    })
+  })
+
   it('session.create({workspaceId}) lands on the account and unknown ids error', async () => {
     const api = createFixtureApi()
     const hostAbort = new AbortController()
@@ -1362,6 +1418,7 @@ describe('createFixtureApi', () => {
     expect(await readWorkspaceBaseline(api.workspaceRemote)).toEqual({
       items: [],
       archivedSessionIds: [],
+      recycleBinEntries: [],
     })
 
     const made = await api.workspace.create(req({ path: '/tmp/fixture-workspaces/nova' }))

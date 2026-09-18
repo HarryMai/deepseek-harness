@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import Storage from '@deepseek-ai/dsh-storage'
 import type { StorageBackend } from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -36,6 +37,27 @@ interface HarnessOptions {
   liveSessions?: SessionHeader[]
   sessionStore?: boolean
   backend?: StorageBackend
+  settings?: Record<string, unknown>
+}
+
+/** Minimal writable Settings provider for Workspace-owned retention tests. */
+class TestSettings extends SettingsProvider {
+  readonly writable = true
+  doc: Record<string, unknown>
+
+  constructor(ctx: Context, options: { doc: Record<string, unknown> }) {
+    super(ctx)
+    this.doc = structuredClone(options.doc)
+  }
+
+  protected load(): Promise<Record<string, unknown>> {
+    return Promise.resolve(structuredClone(this.doc))
+  }
+
+  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+    this.doc[ns] = structuredClone(section)
+    return Promise.resolve()
+  }
 }
 
 /** Boot the real storage/domain/registry composition over controllable header-only peers. */
@@ -54,6 +76,8 @@ async function harness(options: HarnessOptions = {}) {
   const open = vi.fn(() => { throw new Error('event bodies must not be opened') })
   const stat = vi.fn(() => { throw new Error('per-session stat must not be needed') })
   ctx.provide('sessionPersistence', { list, open, stat } as never)
+
+  if (options.settings !== undefined) await ctx.plugin(TestSettings, { doc: options.settings })
 
   if (options.sessionStore === true) {
     await ctx.plugin(SessionStore)
@@ -80,6 +104,7 @@ async function harness(options: HarnessOptions = {}) {
     list,
     open,
     stat,
+    settings: ctx.get('settings') as TestSettings | undefined,
     setSessions: (headers: SessionHeader[]) => { listed = headers },
   }
 }
@@ -134,6 +159,36 @@ function selectiveFailureBackend(
   }
 }
 
+/** Backend that can fail a selected number of future durable global writes. */
+function retryableGlobalFailureBackend(pool: MemoryMediaPool) {
+  const inner = new MemoryStorageBackend(pool)
+  let failuresRemaining = 0
+  return {
+    backend: {
+      kv: {
+        open: async (descriptor: Parameters<NonNullable<StorageBackend['kv']>['open']>[0]) => {
+          const unit = await inner.kv.open(descriptor)
+          return {
+            loadAll: () => unit.loadAll(),
+            putRecord: (table: string, key: string, value: unknown) => unit.putRecord(table, key, value),
+            deleteRecord: (table: string, key: string) => unit.deleteRecord(table, key),
+            setGlobal: async (value: unknown) => {
+              if (failuresRemaining > 0) {
+                failuresRemaining -= 1
+                throw new Error('selected retryable expiry failure')
+              }
+              await unit.setGlobal(value)
+            },
+            close: () => unit.close(),
+          }
+        },
+      },
+      close: () => inner.close(),
+    } satisfies StorageBackend,
+    failNextGlobalWrites: (count: number) => { failuresRemaining += count },
+  }
+}
+
 function record(path: string, sessionIds: string[], createdAt = '2026-07-24T00:00:00.000Z'): WorkspaceRecord {
   return {
     path,
@@ -148,8 +203,13 @@ function record(path: string, sessionIds: string[], createdAt = '2026-07-24T00:0
  * Media written before archivedSessionIds existed omit the field; keeping the
  * fixtures in that shape continuously proves the schema default upgrades them.
  */
-type StoredDomainState = Omit<WorkspaceDomainState, 'archivedSessionIds'>
-  & Partial<Pick<WorkspaceDomainState, 'archivedSessionIds'>>
+type StoredDomainState = Omit<
+  WorkspaceDomainState,
+  'archivedSessionIds' | 'recycleBinEntries' | 'clearedArchivedSessionIds'
+> & Partial<Pick<
+  WorkspaceDomainState,
+  'archivedSessionIds' | 'recycleBinEntries' | 'clearedArchivedSessionIds'
+>>
 
 function storedPool(
   entries: Array<[string, WorkspaceRecord]>,
@@ -201,7 +261,13 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
     await fiber.await()
     expect(ctx.workspaceRegistry.list()).toEqual([])
     expect(list).toHaveBeenCalledTimes(1)
-    expect(storedState(pool)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [] })
+    expect(storedState(pool)).toEqual({
+      initialized: true,
+      workspaceIds: [],
+      archivedSessionIds: [],
+      recycleBinEntries: [],
+      clearedArchivedSessionIds: [],
+    })
   })
 
   it('bootstraps once from list headers only, in workspace/session createdAt order', async () => {
@@ -235,6 +301,8 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
       initialized: true,
       workspaceIds: result.registry.list().map(workspace => workspace.id),
       archivedSessionIds: [],
+      recycleBinEntries: [],
+      clearedArchivedSessionIds: [],
     })
   })
 
@@ -263,7 +331,13 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
     const second = await harness({ pool, sessions: [header('late', late, 100)] })
     expect(second.list).not.toHaveBeenCalled()
     expect(second.registry.list()).toEqual([])
-    expect(storedState(pool)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [] })
+    expect(storedState(pool)).toEqual({
+      initialized: true,
+      workspaceIds: [],
+      archivedSessionIds: [],
+      recycleBinEntries: [],
+      clearedArchivedSessionIds: [],
+    })
   })
 
   it('reuses partial records after a bootstrap record write fails', async () => {
@@ -517,7 +591,13 @@ describe('WorkspaceRegistry create and lookup', () => {
     await expect(result.registry.delete(workspace.id)).resolves.toBe(false)
     expect(result.registry.get(workspace.id)).toBeUndefined()
     expect(result.registry.list()).toEqual([])
-    expect(storedState(result.pool)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [] })
+    expect(storedState(result.pool)).toEqual({
+      initialized: true,
+      workspaceIds: [],
+      archivedSessionIds: [],
+      recycleBinEntries: [],
+      clearedArchivedSessionIds: [],
+    })
     expect(result.pool.media.get('workspace')!.tables.get('workspaces')!.has(workspace.id)).toBe(false)
     await expect(realpath(dir)).resolves.toBe(dir)
     expect(result.list).toHaveBeenCalledTimes(1)
@@ -561,6 +641,8 @@ describe('WorkspaceRegistry create and lookup', () => {
       initialized: true,
       workspaceIds: [],
       archivedSessionIds: [],
+      recycleBinEntries: [],
+      clearedArchivedSessionIds: [],
       pendingMutation: { operation: 'delete', workspaceId: workspace.id },
     })
     const reregistered = await first.registry.create(dir)
@@ -569,6 +651,8 @@ describe('WorkspaceRegistry create and lookup', () => {
       initialized: true,
       workspaceIds: [reregistered.id],
       archivedSessionIds: [],
+      recycleBinEntries: [],
+      clearedArchivedSessionIds: [],
     })
     await first.fiber.dispose()
 
@@ -848,7 +932,13 @@ describe('header-validated membership projection', () => {
     const createRecovery = await harness({ pool: interruptedCreate })
     expect(createRecovery.registry.list()).toEqual([])
     expect(interruptedCreate.media.get('workspace')!.tables.get('workspaces')!.has(createId)).toBe(false)
-    expect(storedState(interruptedCreate)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [] })
+    expect(storedState(interruptedCreate)).toEqual({
+      initialized: true,
+      workspaceIds: [],
+      archivedSessionIds: [],
+      recycleBinEntries: [],
+      clearedArchivedSessionIds: [],
+    })
 
     const interruptedDelete = storedPool(
       [[deleteId, record(deleteDir, [])]],
@@ -861,7 +951,13 @@ describe('header-validated membership projection', () => {
     const deleteRecovery = await harness({ pool: interruptedDelete })
     expect(deleteRecovery.registry.list()).toEqual([])
     expect(interruptedDelete.media.get('workspace')!.tables.get('workspaces')!.has(deleteId)).toBe(false)
-    expect(storedState(interruptedDelete)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [] })
+    expect(storedState(interruptedDelete)).toEqual({
+      initialized: true,
+      workspaceIds: [],
+      archivedSessionIds: [],
+      recycleBinEntries: [],
+      clearedArchivedSessionIds: [],
+    })
 
     const corruptPending = storedPool(
       [[deleteId, record(deleteDir, [])]],
@@ -971,5 +1067,142 @@ describe('registry-global session archive', () => {
     )
     const upgraded = await harness({ pool: legacy })
     expect(upgraded.registry.archivedSessionIds).toEqual([])
+  })
+
+  it('restores a selected batch atomically without changing workspace accounting', async () => {
+    const dir = await makeDir('archive-restore')
+    const result = await harness({ sessions: [header('kept', dir, 100), header('gone', dir, 200)] })
+    const workspace = result.registry.list()[0]!
+
+    await result.registry.archiveSession(SessionId('gone'))
+    await result.registry.archiveSession(SessionId('kept'))
+    expect(result.registry.recycleBinEntries.map(entry => entry.sessionId)).toEqual(['gone', 'kept'])
+    expect(Date.parse(result.registry.recycleBinEntries[0]!.archivedAt)).not.toBeNaN()
+
+    await expect(result.registry.restoreArchivedSessions([SessionId('gone'), SessionId('missing')]))
+      .rejects.toThrow(/not in the recycle bin/)
+    expect(result.registry.archivedSessionIds).toEqual(['gone', 'kept'])
+
+    await result.registry.restoreArchivedSessions([SessionId('gone'), SessionId('kept')])
+    expect(result.registry.archivedSessionIds).toEqual([])
+    expect(result.registry.recycleBinEntries).toEqual([])
+    expect(workspace.sessionIds).toContain('gone')
+    expect(workspace.sessionIds).toContain('kept')
+  })
+
+  it('clears recoverability durably while retaining the archived display set', async () => {
+    const dir = await makeDir('archive-clear')
+    const pool = new MemoryMediaPool()
+    const first = await harness({ pool, sessions: [header('gone', dir, 100)] })
+
+    await first.registry.archiveSession(SessionId('gone'))
+    await first.registry.clearRecycleBin()
+    expect(first.registry.archivedSessionIds).toEqual(['gone'])
+    expect(first.registry.recycleBinEntries).toEqual([])
+    expect(storedState(pool).clearedArchivedSessionIds).toEqual(['gone'])
+    await expect(first.registry.restoreArchivedSessions([SessionId('gone')]))
+      .rejects.toThrow(/not in the recycle bin/)
+    await first.fiber.dispose()
+
+    const restarted = await harness({ pool, sessions: [header('gone', dir, 100)] })
+    expect(restarted.registry.archivedSessionIds).toEqual(['gone'])
+    expect(restarted.registry.recycleBinEntries).toEqual([])
+  })
+
+  it('expires archive recoverability after the default thirty-day retention', async () => {
+    const dir = await makeDir('archive-expiry')
+    const workspaceId = WorkspaceId('00000000-0000-4000-8000-00000000000b')
+    const pool = storedPool(
+      [[workspaceId, record(dir, ['old-session'])]],
+      {
+        initialized: true,
+        workspaceIds: [workspaceId],
+        archivedSessionIds: [SessionId('old-session')],
+        recycleBinEntries: [{
+          sessionId: SessionId('old-session'),
+          archivedAt: new Date(Date.now() - 31 * 86_400_000).toISOString(),
+        }],
+        clearedArchivedSessionIds: [],
+      },
+    )
+
+    const result = await harness({ pool, sessions: [header('old-session', dir, 100)] })
+    expect(result.registry.archivedSessionIds).toEqual(['old-session'])
+    expect(result.registry.recycleBinEntries).toEqual([])
+    expect(storedState(pool).clearedArchivedSessionIds).toEqual(['old-session'])
+  })
+
+  it('retries a failed expiry write with bounded backoff', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-18T00:00:00.000Z'))
+    try {
+      const dir = await makeDir('archive-expiry-retry')
+      const pool = new MemoryMediaPool()
+      const failure = retryableGlobalFailureBackend(pool)
+      const result = await harness({
+        pool,
+        backend: failure.backend,
+        sessions: [header('retry-session', dir, 100)],
+        settings: { 'workspace-recycle-bin': { retentionDays: 1 } },
+      })
+
+      await result.registry.archiveSession(SessionId('retry-session'))
+      failure.failNextGlobalWrites(2)
+
+      await vi.advanceTimersByTimeAsync(86_400_000)
+      expect(result.registry.recycleBinEntries).toHaveLength(1)
+      expect(storedState(pool).recycleBinEntries).toHaveLength(1)
+
+      await vi.advanceTimersByTimeAsync(999)
+      expect(result.registry.recycleBinEntries).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(result.registry.recycleBinEntries).toHaveLength(1)
+
+      await vi.advanceTimersByTimeAsync(1_999)
+      expect(result.registry.recycleBinEntries).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(result.registry.recycleBinEntries).toEqual([])
+      expect(storedState(pool).clearedArchivedSessionIds).toEqual(['retry-session'])
+      await result.fiber.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('uses the shared settings provider for retention and reacts to a persisted update', async () => {
+    const dir = await makeDir('archive-configured-retention')
+    const workspaceId = WorkspaceId('00000000-0000-4000-8000-00000000000c')
+    const pool = storedPool(
+      [[workspaceId, record(dir, ['configured-session'])]],
+      {
+        initialized: true,
+        workspaceIds: [workspaceId],
+        archivedSessionIds: [SessionId('configured-session')],
+        recycleBinEntries: [{
+          sessionId: SessionId('configured-session'),
+          archivedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+        }],
+        clearedArchivedSessionIds: [],
+      },
+    )
+    const result = await harness({
+      pool,
+      sessions: [header('configured-session', dir, 100)],
+      settings: {
+        'mcp-client': { enabled: false, servers: {} },
+        'workspace-recycle-bin': { retentionDays: 3 },
+      },
+    })
+
+    expect(result.registry.recycleBinEntries.map(entry => entry.sessionId)).toEqual(['configured-session'])
+    expect(result.ctx.settings.get('workspace-recycle-bin')).toEqual({ retentionDays: 3 })
+    await result.ctx.settings.update('workspace-recycle-bin', { retentionDays: 1 })
+    await vi.waitFor(() => {
+      expect(result.registry.recycleBinEntries).toEqual([])
+    })
+    expect(result.settings!.doc).toMatchObject({
+      'mcp-client': { enabled: false, servers: {} },
+      'workspace-recycle-bin': { retentionDays: 1 },
+    })
   })
 })

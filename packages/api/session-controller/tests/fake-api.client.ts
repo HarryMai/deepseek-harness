@@ -166,6 +166,7 @@ export class FakeApiClient {
   workspaceBaseline: Extract<WorkspaceFollowFrame, { type: 'baseline' }>['value'] = {
     items: [],
     archivedSessionIds: [],
+    recycleBinEntries: [],
   }
   lastSearchSignal: AbortSignal | undefined
 
@@ -192,8 +193,26 @@ export class FakeApiClient {
   onWorkspaceInsertSessionBefore: (payload: unknown) => Promise<RemoteResult<{ workspace: WorkspaceView }>> =
     () => Promise.resolve(ok({ workspace: fakeWorkspace('fk-ws') }))
 
-  onWorkspaceArchiveSession: (payload: unknown) => Promise<RemoteResult<{ archivedSessionIds: SessionId[] }>> =
-    payload => Promise.resolve(ok({ archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
+  onWorkspaceArchiveSession: (payload: unknown) => Promise<RemoteResult<{
+    archivedSessionIds: SessionId[]
+    recycleBinEntries: { sessionId: SessionId; archivedAt: string }[]
+  }>> = (payload) => {
+    const sessionId = (payload as { sessionId: SessionId }).sessionId
+    return Promise.resolve(ok({
+      archivedSessionIds: [sessionId],
+      recycleBinEntries: [{ sessionId, archivedAt: '2026-01-01T00:00:00.000Z' }],
+    }))
+  }
+
+  onWorkspaceRestoreArchivedSessions: (payload: unknown) => Promise<RemoteResult<{
+    archivedSessionIds: SessionId[]
+    recycleBinEntries: { sessionId: SessionId; archivedAt: string }[]
+  }>> = () => Promise.resolve(ok({ archivedSessionIds: [], recycleBinEntries: [] }))
+
+  onWorkspaceClearRecycleBin: (payload: unknown) => Promise<RemoteResult<{
+    archivedSessionIds: SessionId[]
+    recycleBinEntries: { sessionId: SessionId; archivedAt: string }[]
+  }>> = () => Promise.resolve(ok({ archivedSessionIds: [], recycleBinEntries: [] }))
 
   /** Remote namespaces bound to this fake's programmable unary slots and stream pumps. */
   sessionRemotes(): RuntimeRemotes {
@@ -272,6 +291,16 @@ export class FakeApiClient {
           'workspace.archiveSession',
           payload,
           this.onWorkspaceArchiveSession(payload),
+        ),
+        restoreArchivedSessions: payload => this.record(
+          'workspace.restoreArchivedSessions',
+          payload,
+          this.onWorkspaceRestoreArchivedSessions(payload),
+        ),
+        clearRecycleBin: payload => this.record(
+          'workspace.clearRecycleBin',
+          payload,
+          this.onWorkspaceClearRecycleBin(payload),
         ),
         follow: signal => this.openWorkspace(signal),
       },

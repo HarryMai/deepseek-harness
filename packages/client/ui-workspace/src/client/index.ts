@@ -21,6 +21,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the SlotRegistry service merge (ctx.slots).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls the Session root standard-hook merge.
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from './contract/slots.ts'
@@ -29,6 +30,12 @@ import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
 import { en, zh, type WorkspaceKey } from './locales.ts'
+import { RecycleBinSection } from './RecycleBinSection.tsx'
+import type { RecycleBinSectionInjected } from './RecycleBinSection.tsx'
+import {
+  RECYCLE_BIN_SETTINGS_NAMESPACE, RecycleBinSettingsController,
+} from './recycle-bin-settings.ts'
+import { en as recycleBinEn, zh as recycleBinZh, type RecycleBinKey } from './recycle-bin-locales.ts'
 
 export type { UiWorkspace } from './navigation.ts'
 export type {
@@ -36,6 +43,9 @@ export type {
   WorkspaceBrowserInjected, WorkspaceBrowserProps, WorkspacePickerInjected, WorkspacePickerProps,
 } from './contract/slots.ts'
 export type { WorkspaceKey } from './locales.ts'
+export type { RecycleBinSectionInjected, RecycleBinSectionProps } from './RecycleBinSection.tsx'
+export type { RecycleBinSettings, RecycleBinSettingsFace, RecycleBinSettingsState } from './recycle-bin-settings.ts'
+export type { RecycleBinKey } from './recycle-bin-locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface GlobalStandardProps {
@@ -46,11 +56,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** The workspace browsing region and pick/create flow copy. */
     workspace: WorkspaceKey
+    /** Workspace recycle-bin settings and confirmation copy. */
+    'settings.recycleBin': RecycleBinKey
   }
 }
 
 /** Dictionary namespace owned by this plugin. */
 const NS = 'workspace'
+const RECYCLE_BIN_NS = 'settings.recycleBin'
 
 /**
  * Required services (cordis fiber inject). The target slots are declared by
@@ -61,7 +74,7 @@ const NS = 'workspace'
  * declaration through `slots.inject()` instead of assuming order.
  */
 export const inject = [
-  'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout',
+  'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout', 'settingsScope',
 ]
 
 /**
@@ -75,8 +88,13 @@ export function apply(ctx: Context): void {
   const workspaces = ctx.get('workspaces') as IWorkspaces
   const uiWorkspace = new UiWorkspaceService(
     ctx, ctx.remote.directoryPicker, workspaces, sessions)
+  const recycleBinSettings = new RecycleBinSettingsController(
+    ctx.settingsScope.bind({ namespace: RECYCLE_BIN_SETTINGS_NAMESPACE }),
+  )
   ctx.slots.provideRoot({ hooks: { workspaces: workspaces.list } })
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-workspace: dictionaries')
+  ctx.effect(() => ctx.locale.register(RECYCLE_BIN_NS, { zh: recycleBinZh, en: recycleBinEn }), 'ui-workspace: recycle-bin dictionaries')
+  ctx.effect(() => () => { recycleBinSettings.dispose() }, 'ui-workspace: recycle-bin settings')
 
   const searchSessions: WorkspaceBrowserInjected['searchSessions'] = async (query, signal) => {
     const result = await sessions.search(query, signal)
@@ -136,6 +154,11 @@ export function apply(ctx: Context): void {
     createWorkspace: input => workspaces.create(input),
     hooks: { directoryFlow: pickerFlowSource },
   })
+  const recycleBinInjected = (): RecycleBinSectionInjected => ({
+    ...recycleBinSettings.inject(),
+    restoreArchivedSessions: sessionIds => workspaces.restoreArchivedSessions(sessionIds),
+    clearRecycleBin: () => workspaces.clearRecycleBin(),
+  })
   // Each registration declares its directory-flow child in the same call;
   // slot injection follows both the owner and declaration HMR lifetimes.
   ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register(
@@ -156,5 +179,17 @@ export function apply(ctx: Context): void {
       locale: NS,
     },
     WorkspacePicker,
+  ))
+  const recycleBinT = ctx.locale.bind(RECYCLE_BIN_NS)
+  ctx.slots.inject('settings.section', () => ctx.slots.register(
+    {
+      name: 'settings.section',
+      id: 'recycle-bin',
+      order: 31,
+      label: () => recycleBinT('nav'),
+      locale: RECYCLE_BIN_NS,
+      inject: recycleBinInjected,
+    },
+    RecycleBinSection,
   ))
 }

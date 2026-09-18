@@ -2909,6 +2909,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the complete resulting archive set.',
       },
       {
+        signature: '@Remote(\'restoreArchivedSessions\') restoreArchivedSessions( request: WorkspaceRestoreArchivedSessionsRequest, ): Promise<WorkspaceArchiveValue>',
+        description: 'Restore explicitly confirmed archived Sessions from the recycle bin.',
+        parameters: [{ name: 'request', description: 'Session identities and user confirmation.' }],
+        returns: 'the complete resulting archive projection.',
+      },
+      {
+        signature: '@Remote(\'clearRecycleBin\') clearRecycleBin(request: WorkspaceClearRecycleBinRequest): Promise<WorkspaceArchiveValue>',
+        description: 'Clear every recoverable archived Session after explicit user confirmation.',
+        parameters: [{ name: 'request', description: 'user confirmation.' }],
+        returns: 'the complete resulting archive projection.',
+      },
+      {
         signature: '@Remote({ mode: \'stream\' }) follow(signal: AbortSignal): AsyncIterable<WorkspaceFollowFrame>',
         description: 'Stream a complete Workspace baseline followed by ordered increments.',
         parameters: [{ name: 'signal', description: 'generation cancellation.' }],
@@ -3004,6 +3016,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'archiveSession(sessionId: SessionId): Promise<void>',
         description: 'Archive one session durably. The session must exist (live or in session persistence); its workspace accounting — or lack of one — is irrelevant. An already archived id resolves without writing.',
         parameters: [{ name: 'sessionId', description: 'The session to archive.' }],
+        returns: 'resolution after durability.',
+      },
+      {
+        signature: 'restoreArchivedSessions(sessionIds: readonly SessionId[]): Promise<void>',
+        description: 'Restore every named Session atomically from the active recycle bin.',
+        parameters: [{ name: 'sessionIds', description: 'recoverable Session identities to restore.' }],
+        returns: 'resolution after durability.',
+        throws: ['{WorkspaceArchivedSessionUnavailableError} when any requested Session is absent.'],
+      },
+      {
+        signature: 'clearRecycleBin(): Promise<void>',
+        description: 'Make every currently recoverable archived Session permanently unavailable. Session logs remain intact; only application-level recovery metadata changes.',
+        parameters: [],
         returns: 'resolution after durability.',
       },
       {
@@ -6416,15 +6441,19 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkspaceArchiveValue',
-    declaration: 'export interface WorkspaceArchiveValue {\n    readonly archivedSessionIds: readonly SessionId[];\n}',
+    declaration: 'export interface WorkspaceArchiveValue {\n    readonly archivedSessionIds: readonly SessionId[];\n    readonly recycleBinEntries: readonly WorkspaceRecycleBinEntry[];\n}',
   },
   {
     name: 'WorkspaceBaseline',
-    declaration: 'export interface WorkspaceBaseline {\n    readonly items: readonly WorkspaceView[];\n    readonly archivedSessionIds: readonly SessionId[];\n}',
+    declaration: 'export interface WorkspaceBaseline {\n    readonly items: readonly WorkspaceView[];\n    readonly archivedSessionIds: readonly SessionId[];\n    readonly recycleBinEntries: readonly WorkspaceRecycleBinEntry[];\n}',
   },
   {
     name: 'WorkspaceByteRange',
     declaration: 'export interface WorkspaceByteRange {\n    readonly offset?: number;\n    readonly length?: number;\n}',
+  },
+  {
+    name: 'WorkspaceClearRecycleBinRequest',
+    declaration: 'export interface WorkspaceClearRecycleBinRequest {\n    readonly confirmed: true;\n}',
   },
   {
     name: 'WorkspaceCreateRequest',
@@ -6484,7 +6513,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkspaceFollowIncrement',
-    declaration: 'export type WorkspaceFollowIncrement = {\n    readonly type: \'upsert\';\n    readonly workspace: WorkspaceView;\n} | {\n    readonly type: \'remove\';\n    readonly workspaceId: WorkspaceId;\n} | {\n    readonly type: \'order\';\n    readonly workspaceIds: readonly WorkspaceId[];\n} | {\n    readonly type: \'archived\';\n    readonly archivedSessionIds: readonly SessionId[];\n};',
+    declaration: 'export type WorkspaceFollowIncrement = {\n    readonly type: \'upsert\';\n    readonly workspace: WorkspaceView;\n} | {\n    readonly type: \'remove\';\n    readonly workspaceId: WorkspaceId;\n} | {\n    readonly type: \'order\';\n    readonly workspaceIds: readonly WorkspaceId[];\n} | {\n    readonly type: \'archived\';\n    readonly archivedSessionIds: readonly SessionId[];\n    readonly recycleBinEntries: readonly WorkspaceRecycleBinEntry[];\n};',
   },
   {
     name: 'WorkspaceInsertBeforeRequest',
@@ -6501,6 +6530,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceRenameRequest',
     declaration: 'export interface WorkspaceRenameRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly title: string;\n}',
+  },
+  {
+    name: 'WorkspaceRestoreArchivedSessionsRequest',
+    declaration: 'export interface WorkspaceRestoreArchivedSessionsRequest {\n    readonly sessionIds: readonly SessionId[];\n    readonly confirmed: true;\n}',
   },
   {
     name: 'WorkspaceValue',

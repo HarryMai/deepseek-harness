@@ -21,6 +21,7 @@ import {
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
+  WorkspaceClearRecycleBinRequest,
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
@@ -29,6 +30,7 @@ import type {
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
+  WorkspaceRestoreArchivedSessionsRequest,
   WorkspaceRenameRequest,
   WorkspaceId,
   WorkspaceValue,
@@ -72,6 +74,7 @@ const baseline = (id?: string): Extract<WorkspaceFollowFrame, { type: 'baseline'
       updatedAt: '2026-01-01T00:00:00.000Z',
     }],
     archivedSessionIds: [],
+    recycleBinEntries: [],
   },
 })
 
@@ -140,6 +143,16 @@ class ScriptedWorkspaceRemote implements WorkspaceRemote {
     throw new Error('unused')
   }
 
+  restoreArchivedSessions(
+    _request: WorkspaceRestoreArchivedSessionsRequest,
+  ): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    throw new Error('unused')
+  }
+
+  clearRecycleBin(_request: WorkspaceClearRecycleBinRequest): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    throw new Error('unused')
+  }
+
   async *follow(signal = new AbortController().signal): AsyncIterable<WorkspaceFollowFrame> {
     const generation = this.generations[this.calls++]
     if (generation === undefined) throw new Error('no scripted Workspace generation')
@@ -178,6 +191,20 @@ class CommandWorkspaceRemote implements WorkspaceRemote {
 
   readonly archiveSession = vi.fn<WorkspaceRemote['archiveSession']>(request => Promise.resolve(remoteOk({
     archivedSessionIds: [request.sessionId],
+    recycleBinEntries: [{
+      sessionId: request.sessionId,
+      archivedAt: '2026-01-01T00:00:00.000Z',
+    }],
+  })))
+
+  readonly restoreArchivedSessions = vi.fn<WorkspaceRemote['restoreArchivedSessions']>(() => Promise.resolve(remoteOk({
+    archivedSessionIds: [],
+    recycleBinEntries: [],
+  })))
+
+  readonly clearRecycleBin = vi.fn<WorkspaceRemote['clearRecycleBin']>(() => Promise.resolve(remoteOk({
+    archivedSessionIds: [],
+    recycleBinEntries: [],
   })))
 
   async *follow(_signal?: AbortSignal): AsyncIterable<WorkspaceFollowFrame> {}
@@ -293,7 +320,14 @@ describe('Workspace state stream', () => {
         { type: 'upsert', workspace },
         { type: 'remove', workspaceId: workspace.workspaceId },
         { type: 'order', workspaceIds: [workspace.workspaceId] },
-        { type: 'archived', archivedSessionIds: ['session-one' as never] },
+        {
+          type: 'archived',
+          archivedSessionIds: ['session-one' as never],
+          recycleBinEntries: [{
+            sessionId: 'session-one' as never,
+            archivedAt: '2026-01-01T00:00:00.000Z',
+          }],
+        },
       ],
       hold: true,
     }])
@@ -322,7 +356,13 @@ describe('Workspace state stream', () => {
     expect(upsertView).toHaveBeenCalledWith(workspace)
     expect(removeView).toHaveBeenCalledWith(workspace.workspaceId)
     expect(replaceOrder).toHaveBeenCalledWith([workspace.workspaceId])
-    expect(replaceArchived).toHaveBeenCalledWith(['session-one'])
+    expect(replaceArchived).toHaveBeenCalledWith({
+      archivedSessionIds: ['session-one'],
+      recycleBinEntries: [{
+        sessionId: 'session-one',
+        archivedAt: '2026-01-01T00:00:00.000Z',
+      }],
+    })
     await stream.dispose()
     expect(remote.signals[0]?.aborted).toBe(true)
   })
@@ -451,7 +491,7 @@ describe('WorkspaceController', () => {
   it('publishes the model source and exposes successful Workspace commands', async () => {
     const remote = new CommandWorkspaceRemote()
     const model = new ClientWorkspaceModel(remote)
-    model.replaceBaseline({ items: [workspace('one')], archivedSessionIds: [] })
+    model.replaceBaseline({ items: [workspace('one')], archivedSessionIds: [], recycleBinEntries: [] })
     const controller = new WorkspaceController(new Context(), model)
 
     expect(controller.list).toBe(model)
@@ -462,6 +502,8 @@ describe('WorkspaceController', () => {
       sessionIds: ['session'],
     })
     await expect(controller.archiveSession(sid('session'))).resolves.toBeUndefined()
+    await expect(controller.restoreArchivedSessions([sid('session')])).resolves.toBeUndefined()
+    await expect(controller.clearRecycleBin()).resolves.toBeUndefined()
     await expect(controller.delete(wid('one'))).resolves.toBeUndefined()
   })
 

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用此包可以维护一个有序、持久的项目目录列表，以及在每个目录中运行的会话。宿主可以构建项目侧边栏、在不删除历史的情况下把会话从分组中隐藏，并在不删除文件夹、文件或会话的情况下移除项目。重新添加已移除的目录会创建一个全新项目，而目录无法校验的会话会保持 Ungrouped。需要持久项目分组的 GUI 或宿主工作流适合使用它；它对模型不可见，不增加提示词或请求上下文成本，但需要会话持久化与存储后端。
+使用此包可以维护一个有序、持久的项目目录列表，以及在每个目录中运行的会话。宿主可以将会话归档到保留期内可恢复的回收站而不删除历史、在保留期到期前恢复它们，并在不删除文件夹、文件或会话的情况下移除项目。重新添加已移除的目录会创建一个全新项目，而目录无法校验的会话会保持 Ungrouped。需要持久项目分组的 GUI 或宿主工作流适合使用它；它对模型不可见，不增加提示词或请求上下文成本，但需要会话持久化与存储后端。
 
 ## 目录
 
@@ -33,7 +33,7 @@ kind: "package-reference"
 
 ### 设置
 
-此包本身不声明任何配置；它需要会话存储、会话持久化后端，以及保存其记录的存储行。最小组合如下：
+注册表需要会话存储、会话持久化后端，以及保存其记录的存储行。归档会话默认可恢复 30 个完整日。`@deepseek-ai/dsh-settings` 提供共享设置 seam；挂载其文件提供方 `@deepseek-ai/dsh-settings-file` 后，正整数日的 `workspace-recycle-bin.retentionDays` 偏好会与 MCP 配置共用用户文档，默认是 `$DSH_HOME/settings.yaml`。没有设置提供方时仍使用默认值。最小组合如下：
 
 ```yaml
 - name: '@deepseek-ai/dsh-session'
@@ -65,7 +65,7 @@ ctx.workspaceRegistry.list() // shows the project, newest first
 
 ### 隐藏会话与移除项目
 
-当会话不应再出现在分组中时隐藏它：它会从可见列表中消失，但其会话、历史与在项目中的位置都保持不变。项目不再需要时移除它：它离开列表，而其文件夹、文件与会话历史绝不受影响——这些会话变成 Ungrouped。之后再次添加同一目录会从空项目开始，不会带回旧会话。
+当会话不应再出现在分组界面时归档它：它会从可见列表中消失，但其会话、历史与在项目中的位置都保持不变。归档时间使它在配置的保留期到期前可通过回收站恢复；恢复会移除归档过滤并返回原有位置。到期与清空只移除应用内恢复元数据，仍保持会话归档且不触及其历史。项目不再需要时移除它：它离开列表，而其文件夹、文件与会话历史绝不受影响——这些会话变成 Ungrouped。之后再次添加同一目录会从空项目开始，不会带回旧会话。
 
 -----
 
@@ -102,7 +102,7 @@ ctx.workspaceRegistry.list() // shows the project, newest first
 
 ### 持久形态
 
-注册表打开 `workspace` 领域（版本 2）：一张以 `WorkspaceId` 为键的 `workspaces` 表，加上一个持有 `workspaceIds`（权威显示顺序）、`archivedSessionIds` 与可选 `pendingMutation` 标记的全局状态。在 `archivedSessionIds` 存在之前写入的记录会通过 schema 默认值解析为空集合。
+注册表打开 `workspace` 领域（版本 2）：一张以 `WorkspaceId` 为键的 `workspaces` 表，加上一个持有 `workspaceIds`（权威显示顺序）、`archivedSessionIds`、可恢复的 `recycleBinEntries`、已清空归档墓碑与可选 `pendingMutation` 标记的全局状态。较早状态记录会将新集合解析为空；旧归档 id 会获得恢复时间，除非墓碑记录其恢复资格已被清空。
 
 ### 生命周期
 
@@ -130,6 +130,7 @@ ctx.workspaceRegistry.list() // shows the project, newest first
 - [领域 KV 存储 Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.zh.md)——为什么项目记录使用领域数据形式。
 - [Workspace UI 产品流 Agent Note](../../../.agents/notes/archived/feature/2026-07-25-workspace-ui-product-flow.md)——首次启动如何从会话历史构建项目，以及 GUI 如何排序。
 - [删除 Workspace 注册记录决策](../../../.agents/notes/implemented/feature/2026-07-27-workspace-registration-deletion.zh.md)——为什么移除项目绝不会删除其文件夹或会话。
+- [会话回收站决策](../../../.agents/notes/implemented/feature/2026-09-18-session-recycle-bin.zh.md)——为什么清空恢复资格不会删除会话日志。
 
 -----
 
@@ -160,7 +161,7 @@ ctx.workspaceRegistry.list() // shows the project, newest first
 - **移除绝不删除数据**——移除项目会保留其文件夹、文件与会话历史；这些会话变成 Ungrouped，而会话删除与文件夹移除是彼此独立且尚未提供的功能（参见[决策记录](../../../.agents/notes/implemented/feature/2026-07-27-workspace-registration-deletion.zh.md)）。
 - **只有带记录目录的会话才能加入**——只有记录中带有可解析为项目路径的目录的会话才属于项目；没有目录的会话保持 Ungrouped，来自其他目录的会话无法移入。
 - **外部变更延迟可见**——如果另一进程删除或损坏目录，项目只能在下次刷新或重启后反映出来。
-- **归档是单向的**——被隐藏的会话保留其历史与位置，但目前没有取消归档操作；归档集合是持久的显示过滤器。
+- **清空恢复资格不会删除 Session**——恢复的会话会回到原有位置，但到期或被清空的条目仍保持归档，无法再通过应用恢复；其会话日志保持不变。
 - **重新添加目录从空开始**——移除后再次添加同一目录会创建空会话列表的新项目；旧会话不会自动回来。
 
 <a id="dev-note"></a>

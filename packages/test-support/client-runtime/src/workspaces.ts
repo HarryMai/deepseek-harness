@@ -140,6 +140,40 @@ export class TestWorkspaces implements IWorkspaces {
     }
     await this.update((draft) => {
       draft.archivedSessionIds = [...draft.archivedSessionIds, sessionId]
+      draft.recycleBinEntries = [
+        ...draft.recycleBinEntries,
+        { sessionId, archivedAt: new Date().toISOString() },
+      ]
     })
+  }
+
+  /**
+   * Restore selected recycle-bin Sessions (recorded). The default mirrors the
+   * production archive projection change.
+   * @param sessionIds - recoverable Session identities.
+   */
+  async restoreArchivedSessions(sessionIds: readonly SessionId[]): Promise<void> {
+    this.calls.push({ method: 'restoreArchivedSessions', args: [sessionIds] })
+    const stub = this.stubs.get('restoreArchivedSessions')
+    if (stub !== undefined) {
+      await (stub(sessionIds) as Promise<void>)
+      return
+    }
+    const restored = new Set(sessionIds)
+    await this.update((draft) => {
+      draft.archivedSessionIds = draft.archivedSessionIds.filter(id => !restored.has(id))
+      draft.recycleBinEntries = draft.recycleBinEntries.filter(entry => !restored.has(entry.sessionId))
+    })
+  }
+
+  /** Clear every active recycle-bin entry (recorded). */
+  async clearRecycleBin(): Promise<void> {
+    this.calls.push({ method: 'clearRecycleBin', args: [] })
+    const stub = this.stubs.get('clearRecycleBin')
+    if (stub !== undefined) {
+      await (stub() as Promise<void>)
+      return
+    }
+    await this.update((draft) => { draft.recycleBinEntries = [] })
   }
 }

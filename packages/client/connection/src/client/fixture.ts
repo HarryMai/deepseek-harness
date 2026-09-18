@@ -358,7 +358,16 @@ interface WorkspaceInsertSessionBeforeRequest {
   readonly beforeSessionId?: SessionId
 }
 interface WorkspaceArchiveSessionRequest { readonly sessionId: SessionId }
-interface WorkspaceArchiveValue { readonly archivedSessionIds: readonly SessionId[] }
+interface WorkspaceRecycleBinEntry { readonly sessionId: SessionId; readonly archivedAt: string }
+interface WorkspaceRestoreArchivedSessionsRequest {
+  readonly sessionIds: readonly SessionId[]
+  readonly confirmed: true
+}
+interface WorkspaceClearRecycleBinRequest { readonly confirmed: true }
+interface WorkspaceArchiveValue {
+  readonly archivedSessionIds: readonly SessionId[]
+  readonly recycleBinEntries: readonly WorkspaceRecycleBinEntry[]
+}
 
 type WorkspaceFollowFrame =
   | {
@@ -366,12 +375,17 @@ type WorkspaceFollowFrame =
     readonly value: {
       readonly items: readonly WorkspaceView[]
       readonly archivedSessionIds: readonly SessionId[]
+      readonly recycleBinEntries: readonly WorkspaceRecycleBinEntry[]
     }
   }
   | { readonly type: 'upsert'; readonly workspace: WorkspaceView }
   | { readonly type: 'remove'; readonly workspaceId: WorkspaceId }
   | { readonly type: 'order'; readonly workspaceIds: readonly WorkspaceId[] }
-  | { readonly type: 'archived'; readonly archivedSessionIds: readonly SessionId[] }
+  | {
+    readonly type: 'archived'
+    readonly archivedSessionIds: readonly SessionId[]
+    readonly recycleBinEntries: readonly WorkspaceRecycleBinEntry[]
+  }
 
 interface FixtureWorkspaceApi {
   create(request: WorkspaceCreateRequest): Promise<ConnectionRpcResult<WorkspaceCreateValue>>
@@ -380,6 +394,8 @@ interface FixtureWorkspaceApi {
   insertBefore(request: WorkspaceInsertBeforeRequest): Promise<ConnectionRpcResult<WorkspaceOrderValue>>
   insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<ConnectionRpcResult<WorkspaceValue>>
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<ConnectionRpcResult<WorkspaceArchiveValue>>
+  restoreArchivedSessions(request: WorkspaceRestoreArchivedSessionsRequest): Promise<ConnectionRpcResult<WorkspaceArchiveValue>>
+  clearRecycleBin(request: WorkspaceClearRecycleBinRequest): Promise<ConnectionRpcResult<WorkspaceArchiveValue>>
 }
 
 interface FixtureWorkspace {
@@ -2002,6 +2018,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   // Registry-global archive set mirroring the host: archived sessions keep
   // their workspace accounting slot and only grouping surfaces hide them.
   const archivedSessionIds: SessionId[] = []
+  const recycleBinEntries: WorkspaceRecycleBinEntry[] = []
   const workspaceSnapshot = (workspace: FixtureWorkspace): WorkspaceView => ({
     ...workspace,
     sessionIds: [...workspace.sessionIds],
@@ -2011,6 +2028,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     value: {
       items: workspaces.map(workspaceSnapshot),
       archivedSessionIds: [...archivedSessionIds],
+      recycleBinEntries: recycleBinEntries.map(entry => ({ ...entry })),
     },
   })
 
@@ -3794,9 +3812,55 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       }
       if (!archivedSessionIds.includes(request.sessionId)) {
         archivedSessionIds.push(request.sessionId)
-        emitWorkspace({ type: 'archived', archivedSessionIds: [...archivedSessionIds] })
+        recycleBinEntries.push({ sessionId: request.sessionId, archivedAt: new Date().toISOString() })
+        emitWorkspace({
+          type: 'archived',
+          archivedSessionIds: [...archivedSessionIds],
+          recycleBinEntries: recycleBinEntries.map(entry => ({ ...entry })),
+        })
       }
-      return sessionOk({ archivedSessionIds: [...archivedSessionIds] })
+      return sessionOk({
+        archivedSessionIds: [...archivedSessionIds],
+        recycleBinEntries: recycleBinEntries.map(entry => ({ ...entry })),
+      })
+    },
+    restoreArchivedSessions: (request) => {
+      const requested = new Set(request.sessionIds)
+      const available = new Set(recycleBinEntries.map(entry => entry.sessionId))
+      const unavailable = [...requested].find(sessionId => !available.has(sessionId))
+      if (unavailable !== undefined) {
+        return sessionErr({
+          code: 'session/not-found',
+          message: `no archived session ${unavailable}`,
+          details: { sessionId: unavailable },
+        })
+      }
+      for (let index = archivedSessionIds.length - 1; index >= 0; index -= 1) {
+        const sessionId = archivedSessionIds[index]
+        if (sessionId !== undefined && requested.has(sessionId)) archivedSessionIds.splice(index, 1)
+      }
+      for (let index = recycleBinEntries.length - 1; index >= 0; index -= 1) {
+        const entry = recycleBinEntries[index]
+        if (entry !== undefined && requested.has(entry.sessionId)) recycleBinEntries.splice(index, 1)
+      }
+      emitWorkspace({
+        type: 'archived',
+        archivedSessionIds: [...archivedSessionIds],
+        recycleBinEntries: recycleBinEntries.map(entry => ({ ...entry })),
+      })
+      return sessionOk({
+        archivedSessionIds: [...archivedSessionIds],
+        recycleBinEntries: recycleBinEntries.map(entry => ({ ...entry })),
+      })
+    },
+    clearRecycleBin: (_request) => {
+      if (recycleBinEntries.length > 0) recycleBinEntries.splice(0)
+      emitWorkspace({
+        type: 'archived',
+        archivedSessionIds: [...archivedSessionIds],
+        recycleBinEntries: [],
+      })
+      return sessionOk({ archivedSessionIds: [...archivedSessionIds], recycleBinEntries: [] })
     },
   }
 
@@ -3991,6 +4055,10 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           request as WorkspaceInsertSessionBeforeRequest,
         )
         case 'workspace/archiveSession': return workspaceApi.archiveSession(request as WorkspaceArchiveSessionRequest)
+        case 'workspace/restoreArchivedSessions': return workspaceApi.restoreArchivedSessions(
+          request as WorkspaceRestoreArchivedSessionsRequest,
+        )
+        case 'workspace/clearRecycleBin': return workspaceApi.clearRecycleBin(request as WorkspaceClearRecycleBinRequest)
         default:
           return Promise.reject(new Error(`fixture connection RPC endpoint ${JSON.stringify(endpoint)} is unavailable`))
       }

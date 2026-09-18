@@ -17,7 +17,9 @@ import type { ISession } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
-import { RemoteError, SlotTestRuntime, TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import {
+  RemoteError, SlotTestRuntime, TestRemote, stubSettingsScope, usePinnedBrowserLanguages,
+} from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-workspace/client'
 
@@ -43,6 +45,16 @@ async function createRuntime(): Promise<SlotTestRuntime> {
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
+  const recycleBinScope = stubSettingsScope<{ retentionDays: number }>()
+  recycleBinScope.publish({
+    status: 'ready',
+    value: { retentionDays: 30 },
+    base: { retentionDays: 30 },
+    user: {},
+    revision: 0,
+    writable: true,
+  })
+  runtime.ctx.provide('settingsScope', { bind: vi.fn(() => recycleBinScope.scope) } as never)
   return runtime
 }
 

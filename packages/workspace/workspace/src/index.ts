@@ -8,6 +8,8 @@
 import { randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { Context, Service } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import type {} from '@deepseek-ai/dsh-settings'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { DomainGlobal, KvTable } from '@deepseek-ai/dsh-storage-domain'
@@ -17,8 +19,30 @@ import type { WorkspaceEntityHost } from './entity.ts'
 export { WorkspaceMoveInvalidError } from './entity.ts'
 import { defaultWorkspaceTitle, realpathNormalize } from './paths.ts'
 import { workspaceDomainSpec } from './spec.ts'
-import type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
+import type { WorkspaceDomainState, WorkspaceRecord, WorkspaceRecycleBinEntry } from './spec.ts'
 import type { Workspace, WorkspaceId as WorkspaceIdBrand } from './types.ts'
+
+const RECYCLE_BIN_DAY_MS = 86_400_000
+const MAX_TIMER_DELAY_MS = 2_147_483_647
+const RECYCLE_BIN_EXPIRY_RETRY_INITIAL_DELAY_MS = 1_000
+const RECYCLE_BIN_EXPIRY_RETRY_MAX_DELAY_MS = 60_000
+
+/** Namespace persisted beside other user-owned settings, including MCP configuration. */
+export const RECYCLE_BIN_SETTINGS_NAMESPACE = 'workspace-recycle-bin'
+
+/** User-configurable recycle-bin retention. */
+export interface RecycleBinSettings {
+  /** Number of full days an archived Session remains recoverable. */
+  retentionDays: number
+}
+
+/** Schema for the recycle-bin settings namespace. */
+export const RecycleBinSettingsConfig = z.object({
+  retentionDays: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(30),
+})
+
+/** Default recycle-bin retention. */
+export const DEFAULT_RECYCLE_BIN_SETTINGS: RecycleBinSettings = { retentionDays: 30 }
 
 export type { Workspace } from './types.ts'
 export { workspaceDomainState, workspaceRecord, workspaceDomainSpec } from './spec.ts'
@@ -48,6 +72,15 @@ export class WorkspaceUnknownSessionError extends Error {
   constructor(readonly sessionId: SessionId) {
     super(`cannot archive session '${sessionId}': live sessions and session persistence hold no such session`)
     this.name = 'WorkspaceUnknownSessionError'
+  }
+}
+
+/** A restore request named a Session that is no longer recoverable. */
+export class WorkspaceArchivedSessionUnavailableError extends Error {
+  /** @param sessionId - The Session absent from the active recycle bin. */
+  constructor(readonly sessionId: SessionId) {
+    super(`cannot restore session '${sessionId}': it is not in the recycle bin`)
+    this.name = 'WorkspaceArchivedSessionUnavailableError'
   }
 }
 
@@ -99,6 +132,10 @@ export class WorkspaceRegistry extends Service {
   private readonly sessionPaths = new Map<SessionId, string>()
   private readonly invalidSessionPaths = new Map<SessionId, string>()
   private operationTail: Promise<void> = Promise.resolve()
+  private recycleBinSource: () => RecycleBinSettings = () => DEFAULT_RECYCLE_BIN_SETTINGS
+  private recycleBinTimer: ReturnType<typeof setTimeout> | undefined
+  private recycleBinExpiryRetryDelayMs = RECYCLE_BIN_EXPIRY_RETRY_INITIAL_DELAY_MS
+  private recycleBinStopped = false
 
   private readonly host: WorkspaceEntityHost = {
     table: () => this.requireTable(),
@@ -112,6 +149,22 @@ export class WorkspaceRegistry extends Service {
 
   constructor(ctx: Context) {
     super(ctx, 'workspaceRegistry')
+    ctx.inject(['settings'], (settingsCtx) => {
+      settingsCtx.settings.installSection(
+        ctx,
+        RECYCLE_BIN_SETTINGS_NAMESPACE,
+        RecycleBinSettingsConfig,
+        DEFAULT_RECYCLE_BIN_SETTINGS,
+        {
+          setSource: (source) => { this.recycleBinSource = source },
+          onChange: () => { this.requestRecycleBinExpiry() },
+        },
+      )
+    })
+    ctx.effect(() => () => {
+      this.recycleBinStopped = true
+      this.clearRecycleBinTimer()
+    }, 'workspace.recycle-bin')
   }
 
   /** Open the domain, finish bootstrap when required, and rebuild the ordered cache. */
@@ -124,6 +177,8 @@ export class WorkspaceRegistry extends Service {
 
     await this.recoverPendingMutation()
     this.validateStoredState(this.state)
+    await this.reconcileRecycleBinEntries()
+    await this.expireRecycleBinEntries()
     if (!this.state.initialized) {
       const headers = await this.listStoredHeaders()
       await this.replaceHeaderIndex(headers)
@@ -136,6 +191,7 @@ export class WorkspaceRegistry extends Service {
     this.validateStoredState(this.requireState())
     this.rebuildEntities()
     this.reportFilteredCandidates()
+    this.scheduleRecycleBinExpiry()
   }
 
   /**
@@ -234,6 +290,14 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * The archived Sessions that remain recoverable through the recycle bin.
+   * @returns durable recycle-bin entries in archive order.
+   */
+  get recycleBinEntries(): readonly WorkspaceRecycleBinEntry[] {
+    return this.requireState().recycleBinEntries
+  }
+
+  /**
    * Archive one session durably. The session must exist (live or in session
    * persistence); its workspace accounting — or lack of one — is irrelevant.
    * An already archived id resolves without writing.
@@ -249,7 +313,60 @@ export class WorkspaceRegistry extends Service {
         throw new WorkspaceUnknownSessionError(sessionId)
       }
       const state = this.requireState()
-      await this.setState({ ...state, archivedSessionIds: [...state.archivedSessionIds, sessionId] })
+      await this.setState({
+        ...state,
+        archivedSessionIds: [...state.archivedSessionIds, sessionId],
+        recycleBinEntries: [
+          ...state.recycleBinEntries,
+          { sessionId, archivedAt: new Date().toISOString() },
+        ],
+      })
+      this.scheduleRecycleBinExpiry()
+    })
+  }
+
+  /**
+   * Restore every named Session atomically from the active recycle bin.
+   * @param sessionIds - recoverable Session identities to restore.
+   * @returns resolution after durability.
+   * @throws {WorkspaceArchivedSessionUnavailableError} when any requested Session is absent.
+   */
+  restoreArchivedSessions(sessionIds: readonly SessionId[]): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const requested = new Set(sessionIds)
+      if (requested.size === 0) return
+      const state = this.requireState()
+      const available = new Set(state.recycleBinEntries.map(entry => entry.sessionId))
+      for (const sessionId of requested) {
+        if (!available.has(sessionId)) throw new WorkspaceArchivedSessionUnavailableError(sessionId)
+      }
+      await this.setState({
+        ...state,
+        archivedSessionIds: state.archivedSessionIds.filter(sessionId => !requested.has(sessionId)),
+        recycleBinEntries: state.recycleBinEntries.filter(entry => !requested.has(entry.sessionId)),
+      })
+      this.scheduleRecycleBinExpiry()
+    })
+  }
+
+  /**
+   * Make every currently recoverable archived Session permanently unavailable.
+   * Session logs remain intact; only application-level recovery metadata changes.
+   * @returns resolution after durability.
+   */
+  clearRecycleBin(): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (state.recycleBinEntries.length === 0) return
+      await this.setState({
+        ...state,
+        recycleBinEntries: [],
+        clearedArchivedSessionIds: appendUniqueSessionIds(
+          state.clearedArchivedSessionIds,
+          state.recycleBinEntries.map(entry => entry.sessionId),
+        ),
+      })
+      this.scheduleRecycleBinExpiry()
     })
   }
 
@@ -330,6 +447,8 @@ export class WorkspaceRegistry extends Service {
         initialized: true,
         workspaceIds: [id, ...state.workspaceIds],
         archivedSessionIds: state.archivedSessionIds,
+        recycleBinEntries: state.recycleBinEntries,
+        clearedArchivedSessionIds: state.clearedArchivedSessionIds,
       })
     } catch (error) {
       this.entities.delete(id)
@@ -362,6 +481,8 @@ export class WorkspaceRegistry extends Service {
       initialized: true,
       workspaceIds: state.workspaceIds.filter(workspaceId => workspaceId !== id),
       archivedSessionIds: state.archivedSessionIds,
+      recycleBinEntries: state.recycleBinEntries,
+      clearedArchivedSessionIds: state.clearedArchivedSessionIds,
     }
     await this.setState({
       ...nextState,
@@ -419,6 +540,8 @@ export class WorkspaceRegistry extends Service {
       initialized: state.initialized,
       workspaceIds: state.workspaceIds,
       archivedSessionIds: state.archivedSessionIds,
+      recycleBinEntries: state.recycleBinEntries,
+      clearedArchivedSessionIds: state.clearedArchivedSessionIds,
     })
   }
 
@@ -501,9 +624,21 @@ export class WorkspaceRegistry extends Service {
       .map(([id]) => id)
 
     if (!sameIds(state.workspaceIds, workspaceIds)) {
-      await this.setState({ initialized: false, workspaceIds, archivedSessionIds: state.archivedSessionIds })
+      await this.setState({
+        initialized: false,
+        workspaceIds,
+        archivedSessionIds: state.archivedSessionIds,
+        recycleBinEntries: state.recycleBinEntries,
+        clearedArchivedSessionIds: state.clearedArchivedSessionIds,
+      })
     }
-    await this.setState({ initialized: true, workspaceIds, archivedSessionIds: state.archivedSessionIds })
+    await this.setState({
+      initialized: true,
+      workspaceIds,
+      archivedSessionIds: state.archivedSessionIds,
+      recycleBinEntries: state.recycleBinEntries,
+      clearedArchivedSessionIds: state.clearedArchivedSessionIds,
+    })
   }
 
   private validateStoredState(state: WorkspaceDomainState): void {
@@ -523,6 +658,40 @@ export class WorkspaceRegistry extends Service {
       throw new Error(
         `workspace domain is inconsistent: workspace '${orphan as WorkspaceId}' is absent from registry order`,
       )
+    }
+
+    const archived = new Set<SessionId>()
+    for (const sessionId of state.archivedSessionIds) {
+      if (archived.has(sessionId)) {
+        throw new Error(`workspace domain is inconsistent: archive repeats session '${sessionId}'`)
+      }
+      archived.add(sessionId)
+    }
+    const recycled = new Set<SessionId>()
+    for (const entry of state.recycleBinEntries) {
+      if (!archived.has(entry.sessionId)) {
+        throw new Error(`workspace domain is inconsistent: recycle bin references unarchived session '${entry.sessionId}'`)
+      }
+      if (recycled.has(entry.sessionId)) {
+        throw new Error(`workspace domain is inconsistent: recycle bin repeats session '${entry.sessionId}'`)
+      }
+      if (!Number.isFinite(Date.parse(entry.archivedAt))) {
+        throw new Error(`workspace domain is inconsistent: recycle bin has invalid archive time for '${entry.sessionId}'`)
+      }
+      recycled.add(entry.sessionId)
+    }
+    const cleared = new Set<SessionId>()
+    for (const sessionId of state.clearedArchivedSessionIds) {
+      if (!archived.has(sessionId)) {
+        throw new Error(`workspace domain is inconsistent: cleared archive references unarchived session '${sessionId}'`)
+      }
+      if (recycled.has(sessionId)) {
+        throw new Error(`workspace domain is inconsistent: session '${sessionId}' is both recoverable and cleared`)
+      }
+      if (cleared.has(sessionId)) {
+        throw new Error(`workspace domain is inconsistent: cleared archive repeats session '${sessionId}'`)
+      }
+      cleared.add(sessionId)
     }
 
     const paths = new Map<string, WorkspaceId>()
@@ -650,6 +819,95 @@ export class WorkspaceRegistry extends Service {
     this.state = state
   }
 
+  /** Backfill recoverable metadata for archive ids written before recycle-bin support. */
+  private async reconcileRecycleBinEntries(): Promise<void> {
+    const state = this.requireState()
+    const covered = new Set<SessionId>([
+      ...state.recycleBinEntries.map(entry => entry.sessionId),
+      ...state.clearedArchivedSessionIds,
+    ])
+    const legacySessionIds = state.archivedSessionIds.filter(sessionId => !covered.has(sessionId))
+    if (legacySessionIds.length === 0) return
+    const archivedAt = new Date().toISOString()
+    await this.setState({
+      ...state,
+      recycleBinEntries: [
+        ...state.recycleBinEntries,
+        ...legacySessionIds.map(sessionId => ({ sessionId, archivedAt })),
+      ],
+    })
+  }
+
+  /** Remove active entries whose configured retention deadline has elapsed. */
+  private async expireRecycleBinEntries(): Promise<void> {
+    const state = this.requireState()
+    const retentionMs = this.recycleBinSource().retentionDays * RECYCLE_BIN_DAY_MS
+    const now = Date.now()
+    const expired = state.recycleBinEntries.filter(entry =>
+      now - Date.parse(entry.archivedAt) >= retentionMs)
+    if (expired.length > 0) {
+      const expiredIds = new Set(expired.map(entry => entry.sessionId))
+      await this.setState({
+        ...state,
+        recycleBinEntries: state.recycleBinEntries.filter(entry => !expiredIds.has(entry.sessionId)),
+        clearedArchivedSessionIds: appendUniqueSessionIds(
+          state.clearedArchivedSessionIds,
+          expired.map(entry => entry.sessionId),
+        ),
+      })
+    }
+    this.recycleBinExpiryRetryDelayMs = RECYCLE_BIN_EXPIRY_RETRY_INITIAL_DELAY_MS
+    this.scheduleRecycleBinExpiry()
+  }
+
+  /** Re-evaluate expiry after a settings change without letting rejection escape an observer callback. */
+  private requestRecycleBinExpiry(): void {
+    if (this.recycleBinStopped || this.state === undefined) return
+    void this.enqueueOperation(() => this.expireRecycleBinEntries()).catch((error: unknown) => {
+      this.ctx.logger.warn(`workspace recycle bin expiry check failed: ${String(error)}`)
+      this.scheduleRecycleBinExpiryRetry()
+    })
+  }
+
+  /** Schedule the earliest configured recycle-bin expiry, capped by Node's timer limit. */
+  private scheduleRecycleBinExpiry(): void {
+    this.clearRecycleBinTimer()
+    if (this.recycleBinStopped || this.state === undefined || this.state.recycleBinEntries.length === 0) return
+    const retentionMs = this.recycleBinSource().retentionDays * RECYCLE_BIN_DAY_MS
+    const deadline = Math.min(...this.state.recycleBinEntries.map(entry => Date.parse(entry.archivedAt) + retentionMs))
+    const delay = Math.max(0, Math.min(deadline - Date.now(), MAX_TIMER_DELAY_MS))
+    const timer = setTimeout(() => {
+      this.recycleBinTimer = undefined
+      this.requestRecycleBinExpiry()
+    }, delay)
+    ;(timer as unknown as { unref?: () => void }).unref?.()
+    this.recycleBinTimer = timer
+  }
+
+  /** Retry a failed expiry write with bounded exponential backoff. */
+  private scheduleRecycleBinExpiryRetry(): void {
+    this.clearRecycleBinTimer()
+    if (this.recycleBinStopped || this.state === undefined || this.state.recycleBinEntries.length === 0) return
+    const delay = this.recycleBinExpiryRetryDelayMs
+    this.recycleBinExpiryRetryDelayMs = Math.min(
+      delay * 2,
+      RECYCLE_BIN_EXPIRY_RETRY_MAX_DELAY_MS,
+    )
+    const timer = setTimeout(() => {
+      this.recycleBinTimer = undefined
+      this.requestRecycleBinExpiry()
+    }, delay)
+    ;(timer as unknown as { unref?: () => void }).unref?.()
+    this.recycleBinTimer = timer
+  }
+
+  /** Cancel the currently pending recycle-bin deadline check. */
+  private clearRecycleBinTimer(): void {
+    if (this.recycleBinTimer === undefined) return
+    clearTimeout(this.recycleBinTimer)
+    this.recycleBinTimer = undefined
+  }
+
   private enqueueOperation<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.operationTail.then(async () => {
       // A committed delete may leave only its marker cleanup pending. Retry
@@ -664,5 +922,17 @@ export class WorkspaceRegistry extends Service {
 
 const sameSessionIds = (left: readonly SessionId[], right: readonly SessionId[]): boolean =>
   left.length === right.length && left.every((id, index) => id === right[index])
+
+/** Append Session ids in first-seen order without duplicating durable archive markers. */
+function appendUniqueSessionIds(existing: readonly SessionId[], additions: readonly SessionId[]): SessionId[] {
+  const result = [...existing]
+  const seen = new Set(result)
+  for (const sessionId of additions) {
+    if (seen.has(sessionId)) continue
+    seen.add(sessionId)
+    result.push(sessionId)
+  }
+  return result
+}
 
 export default WorkspaceRegistry

@@ -8,11 +8,13 @@ import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
   WorkspaceBaseline,
+  WorkspaceClearRecycleBinRequest,
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
   WorkspaceDeleteValue,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
+  WorkspaceRestoreArchivedSessionsRequest,
   WorkspaceValue,
   WorkspaceId,
   WorkspaceView,
@@ -29,6 +31,8 @@ export interface WorkspaceSnapshot {
   readonly items: readonly WorkspaceView[]
   /** Complete registry-global archive set in Host order. */
   readonly archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds']
+  /** Active recoverable archived Sessions in Host archive order. */
+  readonly recycleBinEntries: WorkspaceArchiveValue['recycleBinEntries']
   readonly state: 'idle' | 'loading' | 'error'
   readonly phase: WorkspaceListPhase
   readonly error: RemoteFailure | null
@@ -44,8 +48,8 @@ export interface WorkspaceFollowSink {
   removeView(workspaceId: WorkspaceId): void
   /** Replace the Host-confirmed Workspace order. */
   replaceOrder(workspaceIds: readonly WorkspaceId[]): void
-  /** Replace the complete archived Session set. */
-  replaceArchived(sessionIds: WorkspaceArchiveValue['archivedSessionIds']): void
+  /** Replace the complete archived Session and recycle-bin projection. */
+  replaceArchived(value: WorkspaceArchiveValue): void
 }
 
 /**
@@ -54,6 +58,7 @@ export interface WorkspaceFollowSink {
 export class ClientWorkspaceModel implements WorkspaceFollowSink {
   private items: readonly WorkspaceView[] = []
   private archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds'] = []
+  private recycleBinEntries: WorkspaceArchiveValue['recycleBinEntries'] = []
   private state: WorkspaceSnapshot['state'] = 'loading'
   private phase: WorkspaceListPhase = 'pending'
   private error: RemoteFailure | null = null
@@ -61,6 +66,10 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   private orderRequestGeneration = 0
   /** Increments on stream orders so a later remote commit outranks an older unary echo. */
   private orderFrameGeneration = 0
+  /** Latest local archive request; only its unary echo may install archive state. */
+  private archiveRequestGeneration = 0
+  /** Increments on archive baselines and follow frames. */
+  private archiveFrameGeneration = 0
   /** Last complete order accepted from a baseline, increment, or current unary echo. */
   private committedOrder: WorkspaceId[] = []
   /** Host Workspace ids are never reused, so delayed data cannot resurrect a removed row. */
@@ -165,8 +174,50 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   async archiveSession(
     sessionId: WorkspaceArchiveSessionRequest['sessionId'],
   ): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    const requestGeneration = ++this.archiveRequestGeneration
+    const frameGeneration = this.archiveFrameGeneration
     const result = await this.remote.archiveSession({ sessionId })
-    if (result.ok) this.installArchived(result.value.archivedSessionIds)
+    if (result.ok
+      && requestGeneration === this.archiveRequestGeneration
+      && frameGeneration === this.archiveFrameGeneration) {
+      this.installArchived(result.value)
+    }
+    return result
+  }
+
+  /**
+   * Restore one or more confirmed archived Sessions and install the returned projection.
+   * @param sessionIds - active recycle-bin Session identities.
+   * @returns generated Remote result.
+   */
+  async restoreArchivedSessions(
+    sessionIds: WorkspaceRestoreArchivedSessionsRequest['sessionIds'],
+  ): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    const requestGeneration = ++this.archiveRequestGeneration
+    const frameGeneration = this.archiveFrameGeneration
+    const result = await this.remote.restoreArchivedSessions({ sessionIds, confirmed: true })
+    if (result.ok
+      && requestGeneration === this.archiveRequestGeneration
+      && frameGeneration === this.archiveFrameGeneration) {
+      this.installArchived(result.value)
+    }
+    return result
+  }
+
+  /**
+   * Clear every confirmed recoverable archive and install the returned projection.
+   * @returns generated Remote result.
+   */
+  async clearRecycleBin(): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    const requestGeneration = ++this.archiveRequestGeneration
+    const frameGeneration = this.archiveFrameGeneration
+    const request: WorkspaceClearRecycleBinRequest = { confirmed: true }
+    const result = await this.remote.clearRecycleBin(request)
+    if (result.ok
+      && requestGeneration === this.archiveRequestGeneration
+      && frameGeneration === this.archiveFrameGeneration) {
+      this.installArchived(result.value)
+    }
     return result
   }
 
@@ -176,8 +227,9 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    */
   replaceBaseline(baseline: WorkspaceBaseline): void {
     this.orderFrameGeneration++
+    this.archiveFrameGeneration++
     this.installViews(baseline.items)
-    this.installArchived(baseline.archivedSessionIds)
+    this.installArchived(baseline)
     this.state = 'idle'
     this.phase = 'ready'
     this.error = null
@@ -201,11 +253,12 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   }
 
   /**
-   * Replace the archived Session set from the current follow generation.
-   * @param archivedSessionIds - complete Host-confirmed archive set.
+   * Replace the archive projection from the current follow generation.
+   * @param value - complete Host-confirmed archive and recycle-bin projection.
    */
-  replaceArchived(archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds']): void {
-    this.installArchived(archivedSessionIds)
+  replaceArchived(value: WorkspaceArchiveValue): void {
+    this.archiveFrameGeneration++
+    this.installArchived(value)
   }
 
   /** Keep the last complete projection visible while a lost carrier reconnects. */
@@ -249,16 +302,26 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     return {
       items: this.items,
       archivedSessionIds: this.archivedSessionIds,
+      recycleBinEntries: this.recycleBinEntries,
       state: this.state,
       phase: this.phase,
       error: this.error,
     }
   }
 
-  private installArchived(archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds']): void {
-    if (archivedSessionIds.length === this.archivedSessionIds.length
-      && archivedSessionIds.every((id, index) => id === this.archivedSessionIds[index])) return
-    this.archivedSessionIds = [...archivedSessionIds]
+  private installArchived(value: WorkspaceArchiveValue): void {
+    const archiveUnchanged = value.archivedSessionIds.length === this.archivedSessionIds.length
+      && value.archivedSessionIds.every((id, index) => id === this.archivedSessionIds[index])
+    const recycleBinUnchanged = value.recycleBinEntries.length === this.recycleBinEntries.length
+      && value.recycleBinEntries.every((entry, index) => {
+        const existing = this.recycleBinEntries[index]
+        return existing !== undefined
+          && entry.sessionId === existing.sessionId
+          && entry.archivedAt === existing.archivedAt
+      })
+    if (archiveUnchanged && recycleBinUnchanged) return
+    this.archivedSessionIds = [...value.archivedSessionIds]
+    this.recycleBinEntries = value.recycleBinEntries.map(entry => ({ ...entry }))
     this.invalidate()
   }
 

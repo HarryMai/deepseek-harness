@@ -1,12 +1,15 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
+import { RemoteError, stubSettingsScope, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-workspace/client'
-import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type {
+  RecycleBinSectionInjected, WorkspaceBrowserInjected, WorkspacePickerInjected,
+} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from '../src/client/WorkspacePicker.tsx'
+import { RecycleBinSection } from '../src/client/RecycleBinSection.tsx'
 import { apply as hostApply } from '../src/index.ts'
 
 async function bench() {
@@ -21,7 +24,18 @@ async function bench() {
   const insertSessionBefore = vi.fn(async () => ({}))
   const open = vi.fn()
   const clear = vi.fn()
+  const restoreArchivedSessions = vi.fn(async () => undefined)
+  const clearRecycleBin = vi.fn(async () => undefined)
   const selectPanel = vi.fn()
+  const recycleBinScope = stubSettingsScope<{ retentionDays: number }>()
+  recycleBinScope.publish({
+    status: 'ready',
+    value: { retentionDays: 30 },
+    base: { retentionDays: 30 },
+    user: {},
+    revision: 0,
+    writable: true,
+  })
   ctx.provide('layout', { selectPanel, beginNavigation: () => new AbortController().signal })
   const search = vi.fn(async () => ({
     ok: true as const,
@@ -34,7 +48,7 @@ async function bench() {
   ctx.provide('workspaces', {
     list: {
       getSnapshot: () => ({
-        items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+        items: [], archivedSessionIds: [], recycleBinEntries: [], state: 'idle', phase: 'ready', error: null,
       }),
       subscribe,
     },
@@ -43,6 +57,8 @@ async function bench() {
     delete: vi.fn(async () => undefined),
     insertBefore: vi.fn(async () => undefined),
     archiveSession: vi.fn(async () => undefined),
+    restoreArchivedSessions,
+    clearRecycleBin,
     insertSessionBefore,
   } as never)
   ctx.provide('sessions', {
@@ -71,13 +87,15 @@ async function bench() {
   // comes from FALLBACK_LOCALE (en): state the asserted locale explicitly.
   locale.setLocale('zh')
   ctx.provide('locale', locale)
+  ctx.provide('settingsScope', { bind: vi.fn(() => recycleBinScope.scope) } as never)
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, rename,
     insertSessionBefore, open, clear, selectPanel, search, renameSession, binding, fork, pickDirectory,
+    restoreArchivedSessions, clearRecycleBin, recycleBinScope,
   }
 }
 
-type HoleName = 'sidebar.workspaces' | 'conversation.hero.workspace' | 'conversation.empty.workspace'
+type HoleName = 'sidebar.workspaces' | 'conversation.hero.workspace' | 'conversation.empty.workspace' | 'settings.section'
 
 /** Declare any subset of the holes with a single root registration ('root' is a single slot). */
 function declare(slots: SlotRegistry, ...names: HoleName[]): () => void {
@@ -92,19 +110,23 @@ describe('ui-workspace apply', () => {
 
   it('declares the services it drives', () => {
     expect(inject).toEqual([
-      'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout',
+      'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout', 'settingsScope',
     ])
   })
 
   it('registers browser and pickers for declarations arriving before or after apply', async () => {
     const before = await bench()
-    declare(before.slots, 'sidebar.workspaces')
+    declare(before.slots, 'sidebar.workspaces', 'settings.section')
     await before.ctx.plugin({ inject: [...inject], apply }).await()
     expect(before.slots.entries('sidebar.workspaces')[0]!.component).toBe(WorkspaceBrowser)
     // Copy rides the standard locale seat: the entry declares the namespace
     // and apply registered both dictionaries.
     expect(before.slots.entries('sidebar.workspaces')[0]!.locale).toBe('workspace')
     expect(before.locale.bind('workspace')('session.new')).toBe('新会话')
+    expect(before.slots.entries('settings.section')[0]!.component).toBe(RecycleBinSection)
+    expect(before.slots.entries('settings.section')[0]!.options).toMatchObject({
+      id: 'recycle-bin', order: 31,
+    })
 
     const after = await bench()
     await after.ctx.plugin({ inject: [...inject], apply }).await()
@@ -116,7 +138,7 @@ describe('ui-workspace apply', () => {
 
   it('routes browser actions and picker creation to the services', async () => {
     const b = await bench()
-    declare(b.slots, 'sidebar.workspaces', 'conversation.hero.workspace')
+    declare(b.slots, 'sidebar.workspaces', 'conversation.hero.workspace', 'settings.section')
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const startSession = vi.spyOn(b.ctx.uiWorkspace, 'startSession').mockImplementation(() => undefined)
 
@@ -153,6 +175,12 @@ describe('ui-workspace apply', () => {
     const picker = (b.slots.entries('conversation.hero.workspace')[0]!.inject as () => WorkspacePickerInjected)()
     await picker.createWorkspace({ path: '/tmp/project' })
     expect(b.create).toHaveBeenCalledWith({ path: '/tmp/project' })
+
+    const recycleBin = (b.slots.entries('settings.section')[0]!.inject as unknown as () => RecycleBinSectionInjected)()
+    await recycleBin.restoreArchivedSessions(['session' as never])
+    expect(b.restoreArchivedSessions).toHaveBeenCalledWith(['session'])
+    await recycleBin.clearRecycleBin()
+    expect(b.clearRecycleBin).toHaveBeenCalledOnce()
   })
 
   it('declares the two directory-flow holes and reports their occupancy per surface', async () => {
@@ -196,12 +224,13 @@ describe('ui-workspace apply', () => {
 
   it('unregisters every entry on teardown', async () => {
     const b = await bench()
-    declare(b.slots, 'sidebar.workspaces', 'conversation.hero.workspace', 'conversation.empty.workspace')
+    declare(b.slots, 'sidebar.workspaces', 'conversation.hero.workspace', 'conversation.empty.workspace', 'settings.section')
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     await fiber.dispose()
     expect(b.slots.entries('sidebar.workspaces')).toHaveLength(0)
     expect(b.slots.entries('conversation.hero.workspace')).toHaveLength(0)
+    expect(b.slots.entries('settings.section')).toHaveLength(0)
     // expect(b.slots.entries('conversation.empty.workspace')).toHaveLength(0)
   })
 })

@@ -12,6 +12,7 @@ import {
 import type {
   WorkspaceBaseline,
   WorkspaceFollowFrame,
+  WorkspaceRecycleBinEntry,
   WorkspaceView,
 } from './types.ts'
 
@@ -49,6 +50,7 @@ export class WorkspaceFeed {
   private knownIds: Set<string>
   private order: readonly string[]
   private archived: readonly string[]
+  private recycleBinEntries: readonly WorkspaceRecycleBinEntry[]
 
   /** @param ctx - Host context containing the authoritative Workspace registry. */
   constructor(private readonly ctx: Context) {
@@ -56,6 +58,7 @@ export class WorkspaceFeed {
     this.knownIds = new Set(baseline.map(workspace => String(workspace.id)))
     this.order = baseline.map(workspace => String(workspace.id))
     this.archived = ctx.workspaceRegistry.archivedSessionIds.map(String)
+    this.recycleBinEntries = ctx.workspaceRegistry.recycleBinEntries.map(entry => ({ ...entry }))
     ctx.on('domain/changed', (change: DomainChanged) => { this.changed(change) })
     ctx.effect(() => () => {
       for (const follower of this.followers) follower.close()
@@ -71,6 +74,7 @@ export class WorkspaceFeed {
     return {
       items: this.ctx.workspaceRegistry.list().map(workspaceView),
       archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds],
+      recycleBinEntries: this.ctx.workspaceRegistry.recycleBinEntries.map(entry => ({ ...entry })),
     }
   }
 
@@ -111,9 +115,16 @@ export class WorkspaceFeed {
       this.order = nextOrder
       if (orderChanged) this.publish({ type: 'order', workspaceIds: [...state.workspaceIds] })
       const nextArchived = state.archivedSessionIds.map(String)
-      if (!sameStrings(this.archived, nextArchived)) {
+      const nextRecycleBinEntries = state.recycleBinEntries.map(entry => ({ ...entry }))
+      if (!sameStrings(this.archived, nextArchived)
+        || !sameRecycleBinEntries(this.recycleBinEntries, nextRecycleBinEntries)) {
         this.archived = nextArchived
-        this.publish({ type: 'archived', archivedSessionIds: [...state.archivedSessionIds] })
+        this.recycleBinEntries = nextRecycleBinEntries
+        this.publish({
+          type: 'archived',
+          archivedSessionIds: [...state.archivedSessionIds],
+          recycleBinEntries: nextRecycleBinEntries,
+        })
       }
       return
     }
@@ -137,6 +148,18 @@ export class WorkspaceFeed {
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function sameRecycleBinEntries(
+  left: readonly WorkspaceRecycleBinEntry[],
+  right: readonly WorkspaceRecycleBinEntry[],
+): boolean {
+  return left.length === right.length && left.every((entry, index) => {
+    const other = right[index]
+    return other !== undefined
+      && entry.sessionId === other.sessionId
+      && entry.archivedAt === other.archivedAt
+  })
 }
 
 class WorkspaceFollower {

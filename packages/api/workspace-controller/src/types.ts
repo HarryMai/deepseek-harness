@@ -104,15 +104,40 @@ export interface WorkspaceArchiveSessionRequest {
   readonly sessionId: SessionId
 }
 
+/** One archived Session that remains available for recovery. */
+export interface WorkspaceRecycleBinEntry {
+  /** Archived Session identity. */
+  readonly sessionId: SessionId
+  /** ISO-8601 archive instant used to calculate retention. */
+  readonly archivedAt: string
+}
+
+/** Confirmed request to restore one or more archived Sessions. */
+export interface WorkspaceRestoreArchivedSessionsRequest {
+  /** Recycle-bin Session identities to restore atomically. */
+  readonly sessionIds: readonly SessionId[]
+  /** Explicit user confirmation from the presentation layer. */
+  readonly confirmed: true
+}
+
+/** Confirmed request to remove every Session from the active recycle bin. */
+export interface WorkspaceClearRecycleBinRequest {
+  /** Explicit user confirmation from the presentation layer. */
+  readonly confirmed: true
+}
+
 /** Complete archived Session set after a mutation. */
 export interface WorkspaceArchiveValue {
   readonly archivedSessionIds: readonly SessionId[]
+  /** Active recoverable archived Sessions in archive order. */
+  readonly recycleBinEntries: readonly WorkspaceRecycleBinEntry[]
 }
 
 /** Complete reconnect baseline for Workspace browser state. */
 export interface WorkspaceBaseline {
   readonly items: readonly WorkspaceView[]
   readonly archivedSessionIds: readonly SessionId[]
+  readonly recycleBinEntries: readonly WorkspaceRecycleBinEntry[]
 }
 
 /** One ordered Workspace change after a generation's baseline. */
@@ -120,7 +145,11 @@ export type WorkspaceFollowIncrement =
   | { readonly type: 'upsert'; readonly workspace: WorkspaceView }
   | { readonly type: 'remove'; readonly workspaceId: WorkspaceId }
   | { readonly type: 'order'; readonly workspaceIds: readonly WorkspaceId[] }
-  | { readonly type: 'archived'; readonly archivedSessionIds: readonly SessionId[] }
+  | {
+    readonly type: 'archived'
+    readonly archivedSessionIds: readonly SessionId[]
+    readonly recycleBinEntries: readonly WorkspaceRecycleBinEntry[]
+  }
 
 /** Workspace state stream; every generation starts with exactly one baseline. */
 export type WorkspaceFollowFrame =

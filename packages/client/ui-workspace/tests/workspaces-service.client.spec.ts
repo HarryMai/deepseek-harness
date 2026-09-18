@@ -71,6 +71,7 @@ function workspaceState(
   return {
     items,
     archivedSessionIds,
+    recycleBinEntries: [],
     phase,
     state: phase === 'ready' ? 'idle' : 'loading',
     error: null,
@@ -132,6 +133,10 @@ class FakeWorkspaces implements IWorkspaces {
     this.list.update(state => ({
       ...state,
       archivedSessionIds: [...state.archivedSessionIds, sessionId],
+      recycleBinEntries: [
+        ...state.recycleBinEntries,
+        { sessionId, archivedAt: new Date(0).toISOString() },
+      ],
     }))
   }
 
@@ -148,6 +153,21 @@ class FakeWorkspaces implements IWorkspaces {
   archiveSession(sessionId: SessionId): Promise<void> {
     this.archiveCalls.push(sessionId)
     return this.onArchive(sessionId)
+  }
+
+  restoreArchivedSessions(sessionIds: readonly SessionId[]): Promise<void> {
+    const selected = new Set(sessionIds)
+    this.list.update(state => ({
+      ...state,
+      archivedSessionIds: state.archivedSessionIds.filter(sessionId => !selected.has(sessionId)),
+      recycleBinEntries: state.recycleBinEntries.filter(entry => !selected.has(entry.sessionId)),
+    }))
+    return Promise.resolve()
+  }
+
+  clearRecycleBin(): Promise<void> {
+    this.list.update(state => ({ ...state, recycleBinEntries: [] }))
+    return Promise.resolve()
   }
 }
 

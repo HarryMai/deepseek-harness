@@ -30,6 +30,15 @@ export const workspaceRecord = z.object({
 /** One stored workspace record, inferred from {@link workspaceRecord}. */
 export type WorkspaceRecord = z.infer<typeof workspaceRecord>
 
+/** One archived Session that remains recoverable through the recycle bin. */
+export const workspaceRecycleBinEntry = z.object({
+  sessionId: z.string().transform(value => brandString<SessionId>(value)),
+  archivedAt: z.string(),
+})
+
+/** Durable recycle-bin metadata for one archived Session. */
+export type WorkspaceRecycleBinEntry = z.infer<typeof workspaceRecycleBinEntry>
+
 /**
  * Recoverable two-write mutation marker. The marker is persisted before the
  * record/order pair can diverge, so startup can distinguish an interrupted
@@ -45,14 +54,18 @@ const workspacePendingMutation = z.discriminatedUnion('operation', [
  * from one that still needs the header-only history bootstrap;
  * `workspaceIds` is the authoritative display order. `archivedSessionIds` is
  * the registry-global archive set layered over workspace accounting: an
- * archived session keeps its `sessionIds` slot (unarchiving must restore the
- * position), so the set never participates in the one-owner accounting
- * invariant. Defaulted so records written before the field parse unchanged.
+ * archived session keeps its `sessionIds` slot, so the set never participates
+ * in the one-owner accounting invariant. `recycleBinEntries` tracks which
+ * archived Sessions remain recoverable, while `clearedArchivedSessionIds`
+ * prevents a cleared archive from being treated as legacy data on restart.
+ * Every archive field defaults so records written before it parse unchanged.
  */
 export const workspaceDomainState = z.object({
   initialized: z.boolean(),
   workspaceIds: z.array(workspaceId),
   archivedSessionIds: z.array(z.string().transform(value => brandString<SessionId>(value))).default([]),
+  recycleBinEntries: z.array(workspaceRecycleBinEntry).default([]),
+  clearedArchivedSessionIds: z.array(z.string().transform(value => brandString<SessionId>(value))).default([]),
   pendingMutation: workspacePendingMutation.optional(),
 })
 
@@ -70,7 +83,13 @@ export const workspaceDomainSpec = defineDomain({
   version: 2,
   global: {
     schema: workspaceDomainState,
-    initial: { initialized: false, workspaceIds: [], archivedSessionIds: [] },
+    initial: {
+      initialized: false,
+      workspaceIds: [],
+      archivedSessionIds: [],
+      recycleBinEntries: [],
+      clearedArchivedSessionIds: [],
+    },
   },
   tables: { workspaces: domainTable<WorkspaceId, WorkspaceRecord>(workspaceRecord) },
 })

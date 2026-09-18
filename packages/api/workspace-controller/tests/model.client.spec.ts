@@ -5,6 +5,7 @@ import {
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
+  WorkspaceClearRecycleBinRequest,
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
@@ -13,6 +14,7 @@ import type {
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
+  WorkspaceRestoreArchivedSessionsRequest,
   WorkspaceRenameRequest,
   WorkspaceValue,
   WorkspaceId,
@@ -83,7 +85,18 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
   onArchiveSession: (
     request: WorkspaceArchiveSessionRequest,
   ) => Promise<RemoteResult<WorkspaceArchiveValue>> = request =>
-    Promise.resolve(remoteOk({ archivedSessionIds: [request.sessionId] }))
+    Promise.resolve(remoteOk({
+      archivedSessionIds: [request.sessionId],
+      recycleBinEntries: [{ sessionId: request.sessionId, archivedAt: '2026-01-01T00:00:00.000Z' }],
+    }))
+  onRestoreArchivedSessions: (
+    _request: WorkspaceRestoreArchivedSessionsRequest,
+  ) => Promise<RemoteResult<WorkspaceArchiveValue>> = () =>
+    Promise.resolve(remoteOk({ archivedSessionIds: [], recycleBinEntries: [] }))
+  onClearRecycleBin: (
+    _request: WorkspaceClearRecycleBinRequest,
+  ) => Promise<RemoteResult<WorkspaceArchiveValue>> = () =>
+    Promise.resolve(remoteOk({ archivedSessionIds: [], recycleBinEntries: [] }))
 
   create(request: WorkspaceCreateRequest): Promise<RemoteResult<WorkspaceCreateValue>> {
     this.record('create', request)
@@ -115,6 +128,18 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
     return this.onArchiveSession(request)
   }
 
+  restoreArchivedSessions(
+    request: WorkspaceRestoreArchivedSessionsRequest,
+  ): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    this.record('restoreArchivedSessions', request)
+    return this.onRestoreArchivedSessions(request)
+  }
+
+  clearRecycleBin(request: WorkspaceClearRecycleBinRequest): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    this.record('clearRecycleBin', request)
+    return this.onClearRecycleBin(request)
+  }
+
   async *follow(_signal?: AbortSignal): AsyncGenerator<WorkspaceFollowFrame> {}
 
   private record(method: string, request: unknown): void {
@@ -130,8 +155,9 @@ function baseline(
   model: ClientWorkspaceModel,
   items: readonly WorkspaceView[] = [],
   archivedSessionIds: readonly SessionId[] = [],
+  recycleBinEntries: WorkspaceArchiveValue['recycleBinEntries'] = [],
 ): void {
-  model.replaceBaseline({ items, archivedSessionIds })
+  model.replaceBaseline({ items, archivedSessionIds, recycleBinEntries })
 }
 
 describe('ClientWorkspaceModel', () => {
@@ -141,7 +167,10 @@ describe('ClientWorkspaceModel', () => {
     baseline(model, [workspace('old'), workspace('kept')])
     model.upsertView(workspace('new'))
     model.replaceOrder([wid('kept'), wid('new'), wid('old')])
-    model.replaceArchived([sid('hidden')])
+    model.replaceArchived({
+      archivedSessionIds: [sid('hidden')],
+      recycleBinEntries: [{ sessionId: sid('hidden'), archivedAt: '2026-01-01T00:00:00.000Z' }],
+    })
     model.removeView(wid('old'))
     expect(model.getSnapshot()).toMatchObject({ phase: 'ready', state: 'idle', archivedSessionIds: ['hidden'] })
     expect(model.getSnapshot().items.map(item => item.workspaceId)).toEqual(['kept', 'new'])
@@ -303,9 +332,86 @@ describe('ClientWorkspaceModel', () => {
     ))
     await expect(model.archiveSession(sid('missing'))).resolves.toMatchObject({ ok: false })
     expect(model.getSnapshot().archivedSessionIds).toEqual(['archived'])
-    remote.onArchiveSession = request => Promise.resolve(remoteOk({ archivedSessionIds: [request.sessionId] }))
+    remote.onArchiveSession = request => Promise.resolve(remoteOk({
+      archivedSessionIds: [request.sessionId],
+      recycleBinEntries: [{ sessionId: request.sessionId, archivedAt: '2026-02-01T00:00:00.000Z' }],
+    }))
     await expect(model.archiveSession(sid('fresh'))).resolves.toMatchObject({ ok: true })
     expect(model.getSnapshot().archivedSessionIds).toEqual(['fresh'])
+    expect(model.getSnapshot().recycleBinEntries).toEqual([
+      { sessionId: 'fresh', archivedAt: '2026-02-01T00:00:00.000Z' },
+    ])
+
+    remote.onRestoreArchivedSessions = _request => Promise.resolve(remoteOk({
+      archivedSessionIds: [],
+      recycleBinEntries: [],
+    }))
+    await expect(model.restoreArchivedSessions([sid('fresh')])).resolves.toMatchObject({ ok: true })
+    expect(remote.calls).toContainEqual({
+      method: 'restoreArchivedSessions', request: { sessionIds: ['fresh'], confirmed: true },
+    })
+    expect(model.getSnapshot().recycleBinEntries).toEqual([])
+
+    remote.onClearRecycleBin = _request => Promise.resolve(remoteOk({
+      archivedSessionIds: [sid('expired')], recycleBinEntries: [],
+    }))
+    await expect(model.clearRecycleBin()).resolves.toMatchObject({ ok: true })
+    expect(remote.calls).toContainEqual({ method: 'clearRecycleBin', request: { confirmed: true } })
+  })
+
+  it('ignores a delayed archive echo after a newer archive follow frame', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model)
+    const gate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    remote.onArchiveSession = () => gate.promise
+
+    const pending = model.archiveSession(sid('late'))
+    model.replaceArchived({
+      archivedSessionIds: [sid('fresh')],
+      recycleBinEntries: [{ sessionId: sid('fresh'), archivedAt: '2026-03-01T00:00:00.000Z' }],
+    })
+    gate.resolve(remoteOk({
+      archivedSessionIds: [sid('late')],
+      recycleBinEntries: [{ sessionId: sid('late'), archivedAt: '2026-02-01T00:00:00.000Z' }],
+    }))
+    await pending
+
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['fresh'])
+  })
+
+  it('ignores a delayed restore echo after a reconnect baseline', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model, [], [sid('archived')], [
+      { sessionId: sid('archived'), archivedAt: '2026-01-01T00:00:00.000Z' },
+    ])
+    const gate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    remote.onRestoreArchivedSessions = () => gate.promise
+
+    const pending = model.restoreArchivedSessions([sid('archived')])
+    baseline(model, [], [sid('reconnected')], [
+      { sessionId: sid('reconnected'), archivedAt: '2026-03-01T00:00:00.000Z' },
+    ])
+    gate.resolve(remoteOk({ archivedSessionIds: [], recycleBinEntries: [] }))
+    await pending
+
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['reconnected'])
+  })
+
+  it('ignores a delayed clear echo after a later archive mutation', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model)
+    const gate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    remote.onClearRecycleBin = () => gate.promise
+
+    const pending = model.clearRecycleBin()
+    await expect(model.archiveSession(sid('later'))).resolves.toMatchObject({ ok: true })
+    gate.resolve(remoteOk({ archivedSessionIds: [], recycleBinEntries: [] }))
+    await pending
+
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['later'])
   })
 
   it('keeps the newest row and places Workspaces missing from partial orders last', async () => {

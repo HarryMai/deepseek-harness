@@ -233,6 +233,20 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 @Remote('archiveSession') archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue>
 
 /**
+ * Restore explicitly confirmed archived Sessions from the recycle bin.
+ * @param request - Session identities and user confirmation.
+ * @returns the complete resulting archive projection.
+ */
+@Remote('restoreArchivedSessions') restoreArchivedSessions( request: WorkspaceRestoreArchivedSessionsRequest, ): Promise<WorkspaceArchiveValue>
+
+/**
+ * Clear every recoverable archived Session after explicit user confirmation.
+ * @param request - user confirmation.
+ * @returns the complete resulting archive projection.
+ */
+@Remote('clearRecycleBin') clearRecycleBin(request: WorkspaceClearRecycleBinRequest): Promise<WorkspaceArchiveValue>
+
+/**
  * Stream a complete Workspace baseline followed by ordered increments.
  * @param signal - generation cancellation.
  * @returns baseline followed by ordered Workspace increments.
@@ -383,6 +397,21 @@ insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly Workspac
  * @returns resolution after durability.
  */
 archiveSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Restore every named Session atomically from the active recycle bin.
+ * @param sessionIds - recoverable Session identities to restore.
+ * @returns resolution after durability.
+ * @throws {WorkspaceArchivedSessionUnavailableError} when any requested Session is absent.
+ */
+restoreArchivedSessions(sessionIds: readonly SessionId[]): Promise<void>
+
+/**
+ * Make every currently recoverable archived Session permanently unavailable.
+ * Session logs remain intact; only application-level recovery metadata changes.
+ * @returns resolution after durability.
+ */
+clearRecycleBin(): Promise<void>
 
 /**
  * Resolve by canonical directory path without creating or mutating a
