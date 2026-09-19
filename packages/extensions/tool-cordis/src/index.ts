@@ -1,9 +1,5 @@
-/**
- * Model-facing Cordis runtime/package inspection, define, run, stop, and remove tools.
- * @module @deepseek-ai/dsh-tool-cordis
- */
-
-import type { Context } from '@deepseek-ai/cordis'
+/** Model-facing Cordis inspection and temporary dynamic lifecycle tools. */
+import type { Context, Fiber } from '@deepseek-ai/cordis'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import {
   CordisDynamicPackageId, CordisDynamicPluginId,
@@ -14,7 +10,6 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
 import { defineTool, validateJsonSchemaValue, valueSchemaSpecToJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { JsonSchemaNode, ToolExecution, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
-import { missingServices, providedServices } from './inspect.ts'
 import {
   presentDefineCall, presentInspectListCall, presentInspectQueryCall, presentInspectSelfCall, presentRunCall,
   presentStopCall, presentUndefineCall,
@@ -72,7 +67,7 @@ interface DefineCode {
 }
 
 function requireAgent(exec: ToolExecution): Agent {
-  if (exec.agent === undefined) throw new Error('Cordis dynamic tools require an Agent-backed session')
+  if (exec.agent === undefined) throw new Error('Cordis tools require an Agent-backed session')
   return exec.agent
 }
 
@@ -105,23 +100,20 @@ function defineCode(value: DefineCode | string): DefineCode {
     : value
 }
 
-/** Register the Cordis tools and explicit `@pluginId` context injection. */
+/** Register inspection and dynamic lifecycle tools.
+ * @param ctx Agent-scoped registration context.
+ */
 export function apply(ctx: Context): void {
-  ctx.systemPrompt.section({
-    name: 'tool:cordis',
-    order: ctx.systemPrompt.getSectionOrder('TOOL_CORDIS'),
-    text: CORDIS_SYSTEM_PROMPT,
-  })
+  ctx.systemPrompt.section({ name: 'tool:cordis', order: ctx.systemPrompt.getSectionOrder('TOOL_CORDIS'), text: CORDIS_SYSTEM_PROMPT })
   for (const provider of hostInspectProviders(ctx)) {
     ctx.effect(() => ctx.cordisInspect.register(provider), `tool-cordis: inspect ${provider.manifest.id}`)
   }
-
   ctx.tools.register(defineTool({
     name: 'cordis_inspect_list',
     description:
       'List every Cordis Inspect Provider currently known to the Host, including local Host Providers and the latest '
       + 'manifests synchronized from the Client. Each entry includes its platform, purpose, read-only methods, and '
-      + 'input/output schemas. Call this Tool before creating or modifying a Package, then select the provider and '
+      + 'input/output schemas. Call this Tool before writing or configuring a plugin, then select the provider and '
       + 'method for cordis_inspect_query from its result. Do not guess names or treat an Inspect method as a business '
       + 'Service that Plugin code can call.',
     parameters: {},
@@ -139,14 +131,15 @@ export function apply(ctx: Context): void {
     name: 'cordis_inspect_query',
     description:
       'Run a read-only query explicitly declared by an Inspect Provider. platform, provider, and method must come '
-      + 'from cordis_inspect_list, and input must satisfy that method\'s schema. Use this Tool before cordis_define '
+      + 'from cordis_inspect_list, and input must satisfy that method\'s schema. Use this Tool before writing plugin code '
       + 'to read exact Service methods, Event modes, Builtin signatures, Tool schemas, theme tokens, or live Slot '
       + 'trees and props. Host queries run locally. A Client query waits for the first valid page response and '
       + 'remains pending until a page answers or the Tool is cancelled. This Tool cannot invoke business Service '
       + 'methods or modify the runtime. For Service.listService and Event.listEvents, query without input to navigate '
       + 'the compact signature directory, then query the exact service or event for its structured contract and '
-      + 'referenced types. For Slots.listSubTree, query without root to navigate the compact tree, then query the '
-      + 'exact root for its complete registration contract and props.',
+      + 'referenced types. For Slots.listSubTree, query without root to navigate the compact tree, then query an '
+      + 'exact Slot root for its complete registration contract and props; an exact Factory root returns its identity, '
+      + 'scope, and registrant.',
     parameters: {
       platform: { type: 'string', required: true, enum: ['host', 'client'], description: 'Runtime platform that owns the Provider.' },
       provider: { type: 'string', required: true, description: 'Exact Provider ID returned by cordis_inspect_list.' },
@@ -593,4 +586,32 @@ function renderUnavailableReference(id: string): string {
     'Do not claim that it was updated or silently create a replacement Plugin. Tell the user that the reference is currently unavailable.',
     '</cordis_dynamic_plugin_context>',
   ].join('\n')
+}
+
+function withinFiber(fiber: Fiber, root: Fiber): boolean {
+  let current = fiber
+  while (true) {
+    if (current === root) return true
+    const parent = current.parent.fiber
+    if (parent === current) return false
+    current = parent
+  }
+}
+
+function liveImpls(ctx: Context): Array<{ name: string; fiber: Fiber }> {
+  const store = ctx.reflect.store
+  return Object.getOwnPropertySymbols(store)
+    .map(key => store[key])
+    .filter((impl): impl is { name: string; fiber: Fiber } => impl !== undefined)
+}
+
+function providedServices(ctx: Context, fiber: Fiber): string[] {
+  return liveImpls(ctx)
+    .filter(impl => withinFiber(impl.fiber, fiber))
+    .map(impl => impl.name)
+    .sort()
+}
+
+function missingServices(ctx: Context, fiber: Fiber): string[] {
+  return Object.keys(fiber.inject).filter(service => ctx.get(service) === undefined)
 }

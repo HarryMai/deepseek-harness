@@ -1,9 +1,8 @@
-/** Pure replay-safe render intents for Cordis tools. */
-
+/** Pure replay-safe render intents for runtime inspection and dynamic plugins. */
 import type { GenericCallView } from '@deepseek-ai/dsh-tools'
 
 /**
- * Render a runtime-inspection call.
+ * Render a legacy runtime-inspection call.
  * @param args - requested runtime category and optional member name.
  * @returns replay-safe generic call presentation.
  */
@@ -28,7 +27,6 @@ export function presentInspectListCall(): GenericCallView {
 export function presentInspectQueryCall(args: { platform: string; provider: string; method: string }): GenericCallView {
   return { card: 'generic', kind: 'read', title: `Query Cordis ${args.platform} ${args.provider}.${args.method}` }
 }
-
 /**
  * Render layered self-inspection.
  * @param args - optional Plugin and Package identity.
