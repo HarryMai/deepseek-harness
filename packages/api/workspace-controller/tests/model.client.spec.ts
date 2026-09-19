@@ -16,6 +16,7 @@ import type {
   WorkspaceOrderValue,
   WorkspaceRestoreArchivedSessionsRequest,
   WorkspaceRenameRequest,
+  WorkspaceUnarchiveSessionRequest,
   WorkspaceValue,
   WorkspaceId,
   WorkspaceView,
@@ -97,6 +98,10 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
     _request: WorkspaceClearRecycleBinRequest,
   ) => Promise<RemoteResult<WorkspaceArchiveValue>> = () =>
     Promise.resolve(remoteOk({ archivedSessionIds: [], recycleBinEntries: [] }))
+  onUnarchiveSession: (
+    _request: WorkspaceUnarchiveSessionRequest,
+  ) => Promise<RemoteResult<WorkspaceArchiveValue>> = () =>
+    Promise.resolve(remoteOk({ archivedSessionIds: [], recycleBinEntries: [] }))
 
   create(request: WorkspaceCreateRequest): Promise<RemoteResult<WorkspaceCreateValue>> {
     this.record('create', request)
@@ -138,6 +143,11 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
   clearRecycleBin(request: WorkspaceClearRecycleBinRequest): Promise<RemoteResult<WorkspaceArchiveValue>> {
     this.record('clearRecycleBin', request)
     return this.onClearRecycleBin(request)
+  }
+
+  unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    this.record('unarchiveSession', request)
+    return this.onUnarchiveSession(request)
   }
 
   async *follow(_signal?: AbortSignal): AsyncGenerator<WorkspaceFollowFrame> {}
@@ -338,13 +348,13 @@ describe('ClientWorkspaceModel', () => {
     }))
     await expect(model.archiveSession(sid('fresh'))).resolves.toMatchObject({ ok: true })
     expect(model.getSnapshot().archivedSessionIds).toEqual(['fresh'])
+
     expect(model.getSnapshot().recycleBinEntries).toEqual([
       { sessionId: 'fresh', archivedAt: '2026-02-01T00:00:00.000Z' },
     ])
 
     remote.onRestoreArchivedSessions = _request => Promise.resolve(remoteOk({
-      archivedSessionIds: [],
-      recycleBinEntries: [],
+      archivedSessionIds: [], recycleBinEntries: [],
     }))
     await expect(model.restoreArchivedSessions([sid('fresh')])).resolves.toMatchObject({ ok: true })
     expect(remote.calls).toContainEqual({
@@ -412,6 +422,51 @@ describe('ClientWorkspaceModel', () => {
     await pending
 
     expect(model.getSnapshot().archivedSessionIds).toEqual(['later'])
+  })
+
+  it('rejects stale archive requests after a newer request settles', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    const firstGate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    const secondGate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    let request = 0
+    remote.onArchiveSession = () => request++ === 0 ? firstGate.promise : secondGate.promise
+
+    const first = model.archiveSession(sid('first'))
+    const second = model.archiveSession(sid('second'))
+    secondGate.resolve(remoteOk({
+      archivedSessionIds: [sid('first'), sid('second')], recycleBinEntries: [],
+    }))
+    await expect(second).resolves.toMatchObject({ ok: true })
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['first', 'second'])
+    firstGate.resolve(remoteOk({ archivedSessionIds: [sid('first')], recycleBinEntries: [] }))
+    await expect(first).resolves.toMatchObject({ ok: true })
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['first', 'second'])
+  })
+
+  it('keeps the newest archive projection when a clear reply lands after a baseline', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model, [], [sid('first')], [{ sessionId: sid('first'), archivedAt: '2026-01-01T00:00:00.000Z' }])
+    const gate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    remote.onClearRecycleBin = () => gate.promise
+
+    const pending = model.clearRecycleBin()
+    baseline(model, [], [sid('second')], [{ sessionId: sid('second'), archivedAt: '2026-01-02T00:00:00.000Z' }])
+    gate.resolve(remoteOk({ archivedSessionIds: [], recycleBinEntries: [] }))
+    await expect(pending).resolves.toMatchObject({ ok: true })
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['second'])
+  })
+
+  it('keeps a missing-session archive failure unchanged', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model, [], [sid('fresh')], [{ sessionId: sid('fresh'), archivedAt: '2026-01-01T00:00:00.000Z' }])
+    remote.onArchiveSession = () => Promise.resolve(workspaceError(
+      new RemoteError('session/not-found', 'missing', { sessionId: sid('missing') }),
+    ))
+    await expect(model.archiveSession(sid('missing'))).resolves.toMatchObject({ ok: false })
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['fresh'])
   })
 
   it('keeps the newest row and places Workspaces missing from partial orders last', async () => {

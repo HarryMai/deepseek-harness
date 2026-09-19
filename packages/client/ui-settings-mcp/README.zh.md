@@ -84,6 +84,6 @@ kind: "package-reference"
 <details>
 <summary>维护者的工作上下文——点击展开</summary>
 
-不变式伴生项只保留包所有权。此页面把一个 settings namespace 投影为浏览器表单，不拥有可被独立观察的跨插件关系。
+未发布 invariant 伴生项，因为此页面把一个 settings namespace 投影为浏览器表单，不拥有可被独立观察的跨插件关系。
 
 </details>

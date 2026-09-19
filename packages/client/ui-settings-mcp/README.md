@@ -84,6 +84,6 @@ These limits define the page's current transport and secret-handling coverage.
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-The invariant companion reserves package ownership only. This page projects one settings namespace into a browser form and owns no independently observable cross-plugin relationship.
+No invariant companion is published because this page projects one settings namespace into a browser form and owns no independently observable cross-plugin relationship.
 
 </details>

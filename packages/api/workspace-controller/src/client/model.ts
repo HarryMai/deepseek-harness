@@ -15,6 +15,7 @@ import type {
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
   WorkspaceRestoreArchivedSessionsRequest,
+  WorkspaceUnarchiveSessionRequest,
   WorkspaceValue,
   WorkspaceId,
   WorkspaceView,
@@ -66,12 +67,12 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   private orderRequestGeneration = 0
   /** Increments on stream orders so a later remote commit outranks an older unary echo. */
   private orderFrameGeneration = 0
+  /** Last complete order accepted from a baseline, increment, or current unary echo. */
+  private committedOrder: WorkspaceId[] = []
   /** Latest local archive request; only its unary echo may install archive state. */
   private archiveRequestGeneration = 0
   /** Increments on archive baselines and follow frames. */
   private archiveFrameGeneration = 0
-  /** Last complete order accepted from a baseline, increment, or current unary echo. */
-  private committedOrder: WorkspaceId[] = []
   /** Host Workspace ids are never reused, so delayed data cannot resurrect a removed row. */
   private readonly removedIds = new Set<WorkspaceId>()
   private readonly listeners = new Set<() => void>()
@@ -168,6 +169,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
 
   /**
    * Archive one Session and install the returned complete archive set.
+   * A reply superseded by a later archive request or a pushed set installs nothing.
    * @param sessionId - Session to archive.
    * @returns generated Remote result.
    */
@@ -222,6 +224,26 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   }
 
   /**
+   * Restore one active recycle-bin entry through the legacy command and install
+   * the projection. Cleared and expired entries remain archived on the Host.
+   * @param sessionId - Session to unarchive.
+   * @returns generated Remote result.
+   */
+  async unarchiveSession(
+    sessionId: WorkspaceUnarchiveSessionRequest['sessionId'],
+  ): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    const requestGeneration = ++this.archiveRequestGeneration
+    const frameGeneration = this.archiveFrameGeneration
+    const result = await this.remote.unarchiveSession({ sessionId })
+    if (result.ok
+      && requestGeneration === this.archiveRequestGeneration
+      && frameGeneration === this.archiveFrameGeneration) {
+      this.installArchived(result.value)
+    }
+    return result
+  }
+
+  /**
    * Replace the projection from one complete stream-generation baseline.
    * @param baseline - complete Workspace and archive projection.
    */
@@ -253,8 +275,8 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   }
 
   /**
-   * Replace the archive projection from the current follow generation.
-   * @param value - complete Host-confirmed archive and recycle-bin projection.
+   * Replace the archive and recycle-bin projection from the current follow generation.
+   * @param value - complete Host-confirmed archive projection.
    */
   replaceArchived(value: WorkspaceArchiveValue): void {
     this.archiveFrameGeneration++

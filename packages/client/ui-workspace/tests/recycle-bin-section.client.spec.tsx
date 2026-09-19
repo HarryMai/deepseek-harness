@@ -28,17 +28,16 @@ function sessionState(ids: readonly SessionId[]): SessionListState {
     id,
     displayTitle: `会话 ${id}`,
     running: false,
+    retainedBy: {},
     blank: false,
     updatedAt: 0,
   }))
   return {
     ids: sessionIds,
     byId: Object.fromEntries(summaries.map(summary => [summary.id, summary])),
-    current: undefined,
     phase: 'ready',
     subagentsByParent: {},
     jobsBySession: {},
-    currentAddress: undefined,
   }
 }
 
@@ -67,7 +66,8 @@ function mount(ids: readonly SessionId[] = [sid('one'), sid('two')]) {
     }),
     useWorkspaces: hook(workspaceState(ids)),
     useSessions: hook(sessionState(ids)),
-    useSessionPendingInteraction: unusedHook,
+    useSessionStatus: unusedHook,
+    useSessionRetainInfo: unusedHook,
     usePanelInfo,
     useResource,
     saveRetentionDays,

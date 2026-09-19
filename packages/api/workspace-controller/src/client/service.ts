@@ -70,6 +70,13 @@ export interface IWorkspaces {
   /** Clear every recoverable Session from the recycle bin. */
   clearRecycleBin(): Promise<void>
   /**
+   * Restore one active recycle-bin entry through the legacy archive command.
+   * Cleared and expired entries remain archived; user-visible recovery uses the
+   * confirmed recycle-bin methods instead.
+   * @param sessionId - Session to unarchive.
+   */
+  unarchiveSession(sessionId: SessionId): Promise<void>
+  /**
    * Move a Session within one Workspace account.
    * @param workspaceId - owning Workspace.
    * @param sessionId - Session to move.
@@ -131,6 +138,11 @@ export class WorkspaceController extends Service implements IWorkspaces {
   async clearRecycleBin(): Promise<void> {
     const result = await this.model.clearRecycleBin()
     if (!result.ok) throw commandError('recycle bin clear', result.error)
+  }
+
+  async unarchiveSession(sessionId: SessionId): Promise<void> {
+    const result = await this.model.unarchiveSession(sessionId)
+    if (!result.ok) throw commandError('session unarchive', result.error)
   }
 
   async insertSessionBefore(

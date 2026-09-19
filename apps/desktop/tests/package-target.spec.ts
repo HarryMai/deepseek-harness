@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   desktopElectronBuilderArguments,
+  desktopElectronBuilderEnvironment,
   isDesktopPackageSigned,
   parseDesktopPackageInvocation,
   resolveDesktopPackageTarget,
@@ -21,32 +22,26 @@ describe('desktop package target', () => {
     })
   })
 
-  it('allows a macOS host to build either macOS target', () => {
-    expect(resolveDesktopPackageTarget('mac-arm64', 'darwin', 'x64').arch).toBe('arm64')
+  it('allows an Apple Silicon host to build the Intel target through Rosetta', () => {
     expect(resolveDesktopPackageTarget('mac-x64', 'darwin', 'arm64').arch).toBe('x64')
   })
 
   it('rejects unsupported targets and hosts before building', () => {
     expect(() => resolveDesktopPackageTarget('linux-x64', 'linux', 'x64')).toThrow(/unsupported target/u)
     expect(() => resolveDesktopPackageTarget('win-x64', 'darwin', 'arm64')).toThrow(/Windows x64/u)
+    expect(() => resolveDesktopPackageTarget('mac-arm64', 'darwin', 'x64')).toThrow(/Apple Silicon/u)
     expect(() => resolveDesktopPackageTarget('mac-arm64', 'linux', 'arm64')).toThrow(/macOS/u)
     expect(() => resolveDesktopPackageTarget('mac-x64', 'darwin', 'ppc64')).toThrow(/Rosetta/u)
   })
 
-  it('maps the mac command to both macOS architectures', () => {
-    expect(parseDesktopPackageInvocation(['mac'], 'darwin', 'arm64').targets.map(target => target.name))
-      .toEqual(['mac-arm64', 'mac-x64'])
-    expect(parseDesktopPackageInvocation(['mac'], 'darwin', 'x64').targets.map(target => target.name))
-      .toEqual(['mac-arm64', 'mac-x64'])
-    expect(parseDesktopPackageInvocation(['win'], 'win32', 'x64').targets.map(target => target.name))
-      .toEqual(['win-x64'])
-    expect(parseDesktopPackageInvocation([], 'darwin', 'arm64').targets.map(target => target.name))
-      .toEqual(['mac-arm64'])
+  it('parses installer and unpacked-directory invocations', () => {
+    expect(parseDesktopPackageInvocation(['mac-arm64'], 'darwin', 'arm64').directory).toBe(false)
+    expect(parseDesktopPackageInvocation(['mac-arm64', '--dir'], 'darwin', 'arm64').directory).toBe(true)
+    expect(parseDesktopPackageInvocation([], 'darwin', 'arm64').target.name).toBe('mac-arm64')
     expect(parseDesktopPackageInvocation(['--prepare-only'], 'darwin', 'arm64').prepareOnly).toBe(true)
-    expect(() => parseDesktopPackageInvocation(['win'], 'darwin', 'arm64')).toThrow(/Windows x64/u)
-    expect(() => parseDesktopPackageInvocation(['mac'], 'win32', 'x64')).toThrow(/macOS/u)
-    expect(() => parseDesktopPackageInvocation(['mac-arm64'], 'darwin', 'arm64')).toThrow(/expected mac, win/u)
-    expect(() => parseDesktopPackageInvocation(['mac', 'win'], 'darwin', 'arm64'))
+    expect(parseDesktopPackageInvocation(['--check'], 'darwin', 'arm64').check).toBe(true)
+    expect(parseDesktopPackageInvocation(['win-x64', '--check', '--unsigned'], 'win32', 'x64')).toMatchObject({ check: true, unsigned: true })
+    expect(() => parseDesktopPackageInvocation(['mac-arm64', 'mac-x64'], 'darwin', 'arm64'))
       .toThrow(/at most one target/u)
   })
 
@@ -65,7 +60,59 @@ describe('desktop package target', () => {
     expect(desktopElectronBuilderArguments(target, true)).toContain('--dir')
   })
 
-  it('keeps Windows signing fields out of build and seed preparation subprocesses', () => {
+  it('accepts unsigned Windows artifacts and rejects other targets or preparation-only use', () => {
+    expect(parseDesktopPackageInvocation(['win-x64', '--unsigned'], 'win32', 'x64').unsigned).toBe(true)
+    expect(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64').unsigned).toBe(false)
+    expect(parseDesktopPackageInvocation(['--unsigned', '--dir'], 'win32', 'x64')).toMatchObject({
+      unsigned: true, directory: true,
+    })
+    expect(() => parseDesktopPackageInvocation(['mac-arm64', '--unsigned'], 'darwin', 'arm64'))
+      .toThrow(/requires win-x64/u)
+    expect(() => parseDesktopPackageInvocation(['--unsigned', '--prepare-only'], 'win32', 'x64'))
+      .toThrow(/cannot use --prepare-only/u)
+  })
+
+  it('selects signing from the target certificate selector', () => {
+    const mac = resolveDesktopPackageTarget('mac-arm64', 'darwin', 'arm64')
+    const windows = resolveDesktopPackageTarget('win-x64', 'win32', 'x64')
+    expect(isDesktopPackageSigned(mac, {})).toBe(false)
+    expect(isDesktopPackageSigned(mac, {
+      DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Example Company (TEAMID1234)',
+    })).toBe(true)
+    expect(isDesktopPackageSigned(windows, {})).toBe(false)
+    expect(isDesktopPackageSigned(windows, {
+      DSH_DESKTOP_WINDOWS_CER_FILE: 'C:\\release\\server.cer',
+    })).toBe(true)
+  })
+
+  it('removes ambient certificate inputs for unsigned builds and overrides an inherited signing mode', () => {
+    const environment = {
+      DSH_DESKTOP_APP_ID: 'com.example.desktop',
+      DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'token-secret',
+      CSC_LINK: 'private.pfx',
+      CSC_KEY_PASSWORD: 'secret',
+      WIN_CSC_LINK: 'windows.pfx',
+      CSC_IDENTITY_AUTO_DISCOVERY: 'true',
+      DSH_DESKTOP_UNSIGNED: '1',
+    }
+    expect(desktopElectronBuilderEnvironment(environment, true)).toEqual({
+      DSH_DESKTOP_APP_ID: 'com.example.desktop',
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false',
+      DSH_DESKTOP_UNSIGNED: '1',
+    })
+    expect(desktopElectronBuilderEnvironment(environment, false)).toEqual({ ...environment, DSH_DESKTOP_UNSIGNED: '0' })
+  })
+
+  it.each([false, true])('pins the Windows archive filter for the NSIS decoder (unsigned: %s)', (unsigned) => {
+    expect(desktopElectronBuilderEnvironment({
+      DSH_DESKTOP_TARGET_PLATFORM: 'win32', ELECTRON_BUILDER_7Z_FILTER: 'ARM64',
+    }, unsigned).ELECTRON_BUILDER_7Z_FILTER).toBe('BCJ')
+    expect(desktopElectronBuilderEnvironment({
+      DSH_DESKTOP_TARGET_PLATFORM: 'darwin', ELECTRON_BUILDER_7Z_FILTER: 'ARM',
+    }, unsigned).ELECTRON_BUILDER_7Z_FILTER).toBe('ARM')
+  })
+
+  it('keeps Windows signing fields out of build and runtime preparation subprocesses', () => {
     expect(withoutWindowsSigningEnvironment({
       DSH_DESKTOP_WINDOWS_CER_FILE: 'C:\\release\\server.cer',
       DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'token-secret',
@@ -91,18 +138,5 @@ describe('desktop package target', () => {
       DOWNLOAD_PROD_COS_BUCKET: 'production-download-bucket',
       DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
     })
-  })
-
-  it('uses each target certificate field to select signing', () => {
-    const mac = resolveDesktopPackageTarget('mac-arm64', 'darwin', 'arm64')
-    const windows = resolveDesktopPackageTarget('win-x64', 'win32', 'x64')
-    expect(isDesktopPackageSigned(mac, {})).toBe(false)
-    expect(isDesktopPackageSigned(mac, {
-      DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Example Company (TEAMID1234)',
-    })).toBe(true)
-    expect(isDesktopPackageSigned(windows, {})).toBe(false)
-    expect(isDesktopPackageSigned(windows, {
-      DSH_DESKTOP_WINDOWS_CER_FILE: 'C:\\release\\server.cer',
-    })).toBe(true)
   })
 })

@@ -1,19 +1,5 @@
-/**
- * Restricted-process spawning: anonymous pipes for stdio, STARTUPINFOW with
- * STARTF_USESTDHANDLES, CreateProcessAsUserW under the restricted token, then
- * asynchronous pipe draining and exit waiting. Console isolation
- * (CREATE_NO_WINDOW / CREATE_NEW_CONSOLE) is intentionally absent: under this
- * restriction scheme hidden-console children die with STATUS_DLL_INIT_FAILED
- * (0xC0000142) — verified empirically, see win32-abi.ts. Stdio redirection is
- * pipe-based and unaffected; the child shares the host console. When the host
- * has NO console (the desktop shell), the caller passes options.desktop — the
- * dedicated hidden confinement desktop from desktop.ts — which is pinned as
- * STARTUPINFOW.lpDesktop so console-subsystem descendants initialize
- * deterministically instead of dying intermittently against WinSta0\Default.
- * @module @deepseek-ai/dsh-sandbox-windows-acl/spawn
- */
+/** Restricted-token adapters over the shared Win32 process owner. */
 
-import koffi from 'koffi'
 import {
   spawnInheritedJobProcess,
   spawnPipedProcess,
@@ -33,55 +19,6 @@ export interface SpawnedNative extends SpawnedPipedProcess {}
 /** Restricted-token child assigned to a kill-on-close Job. */
 export interface SpawnedInherited extends SpawnedJobProcess {}
 
-const PVOID = koffi.pointer('void')
-// STARTUPINFOW has a four-byte cb followed by padding, then lpReserved and
-// lpDesktop pointers. The shared process owner encodes lpDesktop as str16;
-// this adapter replaces that field with the caller-owned UTF-16 buffer.
-const STARTUPINFO_LP_DESKTOP_OFFSET = 16
-
-type CreateProcessAsUserW = Win32Bindings['createProcessAsUserW']
-
-/**
- * Pin a caller-selected desktop into the shared STARTUPINFOW allocation.
- * @param api - ACL/token binding table.
- * @param desktop - full window-station and desktop name, or undefined.
- * @param action - shared process operation to run with the adapted table.
- * @returns the shared operation's result.
- */
-function withDesktop<T>(api: Win32Bindings, desktop: string | undefined, action: (api: Win32Bindings) => T): T {
-  if (desktop === undefined) return action(api)
-  const desktopBuffer = Buffer.from(`${desktop}\0`, 'utf16le')
-  const createProcessAsUserW: CreateProcessAsUserW = (
-    token,
-    applicationName,
-    commandLine,
-    processAttributes,
-    threadAttributes,
-    inheritHandles,
-    creationFlags,
-    environment,
-    currentDirectory,
-    startupInfo,
-    processInfo,
-  ) => {
-    koffi.encode(startupInfo, STARTUPINFO_LP_DESKTOP_OFFSET, PVOID, desktopBuffer)
-    return api.createProcessAsUserW(
-      token,
-      applicationName,
-      commandLine,
-      processAttributes,
-      threadAttributes,
-      inheritHandles,
-      creationFlags,
-      environment,
-      currentDirectory,
-      startupInfo,
-      processInfo,
-    )
-  }
-  return action({ ...api, createProcessAsUserW })
-}
-
 /**
  * Spawn a restricted-token child with piped stdout/stderr.
  * @param api - ACL/token binding table.
@@ -92,11 +29,9 @@ function withDesktop<T>(api: Win32Bindings, desktop: string | undefined, action:
 export function spawnSandboxed(
   api: Win32Bindings,
   token: NativePtr,
-  options: { command: string; args: readonly string[]; cwd: string; desktop?: string | undefined },
+  options: { command: string; args: readonly string[]; cwd: string },
 ): SpawnedNative {
-  const { desktop, ...processOptions } = options
-  return withDesktop(api, desktop, scopedApi =>
-    spawnPipedProcess(scopedApi, { ...processOptions, token }))
+  return spawnPipedProcess(api, { ...options, token })
 }
 
 /**
@@ -109,11 +44,9 @@ export function spawnSandboxed(
 export function spawnSandboxedInherited(
   api: Win32Bindings,
   token: NativePtr,
-  options: { command: string; args: readonly string[]; cwd: string; desktop?: string | undefined },
+  options: { command: string; args: readonly string[]; cwd: string; controlFileDescriptor?: 7 },
 ): SpawnedInherited {
-  const { desktop, ...processOptions } = options
-  return withDesktop(api, desktop, scopedApi =>
-    spawnInheritedJobProcess(scopedApi, { ...processOptions, token }))
+  return spawnInheritedJobProcess(api, { ...options, token })
 }
 
 /**

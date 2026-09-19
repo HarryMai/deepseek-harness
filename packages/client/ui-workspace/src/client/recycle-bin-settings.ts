@@ -59,7 +59,10 @@ export class RecycleBinSettingsController {
     this.unsubscribe()
   }
 
-  /** @returns renderer hooks and persistence action. */
+  /**
+   * Expose the renderer store and persistence action for a mounted settings section.
+   * @returns renderer hooks and persistence action.
+   */
   inject(): RecycleBinSettingsFace {
     return {
       hooks: { recycleBinSettings: this.store },

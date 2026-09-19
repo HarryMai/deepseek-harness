@@ -17,9 +17,7 @@ import type { ISession } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
-import {
-  RemoteError, SlotTestRuntime, TestRemote, stubSettingsScope, usePinnedBrowserLanguages,
-} from '@deepseek-ai/dsh-client-test-runtime'
+import { RemoteError, SlotTestRuntime, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-workspace/client'
 
@@ -40,21 +38,10 @@ async function createRuntime(): Promise<SlotTestRuntime> {
   // The rename flow never picks a directory; the namespace only has to be there
   // for ui-workspace's inject to settle.
   const directoryPicker = {}
-  Object.assign(new TestRemote(runtime.ctx), { directoryPicker })
-  runtime.ctx.provide('remote.directoryPicker', directoryPicker as never)
+  runtime.remote.provideNamespaces({ directoryPicker })
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
-  const recycleBinScope = stubSettingsScope<{ retentionDays: number }>()
-  recycleBinScope.publish({
-    status: 'ready',
-    value: { retentionDays: 30 },
-    base: { retentionDays: 30 },
-    user: {},
-    revision: 0,
-    writable: true,
-  })
-  runtime.ctx.provide('settingsScope', { bind: vi.fn(() => recycleBinScope.scope) } as never)
   return runtime
 }
 
@@ -75,6 +62,7 @@ describe('session rename through the assembled browser', () => {
       summary: { title: '旧标题', displayTitle: '旧标题', cwd: '/w/alpha' },
       session: { rename },
     })
+    await runtime.sessions.retainFor(runtime.ctx, SID, { source: 'mainView' }).ready
     await runtime.workspaces.update((draft) => {
       draft.items = [{
         workspaceId: 'w1' as WorkspaceId, title: 'alpha', path: '/w/alpha',
@@ -122,6 +110,7 @@ describe('session rename through the assembled browser', () => {
       summary: { title: '旧标题', displayTitle: '旧标题', cwd: '/w/alpha' },
       session: { rename },
     })
+    await runtime.sessions.retainFor(runtime.ctx, SID, { source: 'mainView' }).ready
     await runtime.workspaces.update((draft) => {
       draft.items = [{
         workspaceId: 'w1' as WorkspaceId, title: 'alpha', path: '/w/alpha',

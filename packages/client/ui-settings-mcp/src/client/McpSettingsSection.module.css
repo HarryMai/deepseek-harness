@@ -60,7 +60,7 @@
   display: grid;
   gap: 8px;
   padding: 14px;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
 }
@@ -68,7 +68,7 @@
 .importPanel textarea {
   box-sizing: border-box;
   width: 100%;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   padding: 8px;
   color: var(--dsw-alias-label-primary);
@@ -98,7 +98,7 @@
   display: grid;
   gap: 14px;
   padding: 16px;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
 }
@@ -130,7 +130,7 @@
 .fields textarea {
   box-sizing: border-box;
   width: 100%;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   padding: 8px;
   color: var(--dsw-alias-label-primary);
@@ -165,7 +165,7 @@
 .arrayRow input {
   box-sizing: border-box;
   width: 100%;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   padding: 8px;
   color: var(--dsw-alias-label-primary);

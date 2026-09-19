@@ -13,6 +13,7 @@
     { "path": "../cli" },
     { "path": "../../packages/host/webserver" },
     { "path": "../../packages/subprocess/subprocess-local" },
+    { "path": "../../packages/boot/app-boot" },
     { "path": "../../packages/util/home-paths" }
   ]
 }

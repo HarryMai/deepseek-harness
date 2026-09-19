@@ -9,9 +9,9 @@ kind: "package-reference"
 
 ## 概述
 
-浏览器经由 `dsh-host-webserver` 通过 HTTP 访问 web GUI：一个 `node:http` 服务器，其他插件在其中注册具名路由、upgrade 路由、index 启动输入与一个回退 handler。它不了解任何 harness 概念，也不提供任何文件服务——`/api` 桥接、插件 bundle、HMR（热模块替换）事件流与 SPA dist 都属于注册它们的插件。路由匹配顺序固定不变：先在整张表中匹配精确 route，再匹配最长前缀，最后交给回退 handler。它只服务浏览器；Electron 通过 `file://` 加载 dist，并经 IPC 桥接承载 fetch。
+`dsh-host-webserver` 为浏览器提供 HTTP 服务器，供插件注册具名路由、upgrade 路由、index 注入、转换和唯一回退 handler；它不提供文件服务。匹配顺序为精确匹配、最长前缀、回退。Electron 在独立 Node 进程中使用 Web profile，并在启用 sandbox 的 renderer 中加载回环 URL。
 
-随附的 Electron 应用在独立的普通 Node 进程中启动原样不变的 Web profile，把本服务器绑定到由 OS 分配的回环端口，并在启用 sandbox 的 renderer 中加载该 URL。该包从不打印内容；URL 行属于 shell。
+服务器会立即监听，本包不打印内容；URL 行由 shell 负责。它不内置 TLS、认证或来源策略，因此只有在路由持有者提供所需保护时才应选择非回环 host。
 
 ## 目录
 
@@ -40,7 +40,7 @@ kind: "package-reference"
 
 `host` 只接受两个值：`127.0.0.1`（默认姿态，仅回环）与 `0.0.0.0`（有意向网络开放——服务器自身不携带 TLS、认证或来源策略）。`port` 为 0 时请求 OS 分配端口；之后用 `ctx.webServer.port` 读取正在监听的端口。
 
-设置 `compression: 'gzip'` 可以包装符合条件的 socket-backed 响应，而不改变 route API。客户端必须接受 gzip，且媒体类型必须可压缩；已知长度小于 `compressionThresholdBytes` 的响应保持未压缩，未知长度 stream 则立即符合条件。已有编码、`Cache-Control: no-transform`、range 响应、SSE、ZIP 与已打包的 `.gz` Worker image 均保持不变。随附 Web bundle 使用 level 1 与 1024 字节阈值；其他组合默认不压缩。
+设置 `compression: 'gzip'` 可以包装符合条件的 socket-backed 响应，而不改变 route API。客户端必须接受 gzip，且媒体类型必须可压缩；已知长度小于 `compressionThresholdBytes` 的响应保持未压缩，未知长度的流则立即符合条件。已有编码、`Cache-Control: no-transform`、range 响应、SSE（Server-Sent Events）、ZIP 与已打包的 `.gz` Worker image 均保持不变。随附 Web bundle 使用 level 1 与 1024 字节阈值；其他组合默认不压缩。
 
 ### 注册路由
 
@@ -48,7 +48,7 @@ kind: "package-reference"
 
 ### 回退席位
 
-`registerFallback(handler)` 认领所有未被具名 route 命中的请求的唯一个 handler。第二次注册会抛错；没有注册回退时服务器回答 404。在随附的 Web 组合中，[SPA dist 服务器](../frontend-static/README.zh.md)拥有该席位，并对其渲染的每个 index 响应调用 `renderIndex`。
+`registerFallback(handler)` 认领所有未被具名 route 命中的请求的唯一一个 handler。第二次注册会抛错；没有注册回退时服务器回答 404。在随附的 Web 组合中，[SPA dist 服务器](../frontend-static/README.zh.md)拥有该席位，并对其渲染的每个 index 响应调用 `renderIndex`。
 
 index 启动输入分两层。`collectIndexInjections()` 收集一张全新的注入表——每次调用发一次 `webserver/index-inject` 事件，每个订阅方推入其当前行——`renderIndex(html)` 先把这些行渲染进 index.html 正文，再按注册顺序应用原始 `tapIndex(transform)` 转换。`script-preload` 行会渲染为 classic script 的提示性 preload 链接。静态部署会在启动 payload 中携带同一批行。`applyIndexTaps(html)` 只应用原始转换；它是任何行都无法表达的标记的逃生口。
 
@@ -66,7 +66,7 @@ index 启动输入分两层。`collectIndexInjections()` 收集一张全新的�
 
 ### 设计理念
 
-本包是一个不带任何 harness 词汇的普通路由注册表：`WebServer` 继承 Cordis `Service`，持有三张路由表、回退槽位、原始 index 转换列表，以及 index 渲染器经其收集行的 `webserver/index-inject` 事件。index 渲染每次响应组合两层：`renderIndex` 先把包含提示性 `script-preload` 行的全新注入表渲染进正文，再按注册顺序应用原始转换；`applyIndexTaps` 只运行转换。upgrade handler 拥有协议握手与连接内容；webserver 只交付原始 socket 与 request。`host` 与 `port` getter 暴露其他插件据以自适应的组合期事实（例如 directory-picker 选择器）。
+本包是一个不带任何 harness 词汇的普通路由注册表：`WebServer` 继承 Cordis `Service`，持有三张路由表、回退 slot、原始 index 转换列表，以及 index 渲染器经其收集行的 `webserver/index-inject` 事件。index 渲染每次响应组合两层：`renderIndex` 先把包含提示性 `script-preload` 行的全新注入表渲染进正文，再按注册顺序应用原始转换；`applyIndexTaps` 只运行转换。upgrade handler 拥有协议握手与连接内容；webserver 只交付原始 socket 与 request。`host` 与 `port` getter 暴露其他插件据以自适应的组合期事实（例如 directory-picker 选择器）。
 
 ### 匹配与生命周期
 
@@ -77,7 +77,7 @@ index 启动输入分两层。`collectIndexInjections()` 收集一张全新的�
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `WebServer` 服务：路由表、回退席位、index 渲染、匹配、生命周期 |
-| — | 不发布运行时不变式伴生入口；路由注册与释放通过同一服务修改同一张路由表，register/dispose 探针只会重复执行实现。真实路由与 HMR 测试负责该行为。 |
+| — | 不发布运行时不变式伴生入口；路由注册与释放通过同一服务修改同一张路由表，register/dispose 探针只会重复执行实现。真实路由与 HMR 测试负责验证该行为。 |
 | [`src/injections.ts`](src/injections.ts) | 结构化 `IndexInjection` 行与 `renderIndexInjections` 行渲染 |
 
 </details>

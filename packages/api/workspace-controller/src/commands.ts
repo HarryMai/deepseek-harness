@@ -14,7 +14,6 @@ import { workspaceView } from './feed.ts'
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
-  WorkspaceClearRecycleBinRequest,
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
@@ -24,6 +23,8 @@ import type {
   WorkspaceOrderValue,
   WorkspaceRenameRequest,
   WorkspaceRestoreArchivedSessionsRequest,
+  WorkspaceClearRecycleBinRequest,
+  WorkspaceUnarchiveSessionRequest,
   WorkspaceValue,
 } from './types.ts'
 
@@ -187,13 +188,27 @@ export class WorkspaceCommands {
 
   /**
    * Remove every recoverable Session from the active recycle bin.
-   * @param _request - explicit user confirmation.
+   * @param request - explicit user confirmation.
    * @returns the complete resulting archive and recycle-bin projection.
    */
   clearRecycleBin(request: WorkspaceClearRecycleBinRequest): Promise<WorkspaceArchiveValue> {
     if (!hasRecycleBinConfirmation(request)) return Promise.reject(recycleBinConfirmationRequired('clear'))
     return this.enqueue(async () => {
       await this.ctx.workspaceRegistry.clearRecycleBin()
+      return this.archiveValue()
+    })
+  }
+
+  /**
+   * Restore one active recycle-bin entry through the legacy archive command.
+   * Cleared and expired entries remain archived; product callers must use the
+   * confirmed recycle-bin command for user-visible recovery.
+   * @param request - Session identity to unarchive.
+   * @returns the complete resulting archive and recycle-bin projection.
+   */
+  unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue> {
+    return this.enqueue(async () => {
+      await this.ctx.workspaceRegistry.unarchiveSession(request.sessionId)
       return this.archiveValue()
     })
   }

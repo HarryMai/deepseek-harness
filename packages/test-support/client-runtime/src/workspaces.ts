@@ -174,6 +174,27 @@ export class TestWorkspaces implements IWorkspaces {
       await (stub() as Promise<void>)
       return
     }
-    await this.update((draft) => { draft.recycleBinEntries = [] })
+    await this.update((draft) => {
+      draft.recycleBinEntries = []
+    })
+  }
+
+  /**
+   * Unarchive a Session through the legacy command (recorded). The default
+   * also removes recycle-bin metadata so the fixture matches the Host.
+   * @param sessionId - session to unarchive.
+   */
+  async unarchiveSession(sessionId: SessionId): Promise<void> {
+    this.calls.push({ method: 'unarchiveSession', args: [sessionId] })
+    const stub = this.stubs.get('unarchiveSession')
+    if (stub !== undefined) {
+      await (stub(sessionId) as Promise<void>)
+      return
+    }
+    await this.update((draft) => {
+      if (!draft.recycleBinEntries.some(entry => entry.sessionId === sessionId)) return
+      draft.archivedSessionIds = draft.archivedSessionIds.filter(id => id !== sessionId)
+      draft.recycleBinEntries = draft.recycleBinEntries.filter(entry => entry.sessionId !== sessionId)
+    })
   }
 }

@@ -183,6 +183,106 @@ Host service backing the generated `ctx.remote.directoryPicker` namespace. The s
 
 Source: [`packages/api/workspace-controller/src/directory-picker.ts`](../../packages/api/workspace-controller/src/directory-picker.ts)
 
+<a id="ctxterminalcontroller--terminalcontroller"></a>
+
+### `ctx.terminalController` — `TerminalController`
+
+Typed Remote control of transient Session-owned terminal processes.
+
+```ts cordis-catalog
+/**
+ * Read the Session working directory and terminal limits without resolving a shell.
+ * @param agent - Session owner supplied by the Gateway.
+ * @param signal - request cancellation.
+ * @returns the Session workspace directory and terminal limits.
+ */
+@Remote environment(agent: Agent, signal: AbortSignal): TerminalEnvironment
+
+/**
+ * Discover installed shells in the Session's execution environment.
+ * @param agent - Session owner supplied by the Gateway.
+ * @param signal - request cancellation.
+ * @returns verified profiles, with the configured or system default first.
+ */
+@Remote shells(agent: Agent, signal: AbortSignal): Promise<TerminalShell[]>
+
+/**
+ * List retained terminals without resolving or activating an Agent.
+ * @param sessionId - displayed Session identity, including offline history.
+ * @returns terminals retained for this Host lifetime.
+ */
+@Remote list(sessionId: SessionId): WebTerminalInfo[]
+
+/**
+ * Allocate a user shell once for a caller-generated identity, without Agent sandbox or approval restrictions.
+ * @param agent - Session owner supplied by the Gateway.
+ * @param request - initial dimensions and idempotency identity.
+ * @param signal - allocation cancellation; committed terminals survive disconnection.
+ * @returns the existing or newly committed terminal.
+ */
+@Remote async create(agent: Agent, request: TerminalCreateRequest, signal: AbortSignal): Promise<WebTerminalInfo>
+
+/**
+ * Retain an existing terminal for a window without activating its Agent or taking input control.
+ * @param sessionId - owning Session identity, including an inactive saved layout.
+ * @param id - retained Host terminal identity.
+ * @param signal - physical Remote stream cancellation.
+ * @returns a hold acknowledgement followed by an open lifetime stream.
+ */
+@Remote({ mode: 'stream' }) retain(sessionId: SessionId, id: WebTerminalId, signal: AbortSignal): AsyncIterable<TerminalRetentionFrame>
+
+/**
+ * Attach to a terminal without binding its process lifetime to the transport.
+ * @param agent - Session owner supplied by the Gateway.
+ * @param id - terminal identity.
+ * @param attachmentId - new exclusive input attachment.
+ * @param signal - physical stream cancellation.
+ * @returns screen recovery followed by output and metadata changes.
+ */
+@Remote({ mode: 'stream' }) follow(agent: Agent, id: WebTerminalId, attachmentId: TerminalAttachmentId, signal: AbortSignal): AsyncIterable<TerminalFrame>
+
+/**
+ * Deliver raw input, including Tab completion and control characters.
+ * @param agent - Session owner supplied by the Gateway.
+ * @param id - terminal identity.
+ * @param attachmentId - current writable attachment.
+ * @param data - input bytes represented as UTF-8 text.
+ * @returns after provider input acceptance.
+ */
+@Remote async write(agent: Agent, id: WebTerminalId, attachmentId: TerminalAttachmentId, data: string): Promise<void>
+
+/**
+ * Update the dimensions of the PTY and recovery screen.
+ * @param agent - Session owner supplied by the Gateway.
+ * @param id - terminal identity.
+ * @param attachmentId - current writable attachment.
+ * @param cols - column count.
+ * @param rows - row count.
+ * @returns after the resize completes.
+ */
+@Remote async resize(agent: Agent, id: WebTerminalId, attachmentId: TerminalAttachmentId, cols: number, rows: number): Promise<void>
+
+/**
+ * Rename a terminal without changing its shell.
+ * @param agent - Session owner supplied by the Gateway.
+ * @param id - terminal identity.
+ * @param title - nonempty display title, at most 120 characters.
+ */
+@Remote rename(agent: Agent, id: WebTerminalId, title: string): void
+
+/**
+ * Close an identity to future creation and kill its process range; repeated closes succeed.
+ * @param agent - Session owner supplied by the Gateway.
+ * @param id - terminal identity.
+ * @returns after provider cleanup succeeds. A failure retains the terminal for retry.
+ */
+@Remote async close(agent: Agent, id: WebTerminalId): Promise<void>
+```
+
+Types: [Agent](core.zh.md) · [SessionId](core.zh.md)
+
+Source: [`packages/api/terminal-controller/src/index.ts`](../../packages/api/terminal-controller/src/index.ts)
+
 <a id="ctxworkspacecontroller--workspacecontroller"></a>
 
 ### `ctx.workspaceController` — `WorkspaceController`
@@ -245,6 +345,14 @@ Host service backing the generated `ctx.remote.workspace` namespace.
  * @returns the complete resulting archive projection.
  */
 @Remote('clearRecycleBin') clearRecycleBin(request: WorkspaceClearRecycleBinRequest): Promise<WorkspaceArchiveValue>
+
+/**
+ * Restore one active recycle-bin entry through the legacy command.
+ * Cleared and expired entries remain archived.
+ * @param request - Session identity to unarchive.
+ * @returns the complete resulting archive projection.
+ */
+@Remote('unarchiveSession') unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue>
 
 /**
  * Stream a complete Workspace baseline followed by ordered increments.
@@ -412,6 +520,15 @@ restoreArchivedSessions(sessionIds: readonly SessionId[]): Promise<void>
  * @returns resolution after durability.
  */
 clearRecycleBin(): Promise<void>
+
+/**
+ * Unarchive one recoverable Session through the legacy compatibility command.
+ * A cleared or expired archive remains archived and its tombstone is kept;
+ * only an active recycle-bin entry can be restored by this unconfirmed verb.
+ * @param sessionId - The recoverable Session to unarchive.
+ * @returns resolution after durability.
+ */
+unarchiveSession(sessionId: SessionId): Promise<void>
 
 /**
  * Resolve by canonical directory path without creating or mutating a

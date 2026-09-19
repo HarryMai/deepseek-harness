@@ -18,6 +18,7 @@ describe('desktop development launcher modes', () => {
     expect(launch.environment.DSH_HOME).toBe(resolve('/tmp/shared-dsh-home'))
     expect(launch.environment).toMatchObject({
       DSH_HOME: resolve('/tmp/shared-dsh-home'),
+      DSH_DESKTOP_DSH_DIR: '/tmp/desktop-project',
       DSH_DESKTOP_DEV_PROJECT_DIR: '/tmp/desktop-project',
       DSH_DESKTOP_NODE_BINARY: process.execPath,
       DSH_DESKTOP_OPEN_DEVTOOLS: '0',
@@ -32,6 +33,14 @@ describe('desktop development launcher modes', () => {
 
     expect(launch.home).toBe(join(homedir(), '.dsh'))
     expect(launch.environment.DSH_HOME).toBe(launch.home)
+  })
+
+  it('retains an explicit DSH runtime override for the compatibility launcher', () => {
+    const launch = resolveDevelopmentLaunch('compatibility', '/tmp/desktop-project', {
+      DSH_DESKTOP_DSH_DIR: '/tmp/explicit-runtime',
+    })
+
+    expect(launch.environment.DSH_DESKTOP_DSH_DIR).toBe('/tmp/explicit-runtime')
   })
 
   it('keeps isolated development directories in the regular launcher mode', () => {

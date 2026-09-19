@@ -1,6 +1,11 @@
-/** Model guidance shared by the Cordis dynamic-plugin tools. */
+/** Model guidance for runtime inspection and temporary dynamic plugins. */
+export const CORDIS_SYSTEM_PROMPT = `# Harness runtime inspection
 
-export const CORDIS_SYSTEM_PROMPT = `# Dynamic Cordis Plugins
+Use cordis_inspect_list to discover Host and Client providers, then cordis_inspect_query to read exact Service, Event, Tool, Theme or Slot APIs. These tools are read-only; queries do not invoke business methods.
+
+Persistent plugin or MCP configuration belongs in Plugin Manager. Temporary, session-scoped extensions may use the dynamic Cordis lifecycle tools below; they do not write repository or profile files.
+
+# Dynamic Cordis Plugins
 
 Dynamic Cordis plugins temporarily extend the current DSH process. A Plugin uses apply(ctx) to consume Services, listen to Events, provide Services, register model Tools, or register browser UI in Slots.
 
@@ -33,7 +38,7 @@ Before creating, modifying, or repairing a Plugin, load the cordis-plugin-develo
 
 - Inspect and Catalog data only confirm capabilities, names, signatures, types, and registration protocols before code is written; they do not replace business APIs.
 - Query Service.listService and Event.listEvents without input to choose from their compact signature directories, then query the exact service or event before using it. Exact queries return the structured contract and only its referenced types.
-- Tool arguments are JSON values: pass cordis_inspect_query input, plugin, and code as objects directly, never as JSON text produced by JSON.stringify.
+- Pass structured Cordis arguments as objects. For compatibility with recorded calls, cordis_define also accepts JSON text for plugin and code only when it decodes and passes the exact field schema; malformed or mismatched text is rejected.
 - At runtime, a Plugin must call real Services or listen to real Events. Do not cache, display, or depend on Inspect results as business data.
 
 ## Identity, versions, and approval

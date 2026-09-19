@@ -10,25 +10,16 @@ import {
   rmSync,
   symlinkSync,
   unlinkSync,
+  writeFileSync,
 } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createDevelopmentProjectMetadata } from '../src/project-manager.ts'
 import type { DesktopRelease } from '../src/release.ts'
-import { workspaceRuntimeClosure, type WorkspaceRuntimePackage } from '../src/workspace-runtime.ts'
-
-const CLI_PACKAGE = '@deepseek-ai/dsh'
-const DESKTOP_HOST_PACKAGE = '@deepseek-ai/dsh-desktop-host'
+import { DESKTOP_RUNTIME_FILE, type DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
 
 interface PackageManifest {
   readonly name?: string
   readonly version?: string
-  readonly main?: string
-  readonly files?: readonly string[]
-  readonly os?: readonly string[]
-  readonly cpu?: readonly string[]
-  readonly dependencies?: Readonly<Record<string, string>>
-  readonly optionalDependencies?: Readonly<Record<string, string>>
-  readonly peerDependencies?: Readonly<Record<string, string>>
 }
 
 /** Inputs whose locations differ between the launcher and isolated tests. */
@@ -73,7 +64,8 @@ function linkDirectory(source: string, destination: string): void {
   symlinkSync(realpathSync(source), destination, process.platform === 'win32' ? 'junction' : 'dir')
 }
 
-function mirrorDependencyLinks(sourceRoot: string, destinationRoot: string): void {
+function mirrorDependencyLinks(sourceRoot: string, destinationRoot: string): string[] {
+  const names: string[] = []
   for (const entry of readdirSync(sourceRoot, { withFileTypes: true })) {
     if (entry.name === '.bin') continue
     const source = join(sourceRoot, entry.name)
@@ -84,79 +76,17 @@ function mirrorDependencyLinks(sourceRoot: string, destinationRoot: string): voi
         if (!scoped.isDirectory() && !scoped.isSymbolicLink()) continue
         const scopedSource = join(source, scoped.name)
         if (scoped.isSymbolicLink() && !existsSync(scopedSource)) continue
-        if (!existsSync(join(scopedSource, 'package.json'))) continue
         linkDirectory(scopedSource, join(destinationRoot, entry.name, scoped.name))
+        names.push(`${entry.name}/${scoped.name}`)
       }
       continue
     }
     if ((entry.isDirectory() || entry.isSymbolicLink()) && !(entry.isSymbolicLink() && !existsSync(source))) {
       linkDirectory(source, join(destinationRoot, entry.name))
+      names.push(entry.name)
     }
   }
-}
-
-function runtimePackage(path: string, manifest: PackageManifest): WorkspaceRuntimePackage | undefined {
-  if (manifest.name === undefined) return
-  return {
-    path,
-    manifest: {
-      name: manifest.name,
-      ...(manifest.files === undefined ? {} : { files: manifest.files }),
-      ...(manifest.os === undefined ? {} : { os: manifest.os }),
-      ...(manifest.cpu === undefined ? {} : { cpu: manifest.cpu }),
-      ...(manifest.dependencies === undefined ? {} : { dependencies: manifest.dependencies }),
-      ...(manifest.optionalDependencies === undefined ? {} : { optionalDependencies: manifest.optionalDependencies }),
-      ...(manifest.peerDependencies === undefined ? {} : { peerDependencies: manifest.peerDependencies }),
-    },
-  }
-}
-
-function linkedWorkspacePackages(dependencyDir: string): Map<string, WorkspaceRuntimePackage> {
-  const packages = new Map<string, WorkspaceRuntimePackage>()
-  const scope = join(dependencyDir, '@deepseek-ai')
-  if (!existsSync(scope)) return packages
-  for (const entry of readdirSync(scope, { withFileTypes: true })) {
-    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
-    const path = join(scope, entry.name)
-    if (!existsSync(path)) continue
-    const manifestPath = join(path, 'package.json')
-    if (!existsSync(manifestPath)) continue
-    const workspacePackage = runtimePackage(path, readManifest(manifestPath))
-    if (workspacePackage !== undefined) packages.set(workspacePackage.manifest.name, workspacePackage)
-  }
-  return packages
-}
-
-function assertRuntimeBuildArtifacts(
-  options: DevelopmentProjectOptions,
-  cliManifest: PackageManifest,
-  hostManifest: PackageManifest,
-): void {
-  const packages = linkedWorkspacePackages(options.dependencyDir)
-  const cli = runtimePackage(options.cliDir, { ...cliManifest, name: CLI_PACKAGE })
-  const host = runtimePackage(options.hostDir, { ...hostManifest, name: DESKTOP_HOST_PACKAGE })
-  if (cli === undefined || host === undefined) throw new Error('desktop development: required workspace package metadata is missing')
-  packages.set(CLI_PACKAGE, cli)
-  packages.set(DESKTOP_HOST_PACKAGE, host)
-
-  const runtimePackages = new Map<string, WorkspaceRuntimePackage>()
-  for (const root of [CLI_PACKAGE, DESKTOP_HOST_PACKAGE]) {
-    for (const workspacePackage of workspaceRuntimeClosure(root, packages)) {
-      runtimePackages.set(workspacePackage.manifest.name, workspacePackage)
-    }
-  }
-  const missing = [...runtimePackages.values()]
-    .flatMap((workspacePackage) => {
-      const entry = readManifest(join(workspacePackage.path, 'package.json')).main
-      if (entry === undefined || existsSync(join(workspacePackage.path, entry))) return []
-      return [`${workspacePackage.manifest.name}/${entry}`]
-    })
-    .sort((left, right) => left.localeCompare(right))
-  if (missing.length > 0) {
-    throw new Error(
-      `desktop development: required workspace build artifacts are missing: ${missing.join(', ')}; run pnpm run build`,
-    )
-  }
+  return names
 }
 
 /**
@@ -166,9 +96,9 @@ function assertRuntimeBuildArtifacts(
  */
 export function prepareDevelopmentProject(options: DevelopmentProjectOptions): string {
   const cliManifest = readManifest(join(options.cliDir, 'package.json'))
-  if (cliManifest.name !== CLI_PACKAGE || cliManifest.version !== options.release.version) {
+  if (cliManifest.name !== '@deepseek-ai/dsh' || cliManifest.version !== options.release.version) {
     throw new Error(
-      `desktop development: apps/cli must be ${CLI_PACKAGE}@${options.release.version}, found `
+      `desktop development: apps/cli must be @deepseek-ai/dsh@${options.release.version}, found `
       + `${String(cliManifest.name)}@${String(cliManifest.version)}`,
     )
   }
@@ -176,27 +106,33 @@ export function prepareDevelopmentProject(options: DevelopmentProjectOptions): s
     throw new Error('desktop development: workspace dependency links are missing; run pnpm install')
   }
   const hostManifest = readManifest(join(options.hostDir, 'package.json'))
-  if (hostManifest.name !== DESKTOP_HOST_PACKAGE || hostManifest.version !== options.release.version) {
+  if (hostManifest.name !== '@deepseek-ai/dsh-desktop-host' || hostManifest.version !== options.release.version) {
     throw new Error(
-      `desktop development: apps/desktop-host must be ${DESKTOP_HOST_PACKAGE}@${options.release.version}, found `
+      `desktop development: apps/desktop-host must be @deepseek-ai/dsh-desktop-host@${options.release.version}, found `
       + `${String(hostManifest.name)}@${String(hostManifest.version)}`,
     )
   }
   if (!existsSync(join(options.hostDir, 'lib', 'index.js'))) {
     throw new Error('desktop development: apps/desktop-host/lib/index.js is missing; run pnpm run build')
   }
-  assertRuntimeBuildArtifacts(options, cliManifest, hostManifest)
 
   removeOwnedPath(options.projectDir)
   createDevelopmentProjectMetadata(options.projectDir, options.release)
   const destinationModules = join(options.projectDir, 'node_modules')
   mkdirSync(destinationModules, { recursive: true })
-  mirrorDependencyLinks(options.dependencyDir, destinationModules)
+  const names = mirrorDependencyLinks(options.dependencyDir, destinationModules)
   const dshLink = join(destinationModules, '@deepseek-ai', 'dsh')
   removeOwnedPath(dshLink)
   linkDirectory(options.cliDir, dshLink)
   const hostLink = join(destinationModules, '@deepseek-ai', 'dsh-desktop-host')
   removeOwnedPath(hostLink)
   linkDirectory(options.hostDir, hostLink)
+  const sharedPackages = [...new Set([...names, '@deepseek-ai/dsh', '@deepseek-ai/dsh-desktop-host'])].flatMap((name) => {
+    const manifest = readManifest(join(destinationModules, name, 'package.json'))
+    return typeof manifest.version === 'string' ? [{ name, version: manifest.version, path: `node_modules/${name}` }] : []
+  })
+  const runtime: DesktopRuntimeDescriptor = { schemaVersion: 1, release: options.release,
+    platform: process.platform, arch: process.arch, sharedPackages, files: [] }
+  writeFileSync(join(options.projectDir, DESKTOP_RUNTIME_FILE), `${JSON.stringify(runtime, undefined, 2)}\n`)
   return options.projectDir
 }

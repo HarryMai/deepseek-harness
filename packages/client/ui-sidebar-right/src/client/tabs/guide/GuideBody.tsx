@@ -8,8 +8,12 @@
  * entry of its own, so there is always exactly one body and the shipped one
  * cannot be outvoted by accident.
  *
- * The shipped guide is the entry capsules every registered type contributed,
- * centred in the body, and nothing else. Picking one opens that type as a page
+ * The shipped guide is a muted compass over the entry capsules every
+ * registered type contributed, centred in the body, and nothing else — no
+ * heading, as a browser start page shows its doors without a caption. While
+ * at most four entries are listed, a capsule with a description shows it
+ * under the title; a longer list drops every description to stay light.
+ * Picking one opens that type as a page
  * in this tab's place, so the guide is a doorway rather than a page that stays
  * open.
  */
@@ -17,6 +21,7 @@ import type { ReactNode } from 'react'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { ChainRenderOpts, HookContextOf, InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SidebarRightGuideBox } from '../../tab-registry.ts'
+import { CompassGlyph, CubeGlyph } from './GuideTitle.tsx'
 import css from './GuideBody.module.css'
 
 /** What the guide body needs from its host beyond the framework shares. */
@@ -25,15 +30,23 @@ export interface GuideInjected {
   readonly hooks: { readonly guideEntries: ObservableSnapshot<readonly SidebarRightGuideBox[]> }
 }
 
-/** The guide body's composed props: the tab it draws, its chain child, and the entries. Its words are the entries' own. */
+/** The guide body's composed props: the tab it draws, its chain child, and the entries. */
 export type GuideBodyProps =
   & PropsRuntime<'sidebar.right.pane.tab'>
-  & PropsRenderSlots<'sidebar.right.tab.guide'>
+  & PropsRenderSlots<'sidebar.right.tab.guide' | 'sidebar.right.tab.guide.entry'>
   & InjectFace<GuideInjected>
 
-/** One entry capsule: the contributing type's glyph and title. */
-function EntryBox({ entry, onPick }: { entry: SidebarRightGuideBox; onPick: (entry: SidebarRightGuideBox) => void }): ReactNode {
-  const Icon = entry.icon
+/** Entry count past which the guide drops the capsules' descriptions to stay light. */
+const MAX_DESCRIBED_ENTRIES = 4
+
+/** One entry capsule: the contributing type's glyph and title, and its description while the guide is short. */
+function EntryBox({ entry, described, onPick }: {
+  entry: SidebarRightGuideBox
+  described: boolean
+  onPick: (entry: SidebarRightGuideBox) => void
+}): ReactNode {
+  const Icon = entry.icon ?? CubeGlyph
+  const description = described ? entry.description?.() : undefined
   return (
     <button
       type="button"
@@ -41,33 +54,49 @@ function EntryBox({ entry, onPick }: { entry: SidebarRightGuideBox; onPick: (ent
       data-sidebar-right-guide-entry={entry.kind}
       onClick={() => { onPick(entry) }}
     >
-      {Icon !== undefined && <span className={css.entryIcon}><Icon size={16} /></span>}
-      <span className={css.entryTitle}>{entry.title()}</span>
+      {/* The glyph rides the capsule's height: 22 beside a bare title, 26 beside two lines. */}
+      <span className={css.entryIcon}>
+        <Icon size={description === undefined ? 22 : 26} className={entry.icon === undefined ? css.placeholderInk : undefined} />
+      </span>
+      <span className={css.entryText}>
+        <span className={css.entryTitle}>{entry.title()}</span>
+        {description !== undefined && <span className={css.entryDescription}>{description}</span>}
+      </span>
     </button>
   )
 }
 
-/** The shipped guide: the doors out of the column. */
-function ShippedGuide({ entries, onPick }: {
-  entries: readonly SidebarRightGuideBox[]
-  onPick: (entry: SidebarRightGuideBox) => void
-}): ReactNode {
+/** The shipped guide: the tab's own compass over the doors out of the column. */
+function ShippedGuide({ children }: { children: ReactNode }): ReactNode {
   return (
     <div className={css.guide} data-sidebar-right-guide>
-      {/* Keyed by position in the ordered list: one type may contribute several capsules, and `order` is not unique. */}
-      {entries.map((entry, index) => <EntryBox key={`${entry.kind}:${index}`} entry={entry} onPick={onPick} />)}
+      <span className={css.hero} aria-hidden="true"><CompassGlyph size={56} /></span>
+      {children}
     </div>
   )
 }
 
 /** The guide tab's body, replaceable through its chain child. */
-export function GuideBody({ useTabInfo, useGuideEntries, renderSlotChain }: GuideBodyProps): ReactNode {
+export function GuideBody({ useTabInfo, useGuideEntries, renderSlot, renderSlotChain }: GuideBodyProps): ReactNode {
   const { tab } = useTabInfo()
   const entries = useGuideEntries(entries => entries)
   const options = {
     hookContext: useTabInfo,
     fallback: (
-      <ShippedGuide entries={entries} onPick={(entry) => { tab.actions.openTab(entry.kind, { replaceTab: true }) }} />
+      <ShippedGuide>{entries.map((entry) => {
+        const described = entries.length <= MAX_DESCRIBED_ENTRIES
+        const description = described ? entry.description?.() : undefined
+        return <div key={JSON.stringify([entry.providerId, entry.id])} className={css.entryCell}>
+          {renderSlot('sidebar.right.tab.guide.entry', {
+            entryId: entry.id, kind: entry.kind, title: entry.title(),
+            ...description === undefined ? {} : { description },
+          }, {
+            entryKey: entry.providerId, hookContext: useTabInfo,
+            fallback: <EntryBox entry={entry} described={described}
+              onPick={(selected) => { tab.actions.openTab(selected.kind, { replaceTab: true }) }} />,
+          })}
+        </div>
+      })}</ShippedGuide>
     ),
   } satisfies ChainRenderOpts & { hookContext: HookContextOf<'sidebar.right.tab.guide'> }
   return renderSlotChain('sidebar.right.tab.guide', {}, options)

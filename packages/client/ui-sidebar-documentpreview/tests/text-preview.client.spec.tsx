@@ -20,14 +20,12 @@ import { CodeBody } from '../src/client/code/CodeBody.tsx'
 import type { DocumentPreviewDefinition } from '../src/client/document/registry.ts'
 import { TextBody } from '../src/client/text/TextBody.tsx'
 import { PLAIN_BODY_ID } from '../src/client/text/index.ts'
-import { ABSOLUTE_PATH, ADDRESS, PATH, SESSION, TAB_ID, failure, harness, page, settle } from './fixtures.client.ts'
+import { documentSlots, ABSOLUTE_PATH, ADDRESS, PATH, SESSION, TAB_ID, failure, harness, page, settle } from './fixtures.client.ts'
 
 const LINE_HEIGHT = 20
-const CODE_TOOLBAR_HEIGHT = 36
 
 const originals = {
   offsetTop: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetTop'),
-  offsetHeight: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight'),
   scrollTop: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTop'),
 }
 
@@ -46,13 +44,6 @@ beforeAll(() => {
     configurable: true,
     get(this: HTMLElement & { __scrollTop?: number }) { return this.__scrollTop ?? 0 },
     set(this: HTMLElement & { __scrollTop?: number }, value: number) { this.__scrollTop = value },
-  })
-  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
-    configurable: true,
-    get(this: HTMLElement) {
-      return this.parentElement?.classList.contains('md-code-block') === true
-        && this.parentElement.firstElementChild === this ? CODE_TOOLBAR_HEIGHT : 0
-    },
   })
 })
 
@@ -97,7 +88,7 @@ function codeProps(h: ReturnType<typeof harness>, navigation: { params?: unknown
   return {
     ...props,
     useDocumentPreviews: selector => selector([definition]),
-    renderSlot: (_key, owner) => <CodeBody {...props} {...owner as unknown as OwnerOf<'sidebar.right.tab.document'>} t={key => key} />,
+    renderSlot: documentSlots((_key, owner) => <CodeBody {...props} {...owner as unknown as OwnerOf<'sidebar.right.tab.document'>} t={key => key} />),
   }
 }
 
@@ -105,6 +96,10 @@ function body(container: HTMLElement): HTMLElement {
   const element = container.querySelector<HTMLElement>('[data-textpreview-body]')
   if (element === null) throw new Error('expected the file body')
   return element
+}
+
+function scrollport(container: HTMLElement): HTMLElement {
+  return container.querySelector<HTMLElement>('[data-code-block-content]') ?? body(container)
 }
 
 function lines(container: HTMLElement): string[] {
@@ -250,7 +245,7 @@ describe('TextPreview — pages', () => {
     const next = Promise.withResolvers<Awaited<ReturnType<typeof h.read>>>()
     h.read.mockReturnValueOnce(next.promise)
     click(view.container, '[data-textpreview-more]')
-    expect(view.getByRole('status').textContent).toBe('loading')
+    expect(view.getByRole('status').getAttribute('aria-label')).toBe('loading')
     expect(lines(view.container)).toEqual(['held\n'])
     await act(async () => { next.resolve(page(2, ['tail'], true)); await next.promise })
     expect(view.queryByRole('status')).toBeNull()
@@ -431,8 +426,31 @@ describe('TextPreview — the file\'s metadata', () => {
 })
 
 describe('TextPreview — navigation and view', () => {
+  it('rebinds scrolling when the selected Slot body is replaced without changing the renderer id', async () => {
+    const h = harness({ 1: page(1, ['a', 'b', 'c'], true) })
+    const code = codeProps(h, { revision: 1 })
+    const fallback: TextPreviewProps = { ...code, renderSlot: documentSlots(() => <div data-late-renderer />) }
+    const view = render(<TextPreview {...fallback} />)
+    await settle()
+    const outer = body(view.container)
+    fireEvent.scroll(outer, { target: { scrollTop: 120 } })
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.scrollTop).toBe(120)
+
+    view.rerender(<TextPreview {...code} />)
+    const inner = scrollport(view.container)
+    expect(inner).not.toBe(outer)
+    expect(inner.scrollTop).toBe(120)
+    fireEvent.scroll(inner, { target: { scrollTop: 240 } })
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.scrollTop).toBe(240)
+
+    view.rerender(<TextPreview {...fallback} />)
+    expect(outer.scrollTop).toBe(240)
+    fireEvent.scroll(outer, { target: { scrollTop: 360 } })
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.scrollTop).toBe(360)
+  })
+
   it.each([
-    ['Code', 'code', 2 * LINE_HEIGHT - CODE_TOOLBAR_HEIGHT],
+    ['Code', 'code', 2 * LINE_HEIGHT],
     ['Plain text', PLAIN_BODY_ID, 2 * LINE_HEIGHT],
   ])('retries a Markdown line navigation after switching to %s', async (_name, rendererId, expectedScrollTop) => {
     PendingIntersectionObserver.instances = []
@@ -447,12 +465,12 @@ describe('TextPreview — navigation and view', () => {
     const props: TextPreviewProps = {
       ...base,
       useDocumentPreviews: selector => selector(definitions),
-      renderSlot: (_key, owner, opts) => {
+      renderSlot: documentSlots((_key, owner, opts) => {
         const documentOwner = owner as unknown as OwnerOf<'sidebar.right.tab.document'>
         if (opts.entryKey === 'code') return <CodeBody {...base} {...documentOwner} t={key => key} />
         if (opts.entryKey === PLAIN_BODY_ID) return <TextBody {...base} {...documentOwner} />
         return <div data-test-no-lines />
-      },
+      }),
     }
     const view = render(<TextPreview {...props} />)
     await settle()
@@ -460,7 +478,7 @@ describe('TextPreview — navigation and view', () => {
     expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBeUndefined()
     act(() => { h.instance.actions.selected(TAB_ID, rendererId) })
     await waitFor(() => { expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBe(1) })
-    expect(body(view.container).scrollTop).toBe(expectedScrollTop)
+    expect(scrollport(view.container).scrollTop).toBe(expectedScrollTop)
   })
 
   it('lands on code lines before and after syntax highlighting is ready', async () => {
@@ -472,13 +490,20 @@ describe('TextPreview — navigation and view', () => {
     expect(view.container.querySelector('[data-code-preview] pre.shiki')).toBeNull()
     expect(view.container.querySelectorAll('[data-code-preview] pre .line')).toHaveLength(3)
     expect(body(view.container).scrollTop).toBe(0)
+    const codeScrollport = scrollport(view.container)
+    expect(codeScrollport.scrollTop).toBe(LINE_HEIGHT)
     expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBe(1)
+    fireEvent.scroll(body(view.container), { target: { scrollTop: 300 } })
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.scrollTop).toBe(LINE_HEIGHT)
+    fireEvent.scroll(codeScrollport, { target: { scrollTop: 300 } })
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.scrollTop).toBe(300)
 
     const block = view.container.querySelector('[data-code-preview] .md-code-block')!
     act(() => { PendingIntersectionObserver.instances[0]!.intersect(block) })
     await waitFor(() => { expect(view.container.querySelector('[data-code-preview] pre.shiki')).not.toBeNull() })
+    expect(scrollport(view.container)).toBe(codeScrollport)
     view.rerender(<TextPreview {...codeProps(h, { params: { line: 3 }, revision: 2 })} />)
-    expect(body(view.container).scrollTop).toBe(2 * LINE_HEIGHT - CODE_TOOLBAR_HEIGHT)
+    expect(codeScrollport.scrollTop).toBe(2 * LINE_HEIGHT)
     expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBe(2)
   })
 

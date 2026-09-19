@@ -126,6 +126,11 @@ export interface WorkspaceClearRecycleBinRequest {
   readonly confirmed: true
 }
 
+/** Session requested for compatibility restoration from the archived list. */
+export interface WorkspaceUnarchiveSessionRequest {
+  readonly sessionId: SessionId
+}
+
 /** Complete archived Session set after a mutation. */
 export interface WorkspaceArchiveValue {
   readonly archivedSessionIds: readonly SessionId[]

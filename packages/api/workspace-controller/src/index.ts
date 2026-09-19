@@ -19,6 +19,7 @@ import type {
   WorkspaceOrderValue,
   WorkspaceRenameRequest,
   WorkspaceRestoreArchivedSessionsRequest,
+  WorkspaceUnarchiveSessionRequest,
   WorkspaceValue,
 } from './types.ts'
 
@@ -131,6 +132,17 @@ export class WorkspaceController extends TypertRemoteService {
   @Remote('clearRecycleBin')
   clearRecycleBin(request: WorkspaceClearRecycleBinRequest): Promise<WorkspaceArchiveValue> {
     return this.commands.clearRecycleBin(request)
+  }
+
+  /**
+   * Restore one active recycle-bin entry through the legacy command.
+   * Cleared and expired entries remain archived.
+   * @param request - Session identity to unarchive.
+   * @returns the complete resulting archive projection.
+   */
+  @Remote('unarchiveSession')
+  unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue> {
+    return this.commands.unarchiveSession(request)
   }
 
   /**

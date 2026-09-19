@@ -151,6 +151,11 @@ describe('WorkspaceController commands', () => {
     vi.spyOn(ctx.workspaceRegistry, 'archiveSession').mockRejectedValueOnce(archiveFailure)
     await expect(controller.archiveSession({ sessionId: SessionId('session') }))
       .rejects.toBe(archiveFailure)
+
+    const unarchiveFailure = new Error('unarchive storage failed')
+    vi.spyOn(ctx.workspaceRegistry, 'unarchiveSession').mockRejectedValueOnce(unarchiveFailure)
+    await expect(controller.unarchiveSession({ sessionId: SessionId('session') }))
+      .rejects.toBe(unarchiveFailure)
   })
 
   it('resolves queued Workspace identities when their operation starts', async () => {
@@ -224,6 +229,11 @@ describe('WorkspaceController commands', () => {
       })
     await expect(controller.archiveSession({ sessionId: SessionId('unknown') }))
       .rejects.toMatchObject({ code: 'session/not-found' })
+    await expect(controller.unarchiveSession({ sessionId: session.id }))
+      .resolves.toEqual({ archivedSessionIds: [], recycleBinEntries: [] })
+    // Unarchive is idempotent: an id that is not archived is not an error.
+    await expect(controller.unarchiveSession({ sessionId: session.id }))
+      .resolves.toEqual({ archivedSessionIds: [], recycleBinEntries: [] })
   })
 
   it('rejects unconfirmed recycle-bin mutations before touching the registry', async () => {
@@ -246,6 +256,22 @@ describe('WorkspaceController commands', () => {
 
     expect(restore).not.toHaveBeenCalled()
     expect(clear).not.toHaveBeenCalled()
+    expect(ctx.workspaceRegistry.archivedSessionIds).toEqual([session.id])
+  })
+
+  it('keeps cleared archives closed through the legacy unarchive command', async () => {
+    const { controller, ctx, root } = await harness()
+    const created = await controller.create({ path: stageDir(root, 'legacy-cleared') })
+    const session = ctx.sessions.create(SessionId('legacy-cleared-session'), {
+      meta: { cwd: created.workspace.path },
+    })
+    await controller.archiveSession({ sessionId: session.id })
+    await controller.clearRecycleBin({ confirmed: true })
+
+    await expect(controller.unarchiveSession({ sessionId: session.id })).resolves.toEqual({
+      archivedSessionIds: [session.id],
+      recycleBinEntries: [],
+    })
     expect(ctx.workspaceRegistry.archivedSessionIds).toEqual([session.id])
   })
 
@@ -360,6 +386,11 @@ describe('WorkspaceController follow', () => {
       type: 'archived',
       archivedSessionIds: [session.id],
       recycleBinEntries: [{ sessionId: session.id, archivedAt: expect.any(String) as unknown as string }],
+    })
+    // Unarchive rides the same complete-set increment: no new frame type.
+    await controller.unarchiveSession({ sessionId: session.id })
+    await expect(nextFrame(iterator)).resolves.toEqual({
+      type: 'archived', archivedSessionIds: [], recycleBinEntries: [],
     })
     await controller.delete({ workspaceId: second.workspace.workspaceId })
     await expect(nextFrame(iterator)).resolves.toEqual({

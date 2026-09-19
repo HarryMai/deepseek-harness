@@ -9,9 +9,9 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Browsers reach the web GUI over HTTP through `dsh-host-webserver`: a `node:http` server where other plugins register named routes, upgrade routes, index startup inputs, and one fallback handler. It knows no harness concepts and serves no files — the `/api` bridge, plugin bundles, the HMR event stream, and the SPA dist belong to the plugins that register them. Route matching is fixed: exact over the whole table, then longest prefix, then the fallback handler. It serves browsers only; Electron loads dist over `file://` and carries fetch over an IPC bridge.
+`dsh-host-webserver` gives browsers an HTTP server where plugins register named routes, upgrade routes, index injections, transforms, and one fallback handler; it serves no files. Matching is exact, then longest prefix, then fallback. Electron uses the Web profile in a separate Node process and loads the loopback URL in its sandboxed renderer.
 
-The shipped Electron application starts the unchanged Web profile in a separate ordinary Node process, binds this server to an OS-assigned loopback port, and loads that URL in its sandboxed renderer. This package never prints; the URL line belongs to the shell.
+The server listens immediately, and this package never prints; the shell owns the URL line. It has no built-in TLS, authentication, or origin policy, so choose a non-loopback host only when route owners provide the required protection.
 
 ## Table of Contents
 

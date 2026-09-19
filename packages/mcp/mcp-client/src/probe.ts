@@ -9,8 +9,7 @@
  * @module @deepseek-ai/dsh-mcp-client/probe
  */
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { ListToolsResultSchema } from '@modelcontextprotocol/sdk/types.js'
+import { Client } from '@modelcontextprotocol/client'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { MAX_TIMER_DELAY_MS, deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
@@ -220,19 +219,13 @@ function awaitWithSignal<T>(start: () => Promise<T>, signal: AbortSignal): Promi
   })
 }
 
-/** List every MCP tools page without installing any of them into the harness registry. */
+/** List every MCP tool without installing it into the harness registry. */
 async function listToolCount(client: Client, signal: AbortSignal): Promise<number> {
-  let cursor: string | undefined
-  let count = 0
-  do {
-    const page = await awaitWithSignal(() => client.request(
-      { method: 'tools/list', ...cursor === undefined ? {} : { params: { cursor } } },
-      ListToolsResultSchema,
-    ), signal)
-    count += page.tools.length
-    cursor = page.nextCursor
-  } while (cursor !== undefined)
-  return count
+  const result = await awaitWithSignal(
+    () => client.listTools(undefined, { signal, cacheMode: 'refresh' }),
+    signal,
+  )
+  return result.tools.length
 }
 
 /** Narrow JSON-like input without consulting inherited properties. */

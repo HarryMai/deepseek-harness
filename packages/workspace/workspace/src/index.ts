@@ -371,6 +371,28 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Unarchive one recoverable Session through the legacy compatibility command.
+   * A cleared or expired archive remains archived and its tombstone is kept;
+   * only an active recycle-bin entry can be restored by this unconfirmed verb.
+   * @param sessionId - The recoverable Session to unarchive.
+   * @returns resolution after durability.
+   */
+  unarchiveSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      // The chain slot serializes against every other registry write, so this
+      // check-then-write pair cannot interleave with a concurrent archive.
+      const state = this.requireState()
+      const hasRecycleBinEntry = state.recycleBinEntries.some(entry => entry.sessionId === sessionId)
+      if (!hasRecycleBinEntry) return
+      await this.setState({
+        ...state,
+        archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+        recycleBinEntries: state.recycleBinEntries.filter(entry => entry.sessionId !== sessionId),
+      })
+    })
+  }
+
+  /**
    * Whether a session is live, header-indexed, or present in a fresh
    * persistence listing. Only a definite miss returns false — a failing
    * `sessionPersistence.list()` propagates so storage faults never
