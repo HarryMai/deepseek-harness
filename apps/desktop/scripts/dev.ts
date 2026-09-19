@@ -109,6 +109,7 @@ export function resolveDevelopmentLaunch(
       environment: {
         ...environment,
         DSH_HOME: home,
+        DSH_DESKTOP_DSH_DIR: environment.DSH_DESKTOP_DSH_DIR ?? projectDir,
         DSH_DESKTOP_DEV_PROJECT_DIR: projectDir,
         DSH_DESKTOP_NODE_BINARY: process.execPath,
         DSH_DESKTOP_OPEN_DEVTOOLS: '0',

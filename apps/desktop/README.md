@@ -83,7 +83,7 @@ Recovery waits for Host shutdown before changing plugin activation. The native r
 pnpm desktop
 ```
 
-This command resolves the normal Harness home, which defaults to `~/.dsh`, so sessions, settings, credentials, and MCP configuration use the same directory. An explicit `DSH_HOME` replaces that default. Electron keeps its platform user-data location, Renderer DevTools stays closed, and no process debugger is enabled. The generated npm project is unique to the launch and is removed after Electron exits; build artifacts must already exist.
+This command resolves the normal Harness home, which defaults to `~/.dsh`, so sessions, settings, credentials, and MCP configuration use the same directory. An explicit `DSH_HOME` replaces that default. Electron keeps its platform user-data location, Renderer DevTools stays closed, and no process debugger is enabled. The generated npm project is unique to the launch, supplies its Host runtime and Web assets, and is removed after Electron exits; build artifacts must already exist.
 
 `dev:desktop` builds the current Host, client bundles, Web frontend, and Electron shell, projects the built CLI and private Desktop Host packages with their workspace dependencies into a disposable desktop npm project, and launches Electron without resolving dsh from npm:
 
