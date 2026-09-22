@@ -76,12 +76,15 @@ function mirrorDependencyLinks(sourceRoot: string, destinationRoot: string): str
         if (!scoped.isDirectory() && !scoped.isSymbolicLink()) continue
         const scopedSource = join(source, scoped.name)
         if (scoped.isSymbolicLink() && !existsSync(scopedSource)) continue
+        if (!existsSync(join(scopedSource, 'package.json'))) continue
         linkDirectory(scopedSource, join(destinationRoot, entry.name, scoped.name))
         names.push(`${entry.name}/${scoped.name}`)
       }
       continue
     }
-    if ((entry.isDirectory() || entry.isSymbolicLink()) && !(entry.isSymbolicLink() && !existsSync(source))) {
+    if ((entry.isDirectory() || entry.isSymbolicLink())
+      && !(entry.isSymbolicLink() && !existsSync(source))
+      && existsSync(join(source, 'package.json'))) {
       linkDirectory(source, join(destinationRoot, entry.name))
       names.push(entry.name)
     }

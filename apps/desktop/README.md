@@ -77,6 +77,8 @@ Recovery waits for Host shutdown before changing plugin activation. The native r
 
 ## Develop
 
+Install workspace dependencies with `pnpm install` before launching. Desktop requires Electron 44.1.0 or later in the 44.x series for the [Windows shutdown crash fix](https://releases.electronjs.org/pr/52956). The development project excludes stale dependency directories without a package manifest.
+
 `pnpm desktop` launches the existing workspace build with persistent user state:
 
 ```sh

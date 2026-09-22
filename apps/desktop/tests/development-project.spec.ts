@@ -95,7 +95,7 @@ describe('desktop development project', () => {
 
   })
 
-  it('ignores a legacy scoped directory without a package manifest', () => {
+  it('ignores scoped and unscoped links without package manifests', () => {
     const root = temporaryRoot()
     const cli = join(root, 'apps', 'cli')
     const host = join(root, 'apps', 'desktop-host')
@@ -103,8 +103,21 @@ describe('desktop development project', () => {
     mkdirSync(join(cli, 'lib'), { recursive: true })
     mkdirSync(join(host, 'lib'), { recursive: true })
     mkdirSync(join(dependencies, '@deepseek-ai', 'dsh'), { recursive: true })
-    mkdirSync(join(dependencies, '@deepseek-ai', 'legacy-without-manifest'), { recursive: true })
     mkdirSync(join(dependencies, 'plain-dependency'))
+    const staleScopedTarget = join(root, 'stale-scoped-target')
+    const staleUnscopedTarget = join(root, 'stale-unscoped-target')
+    mkdirSync(staleScopedTarget)
+    mkdirSync(staleUnscopedTarget)
+    symlinkSync(
+      staleScopedTarget,
+      join(dependencies, '@deepseek-ai', 'legacy-without-manifest'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
+    symlinkSync(
+      staleUnscopedTarget,
+      join(dependencies, 'legacy-without-manifest'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
     writeFileSync(join(cli, 'package.json'), '{"name":"@deepseek-ai/dsh","version":"1.2.3"}\n')
     writeFileSync(join(host, 'package.json'), '{"name":"@deepseek-ai/dsh-desktop-host","version":"1.2.3"}\n')
     writeFileSync(join(host, 'lib', 'index.js'), '')
@@ -121,6 +134,7 @@ describe('desktop development project', () => {
     expect(realpathSync(join(project, 'node_modules', '@deepseek-ai', 'dsh'))).toBe(realpathSync(cli))
     expect(realpathSync(join(project, 'node_modules', '@deepseek-ai', 'dsh-desktop-host'))).toBe(realpathSync(host))
     expect(existsSync(join(project, 'node_modules', '@deepseek-ai', 'legacy-without-manifest'))).toBe(false)
+    expect(existsSync(join(project, 'node_modules', 'legacy-without-manifest'))).toBe(false)
     expect(realpathSync(join(project, 'node_modules', 'plain-dependency')))
       .toBe(realpathSync(join(dependencies, 'plain-dependency')))
   })

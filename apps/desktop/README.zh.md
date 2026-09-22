@@ -78,6 +78,8 @@ macOS 上自定义应用菜单还会声明标准的 File、Window 和应用菜�
 
 ## 开发
 
+启动前先运行 `pnpm install` 安装工作区依赖。Desktop 要求使用 44.x 系列中不低于 44.1.0 的 Electron，以包含 [Windows 退出崩溃修复](https://releases.electronjs.org/pr/52956)。开发项目不包含缺少包清单的残留依赖目录。
+
 `pnpm desktop` 会使用持久用户状态启动 workspace 中已有的构建产物：
 
 ```sh
