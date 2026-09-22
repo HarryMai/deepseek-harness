@@ -177,8 +177,7 @@ Windows 操作人员可以在仓库外保存 CLIXML 对象，其中 `SecretId` �
 
 更新目标与上传凭据都与所选环境对应：
 
-| 环境 | 公开 origin | COS bucket | COS 凭据 |
-|---|---|---|---|
+| 环境 | 公开 origin | COS bucket | COS 凭据 |---|---|---|---|
 | `test` 或未设置 | `DOWNLOAD_TEST_ORIGIN` | `DOWNLOAD_TEST_COS_BUCKET` | `DOWNLOAD_TEST_COS_SECRET_ID`、`DOWNLOAD_TEST_COS_SECRET_KEY` |
 | `production` | `https://download.deepseek.com` | `DOWNLOAD_PROD_COS_BUCKET` | `DOWNLOAD_PROD_COS_SECRET_ID`、`DOWNLOAD_PROD_COS_SECRET_KEY` |
 
