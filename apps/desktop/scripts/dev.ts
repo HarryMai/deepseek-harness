@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../src/host-protocol.ts'
 import type { DesktopRelease } from '../src/release.ts'
+import { developmentRuntimeDirectory, resolveDesktopBuildTarget } from './desktop-build-paths.mjs'
 import { prepareDevelopmentProject } from './development-project.ts'
 import { prepareDevelopmentApp } from './development-app.ts'
 import { preparePrimaryRuntime } from './prepare-primary-runtime.ts'
@@ -103,6 +104,7 @@ export function resolveDevelopmentLaunch(
   const home = compatibility
     ? resolveDshHome(undefined, environment)
     : resolve(environment.DSH_HOME ?? join(DEVELOPMENT_ROOT, 'home'))
+  const primaryRuntime = environment.DSH_DESKTOP_PRIMARY_RUNTIME_DIR ?? developmentRuntimeDirectory(environment)
   if (compatibility) {
     return {
       home,
@@ -113,6 +115,7 @@ export function resolveDevelopmentLaunch(
         DSH_DESKTOP_DSH_DIR: environment.DSH_DESKTOP_DSH_DIR ?? projectDir,
         DSH_DESKTOP_DEV_PROJECT_DIR: projectDir,
         DSH_DESKTOP_NODE_BINARY: process.execPath,
+        DSH_DESKTOP_PRIMARY_RUNTIME_DIR: primaryRuntime,
         DSH_DESKTOP_OPEN_DEVTOOLS: '0',
       },
       arguments: [APP_ROOT],
@@ -137,6 +140,7 @@ export function resolveDevelopmentLaunch(
       DSH_DESKTOP_DEV_PROJECT_DIR: projectDir,
       DSH_DESKTOP_HOST_INSPECT_PORT: String(hostPort),
       DSH_DESKTOP_NODE_BINARY: process.execPath,
+      DSH_DESKTOP_PRIMARY_RUNTIME_DIR: primaryRuntime,
       DSH_DESKTOP_OPEN_DEVTOOLS: environment.DSH_DESKTOP_OPEN_DEVTOOLS ?? '1',
       ELECTRON_ENABLE_LOGGING: environment.ELECTRON_ENABLE_LOGGING ?? '1',
     },
@@ -211,6 +215,7 @@ async function main(): Promise<void> {
       hostDir: join(REPOSITORY_ROOT, 'apps', 'desktop-host'),
       dependencyDir: join(REPOSITORY_ROOT, 'node_modules', '.pnpm', 'node_modules'),
       release,
+      target: resolveDesktopBuildTarget(),
     })
     await preparePrimaryRuntime()
     await launchElectron(projectDir, mode)
