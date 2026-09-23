@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { McpSettingsSection } from '../src/client/McpSettingsSection.tsx'
 import type { McpSettingsSectionProps } from '../src/client/McpSettingsSection.tsx'
 import { DEFAULT_MCP_SETTINGS, McpSettingsController } from '../src/client/settings.ts'
@@ -18,10 +18,10 @@ const usePanelInfo: GlobalStandardProps['usePanelInfo'] = selector => selector({
 
 afterEach(cleanup)
 
-class MemoryScope implements SettingsScope<McpSettings> {
+class MemoryConfigForm implements ConfigForm<McpSettings> {
   readonly writes: string[] = []
   private readonly listeners = new Set<() => void>()
-  private snapshot: SettingsScopeSnapshot<McpSettings> = {
+  private snapshot: ConfigFormSnapshot<McpSettings> = {
     status: 'ready',
     value: structuredClone(DEFAULT_MCP_SETTINGS),
     base: structuredClone(DEFAULT_MCP_SETTINGS),
@@ -31,7 +31,7 @@ class MemoryScope implements SettingsScope<McpSettings> {
     mode: 'host',
   }
 
-  getSnapshot(): SettingsScopeSnapshot<McpSettings> {
+  getSnapshot(): ConfigFormSnapshot<McpSettings> {
     return this.snapshot
   }
 
@@ -40,9 +40,9 @@ class MemoryScope implements SettingsScope<McpSettings> {
     return () => { this.listeners.delete(listener) }
   }
 
-  async mutate(): Promise<void> {}
+  async mutate(): Promise<boolean> { return true }
 
-  async set(field: string, value: unknown): Promise<void> {
+  async set(field: string, value: unknown): Promise<boolean> {
     this.writes.push(field)
     this.snapshot = {
       ...this.snapshot,
@@ -50,13 +50,14 @@ class MemoryScope implements SettingsScope<McpSettings> {
       user: { ...(this.snapshot.user as Record<string, unknown>), [field]: structuredClone(value) },
     }
     for (const listener of this.listeners) listener()
+    return true
   }
 
-  async unset(_field: string): Promise<void> {}
+  async unset(_field: string): Promise<boolean> { return true }
 }
 
-function renderSection(scope = new MemoryScope(), tester?: McpConnectionTester) {
-  const controller = new McpSettingsController(scope, tester)
+function renderSection(form = new MemoryConfigForm(), tester?: McpConnectionTester) {
+  const controller = new McpSettingsController(form, tester)
   const unusedHook = (() => { throw new Error('unused standard hook') }) as never
   const props: McpSettingsSectionProps = {
     ...controller.inject(),
@@ -73,12 +74,12 @@ function renderSection(scope = new MemoryScope(), tester?: McpConnectionTester) 
     }),
     close: () => {},
   }
-  return { controller, scope, ...render(<McpSettingsSection {...props} />) }
+  return { controller, form, ...render(<McpSettingsSection {...props} />) }
 }
 
 describe('McpSettingsSection', () => {
   it('keeps each added service off until its independent switch is enabled, then saves both switch levels', async () => {
-    const { scope } = renderSection()
+    const { form } = renderSection()
 
     expect(screen.getByText(/应用不会内置任何命令或服务地址/u)).toBeTruthy()
     const enabled = screen.getByRole<HTMLInputElement>('checkbox', { name: '启用已保存的 MCP 服务' })
@@ -99,7 +100,7 @@ describe('McpSettingsSection', () => {
     fireEvent.change(screen.getByLabelText('MCP 服务地址'), { target: { value: 'https://mcp.example.test/mcp' } })
 
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
-    await waitFor(() => { expect(scope.writes).toEqual(['servers', 'enabled']) })
+    await waitFor(() => { expect(form.writes).toEqual(['servers', 'enabled']) })
     expect(screen.queryByText('未保存的修改')).toBeNull()
   })
 
@@ -119,7 +120,7 @@ describe('McpSettingsSection', () => {
 
   it('imports pasted MCP JSON as disabled records and tests a draft connection without saving it', async () => {
     const tester: McpConnectionTester = { test: async () => ({ ok: true, toolCount: 2 }) }
-    const { scope } = renderSection(new MemoryScope(), tester)
+    const { form } = renderSection(new MemoryConfigForm(), tester)
 
     fireEvent.click(screen.getByRole('button', { name: '导入 JSON' }))
     fireEvent.change(screen.getByLabelText('MCP JSON 配置'), {
@@ -132,7 +133,7 @@ describe('McpSettingsSection', () => {
     expect(serviceEnabled.checked).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: '测试连接' }))
     await waitFor(() => { expect(screen.getByText('连接成功，发现 2 个工具。')).toBeTruthy() })
-    expect(scope.writes).toEqual([])
+    expect(form.writes).toEqual([])
   })
 
   it('renders stdio arguments and environment variables as repeatable rows', () => {

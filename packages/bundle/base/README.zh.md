@@ -11,7 +11,7 @@ kind: "package-bundle"
 
 `dsh-base` 让基于它的 `dsh --profile` 表层共享模型连接、完整工具集、持久会话和 workspace 安全默认值。随附的 `web`、`headless`、`sdk` 与 `acp` profile 已包含它；`sdk-minimal` 不包含。自定义基于 base 的 profile 应把它放在首位，再通过 profile patch 或后续组合包修改默认值。本包是组合包，不是可导入的库。
 
-`mcp-settings` 默认关闭且没有命令或端点，因此在用户保存有效记录、打开总开关并启用目标记录之前不会启动 MCP 本地进程或 HTTP 客户端。记录开关默认关闭并持久化；`dsh-web-app` 提供**自定义配置** Settings 页面。
+`mcp-client` 默认关闭且没有命令或端点，因此在用户保存有效记录、打开总开关并启用目标记录之前不会启动 MCP 本地进程或 HTTP 客户端。记录开关默认关闭并持久化；`dsh-web-app` 提供**自定义配置** Settings 页面。
 
 ## 目录
 
@@ -149,3 +149,5 @@ patch 在自身上按平台门控两个 shell 栈：`bash-sandbox` 与 `tool-bas
 无。
 
 </details>
+
+基础组合在凭证服务旁挂载授权服务和平台账号提供者。提供者只在显式登录尝试期间打开回调监听器。

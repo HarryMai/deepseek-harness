@@ -43,7 +43,7 @@ Paste an `mcpServers`, `mcp_servers`, or `servers` JSON map, a bare map, or one 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The browser controller derives its draft from the Host `mcp-client` settings namespace and serializes writes through the shared settings scope. The Host settings group validates saved records, resolves only enabled valid records into dynamic `mcp-client` Loader children, and leaves invalid or disabled records stored but unloaded. The page owns local validation and transient connection-test state, while the Host remains authoritative for persistence and live loading.
+The browser controller derives its draft from the Host `mcp-client` profile entry and serializes changes through its shared configuration form. The Host settings group validates saved records, resolves only enabled valid records into dynamic `mcp-client` Loader children, and leaves invalid or disabled records stored but unloaded. The page owns local validation and transient connection-test state, while the Host remains authoritative for persistence and live loading.
 
 </details>
 

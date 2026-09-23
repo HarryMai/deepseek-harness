@@ -115,6 +115,34 @@ export const TokenDefaultDacl = 6
 /** DACL_SECURITY_INFORMATION: read/write only the DACL of a security descriptor. */
 export const DACL_SECURITY_INFORMATION = 0x00000004
 
+/** SECURITY_INFORMATION flag selecting the mandatory integrity label. */
+export const LABEL_SECURITY_INFORMATION = 0x00000010
+/** ACE type carrying a mandatory integrity label. */
+export const SYSTEM_MANDATORY_LABEL_ACE_TYPE = 0x11
+/**
+ * Mandatory policy denying write-class access to higher-integrity objects.
+ * The kernel applies it inside the access check, so it also covers writes and
+ * deletes granted through a parent directory's FILE_DELETE_CHILD right —
+ * the path the write-restricted pass-2 intersection does not reach.
+ */
+export const SYSTEM_MANDATORY_LABEL_NO_WRITE_UP = 0x00000001
+/** TOKEN_INFORMATION_CLASS value for the token's integrity level. */
+export const TokenIntegrityLevel = 25
+/** Group attribute marking the integrity SID of a TOKEN_MANDATORY_LABEL. */
+export const SE_GROUP_INTEGRITY = 0x00000020
+/** WELL_KNOWN_SID_TYPE value for the Low mandatory level (S-1-16-4096). */
+export const WinLowLabelSid = 66
+/** x64 TOKEN_MANDATORY_LABEL byte size (the SID is referenced, not embedded). */
+export const TOKEN_MANDATORY_LABEL_SIZE = 16
+/** x64 ACL header byte size (AclRevision, Sbz1, AclSize, AceCount, Sbz2). */
+export const ACL_HEADER_SIZE = 8
+/** Bytes a SYSTEM_MANDATORY_LABEL_ACE occupies beyond the ACL header and its SID. */
+export const MANDATORY_ACE_OVERHEAD = 8
+/** ACL revision accepted by InitializeAcl and AddMandatoryAce. */
+export const ACL_REVISION = 2
+/** LocalAlloc flag selecting zero-initialized fixed memory (LMEM_FIXED | LMEM_ZEROINIT). */
+export const LPTR = 0x0040
+
 // PROCESS access rights (winnt.h lines ~4364)
 /** PROCESS_QUERY_INFORMATION: read exit status and times of a process handle. */
 export const PROCESS_QUERY_INFORMATION = 0x0400
@@ -157,6 +185,10 @@ export const STARTF_USESTDHANDLES = 0x00000100
 export const HANDLE_FLAG_INHERIT = 0x1
 /** INFINITE: never-timeout wait value. */
 export const INFINITE = 0xFFFFFFFF
+/** EXPLICIT_ACCESS mode that denies access. */
+export const DENY_ACCESS = 3
+/** ACE inheritance flag for child containers only (directories; files do not inherit). */
+export const CONTAINER_INHERIT_ACE = 0x2
 /** MAX_PATH: legacy path length bound. */
 export const MAX_PATH = 260
 
@@ -226,6 +258,8 @@ export const LOCKFILE_EXCLUSIVE_LOCK = 0x2
 export const LOCKFILE_FAIL_IMMEDIATELY = 0x1
 /** ACE type for an allowed-access entry. */
 export const ACCESS_ALLOWED_ACE_TYPE = 0
+/** ACE type for a denied-access entry (shares the allowed ACE's Mask/SID layout). */
+export const ACCESS_DENIED_ACE_TYPE = 1
 /** Maximum SID sub-authority count. */
 export const SID_MAX_SUB_AUTHORITIES = 15
 /** ACE flag marking inherited entries. */

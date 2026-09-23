@@ -10,6 +10,7 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../src/host-protocol.ts'
 import type { DesktopRelease } from '../src/release.ts'
 import { prepareDevelopmentProject } from './development-project.ts'
+import { prepareDevelopmentApp } from './development-app.ts'
 import { preparePrimaryRuntime } from './prepare-primary-runtime.ts'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
@@ -117,7 +118,6 @@ export function resolveDevelopmentLaunch(
       arguments: [APP_ROOT],
     }
   }
-
   const mainPort = debugPort('DSH_DESKTOP_MAIN_INSPECT_PORT', 9229, environment)
   const rendererPort = debugPort('DSH_DESKTOP_RENDERER_DEBUG_PORT', 9222, environment)
   const hostPort = debugPort('DSH_DESKTOP_HOST_INSPECT_PORT', 9230, environment)
@@ -152,6 +152,25 @@ async function launchElectron(projectDir: string, mode: DesktopDevelopmentLaunch
   console.log(`desktop development: DSH_HOME=${launch.home}`)
   if (mode === 'isolated') {
     console.log(`desktop development: inspectors main=${launch.arguments[0]?.split(':').at(-1)}, renderer=${launch.arguments[1]?.split('=').at(-1)}, host=${launch.environment.DSH_DESKTOP_HOST_INSPECT_PORT}`)
+  }
+  if (mode === 'isolated' && process.platform === 'darwin') {
+    if (launch.userData === undefined) throw new Error('desktop development: isolated launch has no user-data directory')
+    const mainPort = debugPort('DSH_DESKTOP_MAIN_INSPECT_PORT', 9229)
+    const rendererPort = debugPort('DSH_DESKTOP_RENDERER_DEBUG_PORT', 9222)
+    const hostPort = debugPort('DSH_DESKTOP_HOST_INSPECT_PORT', 9230)
+    const executable = prepareDevelopmentApp({
+      electron,
+      appRoot: APP_ROOT,
+      directory: DEVELOPMENT_ROOT,
+      home: launch.home,
+      userData: launch.userData,
+      mainPort,
+      rendererPort,
+      hostPort,
+      openDevtools: launch.environment.DSH_DESKTOP_OPEN_DEVTOOLS ?? '1',
+    })
+    await run(executable, [], APP_ROOT, launch.environment)
+    return
   }
   await run(electron, launch.arguments, APP_ROOT, launch.environment)
 }

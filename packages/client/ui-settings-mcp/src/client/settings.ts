@@ -5,7 +5,7 @@
  */
 
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 
 /** The Host settings namespace this UI edits. Kept literal to avoid a client-to-host value dependency. */
 export const MCP_SETTINGS_NAMESPACE = 'mcp-client'
@@ -92,7 +92,7 @@ export type McpServerIssue = 'disabled' | 'incomplete' | 'invalid-server-name' |
 
 /** Browser state rendered by the Custom Configuration settings section. */
 export interface McpSettingsState {
-  /** Settings-scope availability state from the Host mirror. */
+  /** Configuration-form availability state from the Host mirror. */
   status: 'loading' | 'ready' | 'unavailable'
   /** Whether this browser can persist settings to the Host. */
   writable: boolean
@@ -400,7 +400,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Stages MCP settings over one bound Host scope and serializes the two fields
+ * Stages MCP settings over one bound Host configuration form and serializes the two fields
  * in an order that prevents accidental transient starts: save records before
  * enabling, and disable before replacing records.
  */
@@ -419,19 +419,19 @@ export class McpSettingsController {
   private readonly unsubscribe: () => void
 
   /**
-   * @param scope - settings namespace projection owned by ui-settings.
+   * @param form - settings entry projection owned by ui-settings.
    * @param tester - Host adapter for one-shot connection tests.
    */
   constructor(
-    private readonly scope: SettingsScope<McpSettings>,
+    private readonly form: ConfigForm<McpSettings>,
     private readonly tester: McpConnectionTester = unavailableConnectionTester,
   ) {
     this.store = createSnapshotStore(this.project())
-    this.unsubscribe = scope.subscribe(() => { this.adopt() })
+    this.unsubscribe = form.subscribe(() => { this.adopt() })
     this.adopt()
   }
 
-  /** Stop the scope subscription when this section's client fiber leaves. */
+  /** Stop the configuration-form subscription when this section's client fiber leaves. */
   dispose(): void {
     this.cancelAllTests()
     this.unsubscribe()
@@ -594,7 +594,7 @@ export class McpSettingsController {
 
   /** Persist the staged collection and retain it when the Host does not accept it. */
   async save(): Promise<void> {
-    const current = this.scope.getSnapshot()
+    const current = this.form.getSnapshot()
     if (!this.dirty || this.saving || current.status !== 'ready' || !current.writable) return
     const desired = cloneSettings(this.draft)
     this.saving = true
@@ -602,11 +602,11 @@ export class McpSettingsController {
     this.publish()
     try {
       if (desired.enabled) {
-        await this.scope.set('servers', desired.servers)
-        await this.scope.set('enabled', true)
+        await this.form.set('servers', desired.servers)
+        await this.form.set('enabled', true)
       } else {
-        await this.scope.set('enabled', false)
-        await this.scope.set('servers', desired.servers)
+        await this.form.set('enabled', false)
+        await this.form.set('servers', desired.servers)
       }
     } catch {
       this.saving = false
@@ -614,7 +614,7 @@ export class McpSettingsController {
       this.publish()
       return
     }
-    const accepted = this.scope.getSnapshot().value
+    const accepted = this.form.getSnapshot().value
     if (accepted !== undefined && sameSettings(normalizeSettings(accepted), desired)) {
       this.committed = cloneSettings(desired)
       this.draft = cloneSettings(desired)
@@ -629,7 +629,7 @@ export class McpSettingsController {
 
   /** Adopt one Host refresh without overwriting a local draft. */
   private adopt(): void {
-    const accepted = this.scope.getSnapshot().value
+    const accepted = this.form.getSnapshot().value
     if (accepted !== undefined) {
       this.committed = normalizeSettings(accepted)
       if (!this.dirty && !this.saving) {
@@ -650,7 +650,7 @@ export class McpSettingsController {
 
   /** Build the current renderer snapshot. */
   private project(): McpSettingsState {
-    const snapshot = this.scope.getSnapshot()
+    const snapshot = this.form.getSnapshot()
     return {
       status: snapshot.status,
       writable: snapshot.writable,

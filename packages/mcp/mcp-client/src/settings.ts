@@ -6,12 +6,12 @@
  * @module @deepseek-ai/dsh-mcp-client/settings
  */
 
-import { Service, type Context } from '@deepseek-ai/cordis'
+import { Service, type Context, type Volatile } from '@deepseek-ai/cordis'
 import { EntryGroup, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-settings'
 
-/** Namespace persisted in the user settings document. */
+/** Profile entry id exposed to the MCP configuration form. */
 export const MCP_SETTINGS_NAMESPACE = 'mcp-client'
 
 /** A user-authored MCP record before it is resolved into a client entry. */
@@ -25,7 +25,7 @@ export interface McpServerSettings {
   /** Executable or runtime command for a stdio server. */
   command: string
   /** Arguments passed directly to a stdio command. */
-  args: string[]
+  args: readonly string[]
   /** Extra environment variables merged into the scrubbed parent environment. */
   env?: Record<string, string>
   /** Working directory for a stdio command. */
@@ -92,6 +92,20 @@ const McpServerSettingsConfig = z.object({
 export const McpSettingsConfig = z.object({
   enabled: z.boolean().default(false),
   servers: z.dict(McpServerSettingsConfig).default({}),
+})
+
+/** Live profile configuration for the MCP client collection. */
+export interface Config {
+  /** Whether individually enabled MCP servers may run. */
+  enabled: Volatile<boolean>
+  /** Saved server records; edits reconcile the active children. */
+  servers: Volatile<Record<string, McpServerSettings>>
+}
+
+/** Editable profile fields for the MCP collection. */
+export const Config = z.object({
+  enabled: z.boolean().default(false).volatile(),
+  servers: z.dict(McpServerSettingsConfig).default({}).volatile(),
 })
 
 /** Default persisted behavior: MCP support is present but entirely inactive. */
@@ -198,26 +212,20 @@ export function resolveMcpClientEntries(settings: McpSettings): McpClientEntries
  * settings commits from interleaving Loader rollback work.
  */
 export class McpClientSettingsGroup extends EntryGroup {
-  /** Marks this callback as a Loader tree carrier, preserving literal entry config. */
-  static readonly [EntryGroup.key] = true
-
-  private source: () => McpSettings = () => DEFAULT_MCP_SETTINGS
   private tail: Promise<void> = Promise.resolve()
   private signature: string | undefined
   private stopped = false
 
   /**
    * @param ctx - Loader entry context owning this group.
-   * @param _config - Empty static child list; saved settings provide the real list.
+   * @param config - Live profile values controlling the child clients.
    */
-  constructor(ctx: Context, _config: EntryOptions[]) {
+  constructor(ctx: Context, private readonly config: Config) {
     super(ctx, requireEntryTree(ctx))
     ctx.inject(['settings'], (settingsCtx) => {
-      settingsCtx.settings.installSection(ctx, MCP_SETTINGS_NAMESPACE, McpSettingsConfig, DEFAULT_MCP_SETTINGS, {
-        setSource: (source) => { this.source = source },
-        onChange: () => { void this.enqueue() },
-      })
+      settingsCtx.effect(() => settingsCtx.settings.configure({ auto: false }, ctx.fiber))
     })
+    ctx.on('loader/volatile-update', () => { void this.enqueue() })
   }
 
   /** Start the empty default group and drain every queued reconcile during teardown. */
@@ -234,7 +242,7 @@ export class McpClientSettingsGroup extends EntryGroup {
   private enqueue(): Promise<void> {
     const task = this.tail.then(async () => {
       if (this.stopped || this.ctx.fiber.uid === null) return
-      const resolved = resolveMcpClientEntries(this.source())
+      const resolved = resolveMcpClientEntries({ enabled: this.config.enabled.get(), servers: this.config.servers.get() })
       const signature = JSON.stringify(resolved)
       if (signature === this.signature) return
       if (resolved.issues.length > 0) {
@@ -255,7 +263,7 @@ export class McpClientSettingsGroup extends EntryGroup {
 /** Cordis plugin name used by Loader diagnostics. */
 export const name = 'mcp-client-settings'
 
-/** The manager injects the optional Settings service before installing its section. */
+/** The manager injects the optional Settings service for its custom form policy. */
 export const inject: readonly string[] = []
 
 /** Loader callback for the settings-owned dynamic group. */

@@ -70,7 +70,7 @@ function declareRoot(slots: SlotRegistry): () => void {
 
 describe('ui-settings-mcp apply', () => {
   it('declares the client services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'configForms'])
   })
 
   it('registers a Chinese Custom Configuration tab at the same Settings level as Models and Agent Presets', async () => {

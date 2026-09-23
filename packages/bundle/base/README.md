@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 
 `dsh-base` gives base-backed `dsh --profile` surfaces a shared model connection, full tool set, durable sessions, and workspace safety defaults. Shipped `web`, `headless`, `sdk`, and `acp` profiles include it; `sdk-minimal` does not. Put it first in a custom base-backed profile, then use a profile patch or later bundle to change defaults. It is a bundle, not an importable library.
 
-`mcp-settings` starts disabled with no command or endpoint, so it launches no MCP process until the user saves valid records, enables the master switch, and enables selected records. Record switches default off and persist; `dsh-web-app` supplies the **Custom Configuration** Settings page.
+`mcp-client` starts disabled with no command or endpoint, so it launches no MCP process until the user saves valid records, enables the master switch, and enables selected records. Record switches default off and persist; `dsh-web-app` supplies the **Custom Configuration** Settings page.
 
 ## Table of Contents
 
@@ -149,3 +149,5 @@ These limits tell you when the core needs extra care or where an override must g
 None.
 
 </details>
+
+The base composition mounts authorization and the platform account provider alongside credentials. The provider opens a callback listener only during an explicit login attempt.

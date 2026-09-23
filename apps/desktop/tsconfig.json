@@ -1,19 +1,11 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "rootDir": ".",
-    "outDir": "lib/types",
-    "resolveJsonModule": true
-  },
-  "include": [
-    "src",
-    "desktop-build.config.json"
-  ],
+  "files": [],
   "references": [
-    { "path": "../cli" },
-    { "path": "../../packages/host/webserver" },
-    { "path": "../../packages/subprocess/subprocess-local" },
-    { "path": "../../packages/boot/app-boot" },
-    { "path": "../../packages/util/home-paths" }
+    {
+      "path": "./tsconfig.host.json"
+    },
+    {
+      "path": "./tsconfig.client.json"
+    }
   ]
 }

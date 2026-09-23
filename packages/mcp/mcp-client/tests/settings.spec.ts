@@ -1,13 +1,14 @@
 /** Dynamic user-owned MCP settings resolve into Loader child entries. */
 
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { EntryGroup } from '@deepseek-ai/cordis-plugin-loader'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
-import { FileSettingsProvider } from '@deepseek-ai/dsh-settings-file'
+import { boot, initProfile, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
+import ConfigEditor from '@deepseek-ai/dsh-config-editor'
+import Settings from '@deepseek-ai/dsh-settings'
 import * as settingsPlugin from '@deepseek-ai/dsh-mcp-client/src/settings.ts'
 import {
   DEFAULT_MCP_SETTINGS, MCP_SETTINGS_NAMESPACE, McpClientSettingsGroup,
@@ -28,35 +29,57 @@ interface DynamicEvents {
 }
 
 /** Boot the real settings manager while substituting its external child module with a lifecycle recorder. */
-async function bootManager(directory: string, events: DynamicEvents): Promise<{ ctx: Context; group: EntryGroup }> {
-  const ctx = new Context()
-  contexts.push(ctx)
-  await ctx.plugin(Loader)
-  ctx.loader.internal = {
-    import: async (specifier: string) => {
-      if (specifier === '@deepseek-ai/dsh-mcp-client/settings') return settingsPlugin
-      if (specifier === '@deepseek-ai/dsh-mcp-client') {
-        return {
-          name: 'test-mcp-client',
-          apply: (child: Context, config: { serverName: string }) => {
-            events.started.push(config.serverName)
-            child.effect(() => () => { events.stopped.push(config.serverName) })
-          },
-        }
-      }
-      throw new Error(`unexpected Loader import ${specifier}`)
+async function bootManager(directory: string, events: DynamicEvents): Promise<{ ctx: Context; group: EntryGroup; patchPath: string }> {
+  const home = directory
+  const profileDir = join(home, 'profiles', 'test')
+  initProfile(profileDir, ['test-bundle'])
+  const bundleDir = join(profileDir, 'node_modules', 'test-bundle')
+  await mkdir(bundleDir, { recursive: true })
+  await writeFile(join(home, 'package.json'), '{"name":"test-installation"}\n')
+  await writeFile(join(bundleDir, 'package.json'), JSON.stringify({
+    name: 'test-bundle', version: '1.0.0', dsh: { bundle: { patch: 'cordis.patch.yml' } },
+  }))
+  await writeFile(join(bundleDir, 'cordis.patch.yml'), JSON.stringify([{ insert: [
+    { id: 'config-editor', name: 'cordis:editor' },
+    { id: 'settings', name: 'cordis:settings' },
+    {
+      id: MCP_SETTINGS_NAMESPACE,
+      name: '@deepseek-ai/dsh-mcp-client/settings',
+      config: { enabled: false, servers: {} },
     },
-  } as never
-  await ctx.plugin(FileSettingsProvider, { path: join(directory, 'settings.yaml'), watch: false })
-  const id = await ctx.loader.create({
-    name: '@deepseek-ai/dsh-mcp-client/settings',
-    group: true,
-    config: [],
+  ] }]))
+  const configPath = join(profileDir, 'cordis.yml')
+  await writeFile(configPath, '[]\n')
+  const profile: ProfileContext = {
+    name: 'test', startedBundles: ['test-bundle'], dir: profileDir,
+    patchPath: join(profileDir, 'cordis.patch.yml'), installAnchor: join(home, 'package.json'),
+    cwd: home, home, overlays: [], telemetryDisabledEnv: undefined,
+  }
+  const ctx = await boot('test', configPath, readProfilePatches('test', profile), (root) => {
+    root.provide('profileContext', profile)
+    root.provide('appReady', { onReady: (listener: () => void) => { listener(); return () => {} } })
+    root.loader.internal = {
+      import: async (specifier: string) => {
+        if (specifier === '@deepseek-ai/dsh-mcp-client/settings') return settingsPlugin
+        if (specifier === '@deepseek-ai/dsh-mcp-client') {
+          return {
+            name: 'test-mcp-client',
+            apply: (child: Context, config: { serverName: string }) => {
+              events.started.push(config.serverName)
+              child.effect(() => () => { events.stopped.push(config.serverName) })
+            },
+          }
+        }
+        throw new Error(`unexpected Loader import ${specifier}`)
+      },
+    } as never
+    Object.assign(root.loader.builtins, { editor: ConfigEditor, settings: Settings })
   })
-  await ctx.loader.await()
-  const group = ctx.loader.resolve(id).subgroup
+  contexts.push(ctx)
+  const entry = ctx.loader.entries().find(candidate => candidate.options.id === MCP_SETTINGS_NAMESPACE)
+  const group = entry?.subgroup
   if (group === undefined) throw new Error('MCP settings entry did not create a Loader group')
-  return { ctx, group }
+  return { ctx, group, patchPath: profile.patchPath }
 }
 
 describe('mcp-client settings configuration', () => {
@@ -195,7 +218,7 @@ describe('mcp-client settings configuration', () => {
     expect(MCP_SETTINGS_NAMESPACE).toBe('mcp-client')
     expect(name).toBe('mcp-client-settings')
     expect(inject).toEqual([])
-    expect(McpClientSettingsGroup[EntryGroup.key]).toBe(true)
+    expect(McpClientSettingsGroup.prototype).toBeInstanceOf(EntryGroup)
   })
 
   it('persists master and per-server switches, restores them on the next boot, and unloads only the switched record', async () => {
@@ -223,7 +246,7 @@ describe('mcp-client settings configuration', () => {
       expect(first.group.data.map(entry => entry.id)).toEqual(['mcp-codegraph'])
       expect(firstEvents.started).toEqual(['codegraph'])
     })
-    const persisted = await readFile(join(directory, 'settings.yaml'), 'utf8')
+    const persisted = await readFile(first.patchPath, 'utf8')
     expect(persisted).toMatch(/codegraph:\n\s+enabled: true/u)
     expect(persisted).toMatch(/node_repl:\n\s+enabled: false/u)
     expect(persisted).toMatch(/computer-use:\n\s+enabled: false/u)

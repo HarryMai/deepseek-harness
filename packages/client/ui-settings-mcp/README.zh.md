@@ -43,7 +43,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-浏览器控制器从 Host 的 `mcp-client` settings namespace 派生草稿，并通过共享 settings scope 串行化写入。Host 设置组会校验已保存记录，只把已启用且有效的记录解析为动态 `mcp-client` Loader 子项，并保留无效或关闭的记录但不加载。页面拥有本地校验和临时连接测试状态，而 Host 仍是持久化和实时加载的权威。
+浏览器控制器从 Host 的 `mcp-client` profile 配置项派生草稿，并通过共享配置表单串行化修改。Host 设置组会校验已保存记录，只把已启用且有效的记录解析为动态 `mcp-client` Loader 子项，并保留无效或关闭的记录但不加载。页面拥有本地校验和临时连接测试状态，而 Host 仍是持久化和实时加载的权威。
 
 </details>
 

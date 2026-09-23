@@ -136,7 +136,7 @@ function testConfigFromPayload(payload: unknown, timeoutMs: number): McpClientCo
       transport: 'stdio',
       serverName: server.serverName,
       command: server.command,
-      args: server.args,
+      args: [...server.args],
       env: { ...server.env },
       cwd: server.cwd,
       toolCallTimeoutMs: timeoutMs,
