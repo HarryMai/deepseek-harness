@@ -1,7 +1,7 @@
 /** Browser-side settings state for the Workspace recycle-bin retention. */
 
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 
 /** Namespace shared with the Host Workspace registry. */
 export const RECYCLE_BIN_SETTINGS_NAMESPACE = 'workspace-recycle-bin'
@@ -48,7 +48,7 @@ export class RecycleBinSettingsController {
   private readonly unsubscribe: () => void
 
   /** @param scope - bound Host settings namespace. */
-  constructor(private readonly scope: SettingsScope<RecycleBinSettings>) {
+  constructor(private readonly scope: ConfigForm<RecycleBinSettings>) {
     this.store = createSnapshotStore(this.project())
     this.unsubscribe = scope.subscribe(() => { this.adopt() })
     this.adopt()

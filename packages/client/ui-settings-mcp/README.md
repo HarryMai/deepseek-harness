@@ -43,7 +43,7 @@ Paste an `mcpServers`, `mcp_servers`, or `servers` JSON map, a bare map, or one 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The browser controller derives its draft from the Host `mcp-client` settings namespace and serializes writes through the shared settings scope. The Host settings group validates saved records, resolves only enabled valid records into dynamic `mcp-client` Loader children, and leaves invalid or disabled records stored but unloaded. The page owns local validation and transient connection-test state, while the Host remains authoritative for persistence and live loading.
+The browser controller derives its draft from the Host `mcp-client` settings namespace and serializes writes through the shared configuration form. The Host settings group validates saved records, resolves only enabled valid records into dynamic `mcp-client` Loader children, and leaves invalid or disabled records stored but unloaded. The page owns local validation and transient connection-test state, while the Host remains authoritative for persistence and live loading.
 
 </details>
 
@@ -54,7 +54,7 @@ The browser controller derives its draft from the Host `mcp-client` settings nam
 
 - [MCP settings guide](../../../MCP_SETTINGS.md) — user-facing configuration examples and operational limits.
 - [mcp-client](../../mcp/mcp-client/README.md) — the Host client implementation loaded from saved records.
-- [ui-settings](../ui-settings/README.md) — the shared browser settings scope and section registry.
+- [ui-settings](../ui-settings/README.md) — shared browser configuration forms and the settings section registry.
 - [settings](../../settings/settings/README.md) — durable user settings and Host-side persistence.
 
 -----

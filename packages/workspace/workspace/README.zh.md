@@ -9,11 +9,12 @@ kind: "package-reference"
 
 ## 概述
 
-使用此包可以维护一个有序、持久的项目目录列表，以及在每个目录中运行的会话。宿主可以构建项目侧边栏、在不删除历史的情况下把会话从分组中隐藏，并在不删除文件夹、文件或会话的情况下移除项目。重新添加已移除的目录会创建一个全新项目，而目录无法校验的会话会保持 Ungrouped。需要持久项目分组的 GUI 或宿主工作流适合使用它；它对模型不可见，不增加提示词或请求上下文成本，但需要会话持久化与存储后端。
+使用此包可以维护一个有序、持久的项目目录列表，以及在每个目录中运行的会话。宿主可以分组并置顶会话、在不删除历史的情况下隐藏会话、恢复仍在回收站中的会话，并在不删除文件夹、文件或会话的情况下移除项目。重新添加已移除的目录会创建全新项目，而目录无法校验的会话会保持 Ungrouped。需要持久项目分组的 GUI 或宿主工作流适合使用它；它不增加模型请求成本，但需要会话持久化与存储后端。
 
 ## 目录
 
 - [使用本包](#use-this-package)
+- [配置](#configuration)
 - [理解实现](#understand-the-implementation)
 - [进一步探索](#further-exploration)
 - [模型体验](#model-experience)
@@ -25,7 +26,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-使用此包为产品提供项目列表：用户工作的命名目录、每个目录中运行的会话、稳定顺序，以及在不丢失会话的前提下将其隐藏或重新取回的能力。每项操作背后的 API 约定放在实现章节中。
+使用此包为产品提供有序项目列表、会话分组、会话置顶，以及不删除会话历史的有限归档恢复能力。每项操作背后的 API 约定放在实现章节中。
 
 ### 何时使用
 
@@ -33,7 +34,7 @@ kind: "package-reference"
 
 ### 设置
 
-此包本身不声明任何配置；它需要会话存储、会话持久化后端，以及保存其记录的存储行。最小组合如下：
+此包需要会话存储、会话持久化后端，以及保存其记录的存储行。最小组合如下：
 
 ```yaml
 - name: '@deepseek-ai/dsh-session'
@@ -43,10 +44,18 @@ kind: "package-reference"
 - name: '@deepseek-ai/dsh-storage-domain'
   config:
     backend: json
-- name: '@deepseek-ai/dsh-workspace'
+- id: workspace-recycle-bin
+  name: '@deepseek-ai/dsh-workspace'
+  config:
+    retentionDays: 30
 ```
 
 挂载这些行之后，创建项目会立即出现在列表中并在重启后保留；首次启动还会按会话运行的目录对既有会话分组。如果缺少某个必需依赖，workspace 功能会一直不可用，直到它被挂载。
+
+<a id="configuration"></a>
+### 配置
+
+`retentionDays` 设置归档 Session 可恢复的时长，默认值为 30，必须是正整数。回收站控件会将其保存到当前 profile 中 id 为 `workspace-recycle-bin` 的 Loader 条目。
 
 ### 创建与排序项目
 
@@ -59,13 +68,22 @@ await project.setTitle('Renamed')
 ctx.workspaceRegistry.list() // shows the project, newest first
 ```
 
+<a id="first-use-workspace"></a>
+### 首次使用工作区
+
+`initializeDefault(resolveDirectory)` 初始化默认 Workspace，不创建 Session。首次创建要求 Workspace 注册表为空，且不存在运行时、持久化或已归档 Session，包括没有工作目录的 Session。注册表直接检查持久化历史；仅凭可见侧边栏为空不足以判断。
+
+目录解析器仅在允许创建时于变更队列内运行。它返回绝对路径和初始标题；注册表创建缺失的父目录、规范化路径、重新检查 Session 历史，再一起提交 Workspace 和初始化标记。已存在的目录直接复用；文件冲突或目录操作失败时拒绝初始化。[Host 控制器](../../api/workspace-controller/README.zh.md#first-use-workspace)提供 Documents 路径策略。
+
+首次成功登记会持久保存工作区身份。重复调用直接返回它，不再解析目录；改名保留该身份，删除登记也不会允许再次自动创建。目录或登记失败时，初始化状态保持未设置，可以重试。后续步骤失败前已创建的目录会保留在磁盘上。目录解析成功后，调用方取消操作不会回滚目录创建或登记。[首次使用决策](../../../.agents/notes/implemented/feature/2026-09-20-default-workspace.zh.md)说明这一生命周期。
+
 ### 将会话归入项目
 
 会话加入它运行目录所在的项目：在项目目录中创建会话，它就会出现在该项目下，新到旧排列。一个会话只能属于一个项目。目录无法校验的会话——没有记录目录，或目录被移动、删除——无法加入，保持 Ungrouped。
 
 ### 隐藏、恢复会话与移除项目
 
-当会话不应再出现在分组中时隐藏它：它会从可见列表中消失，但其会话、历史与在项目中的位置都保持不变。当被隐藏的会话应重新出现时恢复它：它会回到其项目下记录的位置；不属于任何项目时则回到 Ungrouped。项目不再需要时移除它：它离开列表，而其文件夹、文件与会话历史绝不受影响——这些会话变成 Ungrouped。之后再次添加同一目录会从空项目开始，不会带回旧会话。
+置顶会话可使其在分组界面中排在未置顶会话之前；取消置顶不会改变保存的位置。当会话不应再出现在分组中时隐藏它：其历史与位置保持不变。仍有工作在跑的会话——它自己的回合、运行中的子代理、后台任务或活跃提醒——默认会被拒绝并附带活动列表。使用 `stopActivity: true` 时，注册表先持久化隐藏状态，再请求提供方停止工作；恢复活动回收站条目会将会话放回保存的位置。清空回收站或条目到期会结束产品恢复能力，但会话仍保持隐藏，历史也会保留。项目不再需要时移除它：其文件夹、文件与会话历史绝不受影响，这些会话会变成 Ungrouped。之后再次添加同一目录会从空项目开始，不会带回旧会话。
 
 -----
 
@@ -85,9 +103,12 @@ ctx.workspaceRegistry.list() // shows the project, newest first
 - **两次写入的变更带显式标记。** 创建与删除在记录/顺序对可能分叉之前先持久化 `pendingMutation` 标记，因此启动只补全被中断的操作，未标记的分叉作为损坏明确报错。
 - **串行化写入。** 注册表操作跑在同一条操作链上；实体变更通过领域写链上的 `table.update` 执行，写入 `updatedAt`，并在其所在的链位置决定成员资格。
 
+<a id="api-behavior"></a>
 ### API 行为
 
-该 API 是一个由两个所有者构成的小家族：`WorkspaceRegistry` 负责创建、排序与删除项目、管理其会话记账，以及将 Session 归档到持久回收站、恢复活动条目或清空条目；`Workspace` 实体暴露显示标题、目录状态与会话投影。各方法的精确约定在代码中，而非本 README——参见 [src/index.ts](src/index.ts) 与 [src/entity.ts](src/entity.ts)。
+该 API 有两个所有者：`WorkspaceRegistry` 创建、排序和删除项目，管理会话记账，并置顶、归档、恢复或清空会话；`Workspace` 实体暴露显示标题、目录状态与会话投影。恢复条目有保留期；归档和置顶的会话仍保留原有 Workspace 记账。方法约定见 [src/index.ts](src/index.ts) 与 [src/entity.ts](src/entity.ts)。
+
+普通归档前，`WorkspaceRegistry` 会查询 `workspace/session-activity`；若仍有活动工作，则以 `WorkspaceActiveSessionError` 拒绝。使用 `stopActivity: true` 时，它先提交归档，再派发 `workspace/session-stop`，因此持久归档会先阻止停止处理程序触发的唤醒。所有提供方都发出停止请求后调用才会返回；工作随后自行结束。Agent、Job、Subagent 与 Schedule 提供方通过这些事件报告并停止各自的工作；没有这些提供方的组合不会报告活动。
 
 ### 源码地图
 
@@ -102,7 +123,7 @@ ctx.workspaceRegistry.list() // shows the project, newest first
 
 ### 持久形态
 
-注册表打开 `workspace` 领域：一张以 `WorkspaceId` 为键的 `workspaces` 表，加上一个持有 `workspaceIds`（权威显示顺序）、`archivedSessionIds`、活动 `recycleBinEntries`、清空或到期的 `clearedArchivedSessionIds` 墓碑，以及可选 `pendingMutation` 标记的全局状态。归档创建带时间戳的恢复条目；恢复会在一次持久写入前校验全部所选活动条目，并移除其归档过滤和条目；清空或到期会保留隐藏 id 和墓碑，不删除 Session 数据。
+注册表打开 `workspace` 领域（版本 2）：一张以 `WorkspaceId` 为键的 `workspaces` 表，以及包含 `workspaceIds`（显示顺序）、可选 `defaultWorkspaceId`（首次登记删除后仍保留）、`archivedSessionIds`、带时间戳的活动 `recycleBinEntries`、`clearedArchivedSessionIds` 墓碑、`pinnedSessionIds` 与可选 `pendingMutation` 标记的全局状态。归档、清空归档和置顶集合默认为空。归档会在同一持久化写入中新增恢复条目并清除置顶，但不改变 Workspace 成员关系。已确认的恢复会先校验所有活动条目，再一起移除归档过滤和恢复条目；清空或到期会保留归档 id 与 Session 历史，同时结束产品恢复能力。
 
 ### 生命周期
 
@@ -162,6 +183,8 @@ ctx.workspaceRegistry.list() // shows the project, newest first
 - **只有带记录目录的会话才能加入**——只有记录中带有可解析为项目路径的目录的会话才属于项目；没有目录的会话保持 Ungrouped，来自其他目录的会话无法移入。
 - **外部变更延迟可见**——如果另一进程删除或损坏目录，项目只能在下次刷新或重启后反映出来。
 - **回收站恢复有边界**——只有活动恢复条目才能恢复；清空或到期会保留其 Session 的隐藏状态和持久历史，但使其无法再通过产品恢复。
+- **归档与取消归档执行不同的会话校验**——恢复只是从归档集合中移除 id，因此会话已不存在的条目仍能取消归档，也不会留下未知引用；对未归档 id 执行恢复不写盘即完成，而 `archiveSession` 会拒绝既非实时也未持久化的会话。
+- **活动检查与归档写入不是一个原子步骤**——在提供方作答与持久化写入之间开始的回合会在隐藏状态下运行，`agent/pre-step` 先于该写入的每个模型步连同其工具调用照常执行；API Session Controller 的门禁把写入之后提出的第一步以 `blocked` 收口，因此暴露面以该写入的时延为界，实际上是一个模型步。
 - **重新添加目录从空开始**——移除后再次添加同一目录会创建空会话列表的新项目；旧会话不会自动回来。
 
 <a id="dev-note"></a>

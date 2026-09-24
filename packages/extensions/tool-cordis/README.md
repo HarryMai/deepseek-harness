@@ -25,7 +25,9 @@ Inspect Host and Client runtime APIs before writing plugin code. Creator mode pr
 <a id="use-this-package"></a>
 ## Use this package
 
-Creator mode includes this toolset. Other compositions mount `@deepseek-ai/dsh-tool-cordis` alongside the host runner that provides `cordisInspect`; use [Plugin Manager](../../boot/plugin-manager/README.md) to install bundles containing persistent plugin code or MCP configuration.
+Creator mode includes this toolset. Other compositions mount `@deepseek-ai/dsh-tool-cordis/host` once in the host composition beside the host runner that provides `cordisInspect`, and `@deepseek-ai/dsh-tool-cordis` in each agent preset that exposes the tools; a preset row alone registers no Host providers. Use [Plugin Manager](../../boot/plugin-manager/README.md) to install bundles containing persistent plugin code or MCP configuration.
+
+The Host Config provider lists live Loader entries in pages (`offset`, `limit` up to 100, optional exact plugin `name`; `total` and `nextOffset` bound the walk) with each entry's Loader id, the tree-local id patches address, and its Config status (`schema`, `absent`, `unsupported`, `tree` for group and include carriers, `inactive` for disabled, never imported, or disposed entries), and projects one entry's native Config into a self-contained JSON Schema document beside the entry's `packageDir`, the resolved directory holding the package README and built `lib/`, when the profile package lookup resolves it.
 
 When a composition provides `dynamicCordisRunner`, this plugin also lets a session define and run a temporary model-written tool, service, or browser UI without making it a repository plugin; without that runner, its lifecycle tools do not activate.
 
@@ -40,7 +42,7 @@ Structured arguments remain structured: callers send `cordis_inspect_query.input
 - name: '@deepseek-ai/dsh-tool-cordis'
 ```
 
-The [Web bundle patch](../../bundle/web-app/cordis.patch.yml) mounts the host runner, and the [Creator preset](../../preset/agent-presets/presets/cordis/agent.cordis.yml) adds this tool. A package with a browser half additionally needs the browser runner and the UI package in the client composition; a host-only package needs none of them.
+The [Web bundle patch](../../bundle/web-app/cordis.patch.yml) mounts the host runner, and the [Creator preset patch](../../bundle/web-app/presets/cordis.patch.yml) adds this tool. A package with a browser half additionally needs the browser runner and the UI package in the client composition; a host-only package needs none of them.
 
 ### What the tools do
 

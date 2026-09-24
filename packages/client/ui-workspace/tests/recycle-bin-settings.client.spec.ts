@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RecycleBinSettings } from '../src/client/recycle-bin-settings.ts'
 import {
   DEFAULT_RECYCLE_BIN_SETTINGS, RecycleBinSettingsController,
@@ -7,7 +7,7 @@ import {
 
 describe('RecycleBinSettingsController', () => {
   it('projects the default retention while the Host settings scope is loading', () => {
-    const settings = stubSettingsScope<RecycleBinSettings>()
+    const settings = stubConfigForm<RecycleBinSettings>()
     const controller = new RecycleBinSettingsController(settings.scope)
 
     expect(controller.store.getSnapshot()).toEqual({
@@ -23,7 +23,7 @@ describe('RecycleBinSettingsController', () => {
   })
 
   it('persists a valid retention value through SettingsScope and adopts the Host acceptance', async () => {
-    const settings = stubSettingsScope<RecycleBinSettings>()
+    const settings = stubConfigForm<RecycleBinSettings>()
     settings.publish({
       status: 'ready',
       writable: true,
@@ -56,7 +56,7 @@ describe('RecycleBinSettingsController', () => {
   it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
     'rejects invalid retention value %s without writing',
     async (retentionDays) => {
-      const settings = stubSettingsScope<RecycleBinSettings>()
+      const settings = stubConfigForm<RecycleBinSettings>()
       settings.publish({
         status: 'ready',
         writable: true,
@@ -82,7 +82,7 @@ describe('RecycleBinSettingsController', () => {
     { name: 'unavailable', status: 'unavailable' as const, writable: false },
     { name: 'read-only', status: 'ready' as const, writable: false },
   ])('does not write when the settings scope is $name', async ({ status, writable }) => {
-    const settings = stubSettingsScope<RecycleBinSettings>()
+    const settings = stubConfigForm<RecycleBinSettings>()
     settings.publish({
       status,
       writable,

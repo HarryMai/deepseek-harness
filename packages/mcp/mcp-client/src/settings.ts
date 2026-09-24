@@ -6,40 +6,43 @@
  * @module @deepseek-ai/dsh-mcp-client/settings
  */
 
-import { Service, type Context } from '@deepseek-ai/cordis'
+import { Service, type Context, type Volatile } from '@deepseek-ai/cordis'
 import { EntryGroup, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 
-/** Namespace persisted in the user settings document. */
+/** Profile entry id used by the MCP settings page. */
 export const MCP_SETTINGS_NAMESPACE = 'mcp-client'
+
+/** Loader group containing the dynamically managed MCP client entries. */
+export const MCP_SETTINGS_GROUP_ID = 'mcp-settings'
 
 /** A user-authored MCP record before it is resolved into a client entry. */
 export interface McpServerSettings {
   /** Whether this saved server is eligible to load while the collection is enabled. */
-  enabled: boolean
+  readonly enabled: boolean
   /** Whether this record starts a local process or connects to an HTTP endpoint. */
-  transport: 'stdio' | 'streamable-http'
+  readonly transport: 'stdio' | 'streamable-http'
   /** Namespace for the server's model-facing tool names. */
-  serverName: string
+  readonly serverName: string
   /** Executable or runtime command for a stdio server. */
-  command: string
+  readonly command: string
   /** Arguments passed directly to a stdio command. */
-  args: string[]
+  readonly args: readonly string[]
   /** Extra environment variables merged into the scrubbed parent environment. */
-  env?: Record<string, string>
+  readonly env?: Readonly<Record<string, string>>
   /** Working directory for a stdio command. */
-  cwd: string
+  readonly cwd: string
   /** Streamable HTTP endpoint URL. */
-  url: string
+  readonly url: string
 }
 
 /** Saved user settings that control every dynamic MCP client instance. */
 export interface McpSettings {
   /** Whether the manager starts individually enabled, valid MCP records. */
-  enabled: boolean
+  readonly enabled: boolean
   /** Stable user-record ids mapped to their transport details. */
-  servers: Record<string, McpServerSettings>
+  readonly servers: Readonly<Record<string, McpServerSettings>>
 }
 
 /** Why a stored record was not started. */
@@ -53,19 +56,12 @@ export interface McpSettingsIssue {
   reason: McpSettingsIssueReason
 }
 
-/** Result of resolving one saved settings section into Loader child entries. */
+/** Result of resolving one profile settings entry into Loader child entries. */
 export interface McpClientEntries {
-  /** Entries that the owning {@link McpClientSettingsGroup} should activate. */
+  /** Entries that the owning {@link McpClientSettingsManager} should activate. */
   entries: EntryOptions[]
   /** Records intentionally omitted while preserving any valid peers. */
   issues: McpSettingsIssue[]
-}
-
-/** Resolve the Loader tree owned by this EntryGroup's construction context. */
-function requireEntryTree(ctx: Context) {
-  const entry = ctx.fiber.entry
-  if (entry === undefined) throw new Error('mcp-client settings group requires a Loader entry context')
-  return entry.parent.tree
 }
 
 const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
@@ -88,20 +84,28 @@ const McpServerSettingsConfig = z.object({
   url: z.string().default(''),
 })
 
-/** Schema for the persisted user section. Blank records remain valid while a user fills the form. */
+/** Schema for the profile-backed settings page. Blank records remain valid while a user fills the form. */
 export const McpSettingsConfig = z.object({
-  enabled: z.boolean().default(false),
-  servers: z.dict(McpServerSettingsConfig).default({}),
+  enabled: z.boolean().default(false).volatile(),
+  servers: z.dict(McpServerSettingsConfig).default({}).volatile(),
 })
 
 /** Default persisted behavior: MCP support is present but entirely inactive. */
 export const DEFAULT_MCP_SETTINGS: McpSettings = { enabled: false, servers: {} }
 
+/** Live profile values projected into the MCP settings manager. */
+export interface McpClientSettingsConfig {
+  /** Whether individually enabled, valid server records may start. */
+  enabled: Volatile<boolean>
+  /** Stable user-record ids mapped to their transport details. */
+  servers: Volatile<Record<string, McpServerSettings>>
+}
+
 /**
  * Resolve user-entered settings into Loader children without placing credentials
  * or deployment choices in the shipped composition.
  *
- * @param settings - resolved `mcp-client` settings section.
+ * @param settings - current `mcp-client` profile values.
  * @returns valid child entries plus records intentionally not loaded.
  */
 export function resolveMcpClientEntries(settings: McpSettings): McpClientEntries {
@@ -193,54 +197,58 @@ export function resolveMcpClientEntries(settings: McpSettings): McpClientEntries
 }
 
 /**
- * Loader group that watches the user-owned settings section and transactionally
- * reconciles its mcp-client children. A serial queue prevents overlapping
- * settings commits from interleaving Loader rollback work.
+ * Profile-backed settings owner that reconciles MCP client entries in the
+ * separate `mcp-settings` group. A serial queue prevents overlapping volatile
+ * updates from interleaving Loader rollback work.
  */
-export class McpClientSettingsGroup extends EntryGroup {
-  /** Marks this callback as a Loader tree carrier, preserving literal entry config. */
-  static readonly [EntryGroup.key] = true
+export class McpClientSettingsManager extends Service {
+  static Config = McpSettingsConfig
 
-  private source: () => McpSettings = () => DEFAULT_MCP_SETTINGS
+  private group: EntryGroup | undefined
   private tail: Promise<void> = Promise.resolve()
   private signature: string | undefined
   private stopped = false
 
   /**
-   * @param ctx - Loader entry context owning this group.
-   * @param _config - Empty static child list; saved settings provide the real list.
+   * @param ctx - Loader entry context owning the profile settings.
+   * @param config - Volatile values edited by the MCP settings page.
    */
-  constructor(ctx: Context, _config: EntryOptions[]) {
-    super(ctx, requireEntryTree(ctx))
-    ctx.inject(['settings'], (settingsCtx) => {
-      settingsCtx.settings.installSection(ctx, MCP_SETTINGS_NAMESPACE, McpSettingsConfig, DEFAULT_MCP_SETTINGS, {
-        setSource: (source) => { this.source = source },
-        onChange: () => { void this.enqueue() },
-      })
-    })
+  constructor(ctx: Context, private readonly config: McpClientSettingsConfig) {
+    super(ctx, 'mcpClientSettings')
+    ctx.on('loader/volatile-update', () => { void this.enqueue() })
   }
 
-  /** Start the empty default group and drain every queued reconcile during teardown. */
+  /** Reconcile the initial profile values and clear managed clients during teardown. */
   async *[Service.init](): AsyncGenerator<() => Promise<void>, void, void> {
+    const entry = this.ctx.loader.resolve(MCP_SETTINGS_GROUP_ID)
+    await entry._initTask
+    await entry.fiber?.await()
+    this.group = entry.subgroup
+    if (this.group === undefined) throw new Error(`MCP settings group ${MCP_SETTINGS_GROUP_ID} did not activate`)
     await this.enqueue()
     yield async () => {
       this.stopped = true
       await this.tail
-      await this.stop()
+      const group = this.group
+      if (group !== undefined) await group.update([])
     }
   }
 
   /** Queue one source-to-child reconciliation, containing failure to this optional integration. */
   private enqueue(): Promise<void> {
     const task = this.tail.then(async () => {
-      if (this.stopped || this.ctx.fiber.uid === null) return
-      const resolved = resolveMcpClientEntries(this.source())
+      const group = this.group
+      if (this.stopped || this.ctx.fiber.uid === null || group === undefined) return
+      const resolved = resolveMcpClientEntries({
+        enabled: this.config.enabled.get(),
+        servers: this.config.servers.get(),
+      })
       const signature = JSON.stringify(resolved)
       if (signature === this.signature) return
       if (resolved.issues.length > 0) {
         this.ctx.logger.warn(`mcp-client settings: ignored ${String(resolved.issues.length)} unusable saved MCP server(s)`)
       }
-      await this.update(resolved.entries)
+      await group.update(resolved.entries)
       this.signature = signature
     })
     this.tail = task.catch((error: unknown) => {
@@ -255,8 +263,11 @@ export class McpClientSettingsGroup extends EntryGroup {
 /** Cordis plugin name used by Loader diagnostics. */
 export const name = 'mcp-client-settings'
 
-/** The manager injects the optional Settings service before installing its section. */
-export const inject: readonly string[] = []
+/** Profile-backed Config schema read by Loader and Settings forms. */
+export const Config = McpSettingsConfig
 
-/** Loader callback for the settings-owned dynamic group. */
-export const apply = McpClientSettingsGroup
+/** The manager resolves its dedicated child group from the active Loader tree. */
+export const inject = ['loader']
+
+/** Profile-backed settings manager for dynamic user-owned MCP client entries. */
+export const apply = McpClientSettingsManager

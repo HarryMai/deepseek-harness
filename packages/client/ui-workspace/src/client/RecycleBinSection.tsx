@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  Button, IconRefreshOutline16, IconTrashOutline16, RiskConfirmation,
+  Button, IconRefreshOutlineMedium, IconTrashOutlineMedium, RiskConfirmation,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RecycleBinSettingsFace } from './recycle-bin-settings.ts'
 import css from './RecycleBinSection.module.css'
@@ -183,7 +183,7 @@ export function RecycleBinSection(props: RecycleBinSectionProps): ReactNode {
         <span className={css.actions}>
           <Button
             variant="outline"
-            icon={<IconRefreshOutline16 />}
+            icon={<IconRefreshOutlineMedium />}
             disabled={selectedEntries.length === 0 || submitting}
             onClick={() => { requestRestore(selectedEntries.map(({ entry }) => entry.sessionId)) }}
           >
@@ -192,7 +192,7 @@ export function RecycleBinSection(props: RecycleBinSectionProps): ReactNode {
           <Button
             variant="outline"
             className={css.dangerButton}
-            icon={<IconTrashOutline16 />}
+            icon={<IconTrashOutlineMedium />}
             disabled={entries.length === 0 || submitting}
             onClick={requestClear}
           >
@@ -219,7 +219,7 @@ export function RecycleBinSection(props: RecycleBinSectionProps): ReactNode {
               <Button
                 variant="outline"
                 size="sm"
-                icon={<IconRefreshOutline16 />}
+                icon={<IconRefreshOutlineMedium />}
                 disabled={submitting}
                 onClick={() => { requestRestore([entry.sessionId]) }}
               >

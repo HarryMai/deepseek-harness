@@ -1,12 +1,11 @@
 /** Browser entry for the Custom Configuration MCP settings section. */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-// Type-only imports expose the slot, locale, remote, and settings-scope Context faces.
+// Type-only imports expose the slot, locale, and configuration-form Context faces.
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { McpSettingsSection } from './McpSettingsSection.tsx'
 import type { McpSettingsSectionInjected } from './McpSettingsSection.tsx'
 import { MCP_SETTINGS_NAMESPACE, McpSettingsController } from './settings.ts'
@@ -34,7 +33,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Required client services. */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope']
+export const inject = ['slots', 'locale', 'connection', 'configForms']
 
 /**
  * Register the MCP configuration page alongside Models and Agent Presets.
@@ -63,7 +62,7 @@ export function apply(ctx: ClientContext): void {
       }
     },
   }
-  const controller = new McpSettingsController(ctx.settingsScope.bind({ namespace: MCP_SETTINGS_NAMESPACE }), tester)
+  const controller = new McpSettingsController(ctx.configForms.get(MCP_SETTINGS_NAMESPACE), tester)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-mcp: dictionaries')
   ctx.effect(() => () => { controller.dispose() }, 'ui-settings-mcp: settings controller')
   const t = ctx.locale.bind(NS)

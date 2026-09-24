@@ -9,7 +9,9 @@ import { fileURLToPath } from 'node:url'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../src/host-protocol.ts'
 import type { DesktopRelease } from '../src/release.ts'
+import { developmentRuntimeDirectory, resolveDesktopBuildTarget } from './desktop-build-paths.mjs'
 import { prepareDevelopmentProject } from './development-project.ts'
+import { prepareDevelopmentApp } from './development-app.ts'
 import { preparePrimaryRuntime } from './prepare-primary-runtime.ts'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
@@ -99,6 +101,7 @@ export function resolveDevelopmentLaunch(
   environment: NodeJS.ProcessEnv = process.env,
 ): DesktopDevelopmentLaunch {
   const compatibility = mode === 'compatibility'
+  const primaryRuntime = environment.DSH_DESKTOP_PRIMARY_RUNTIME_DIR ?? developmentRuntimeDirectory(environment)
   const home = compatibility
     ? resolveDshHome(undefined, environment)
     : resolve(environment.DSH_HOME ?? join(DEVELOPMENT_ROOT, 'home'))
@@ -109,6 +112,7 @@ export function resolveDevelopmentLaunch(
       environment: {
         ...environment,
         DSH_HOME: home,
+        DSH_DESKTOP_PRIMARY_RUNTIME_DIR: primaryRuntime,
         DSH_DESKTOP_DSH_DIR: environment.DSH_DESKTOP_DSH_DIR ?? projectDir,
         DSH_DESKTOP_DEV_PROJECT_DIR: projectDir,
         DSH_DESKTOP_NODE_BINARY: process.execPath,
@@ -134,6 +138,7 @@ export function resolveDevelopmentLaunch(
     environment: {
       ...environment,
       DSH_HOME: home,
+      DSH_DESKTOP_PRIMARY_RUNTIME_DIR: primaryRuntime,
       DSH_DESKTOP_DEV_PROJECT_DIR: projectDir,
       DSH_DESKTOP_HOST_INSPECT_PORT: String(hostPort),
       DSH_DESKTOP_NODE_BINARY: process.execPath,
@@ -152,6 +157,16 @@ async function launchElectron(projectDir: string, mode: DesktopDevelopmentLaunch
   console.log(`desktop development: DSH_HOME=${launch.home}`)
   if (mode === 'isolated') {
     console.log(`desktop development: inspectors main=${launch.arguments[0]?.split(':').at(-1)}, renderer=${launch.arguments[1]?.split('=').at(-1)}, host=${launch.environment.DSH_DESKTOP_HOST_INSPECT_PORT}`)
+  }
+  if (mode === 'isolated' && process.platform === 'darwin') {
+    const mainPort = debugPort('DSH_DESKTOP_MAIN_INSPECT_PORT', 9229, launch.environment)
+    const rendererPort = debugPort('DSH_DESKTOP_RENDERER_DEBUG_PORT', 9222, launch.environment)
+    const hostPort = debugPort('DSH_DESKTOP_HOST_INSPECT_PORT', 9230, launch.environment)
+    const executable = prepareDevelopmentApp({ electron, appRoot: APP_ROOT, directory: DEVELOPMENT_ROOT, home: launch.home,
+      userData: launch.userData!, mainPort, rendererPort, hostPort,
+      openDevtools: launch.environment.DSH_DESKTOP_OPEN_DEVTOOLS! })
+    await run(executable, [], APP_ROOT, launch.environment)
+    return
   }
   await run(electron, launch.arguments, APP_ROOT, launch.environment)
 }
@@ -192,6 +207,7 @@ async function main(): Promise<void> {
       hostDir: join(REPOSITORY_ROOT, 'apps', 'desktop-host'),
       dependencyDir: join(REPOSITORY_ROOT, 'node_modules', '.pnpm', 'node_modules'),
       release,
+      target: resolveDesktopBuildTarget(),
     })
     await preparePrimaryRuntime()
     await launchElectron(projectDir, mode)

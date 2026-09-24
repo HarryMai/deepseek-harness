@@ -25,7 +25,9 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-创造模式包含这组工具。其他组合需要同时挂载 `@deepseek-ai/dsh-tool-cordis` 和提供 `cordisInspect` 的 host runner；通过 [Plugin Manager](../../boot/plugin-manager/README.zh.md) 安装包含持久插件代码或 MCP 配置的组合包。
+创造模式包含这组工具。其他组合需要在 host 组合中、提供 `cordisInspect` 的 host runner 旁挂载一次 `@deepseek-ai/dsh-tool-cordis/host`，并在暴露工具的每个 Agent preset 中挂载 `@deepseek-ai/dsh-tool-cordis`；仅在 preset 条目里加载 package 不会注册 Host Provider。通过 [Plugin Manager](../../boot/plugin-manager/README.zh.md) 安装包含持久插件代码或 MCP 配置的组合包。
+
+Host Config Provider 会分页列出 Loader 中的实时条目（`offset`、最大为 100 的 `limit`、可选的精确插件 `name`；`total` 与 `nextOffset` 用于界定分页），每个条目包含 Loader id、配置补丁针对的树内 id，以及 Config 状态（`schema`、`absent`、`unsupported`、表示 group 和 include carrier 的 `tree`，以及表示已禁用、从未导入或已释放条目的 `inactive`）。当 profile package 查找能解析出条目时，它还会在条目的 `packageDir` 旁生成独立的 JSON Schema 文档；`packageDir` 是包含 package README 与构建后 `lib/` 的解析目录。
 
 当组合还提供 `dynamicCordisRunner` 时，本插件也允许会话定义并运行临时的模型编写工具、服务或浏览器 UI，而无需将其变为仓库插件；没有该 runner 时，生命周期工具不会激活。
 
@@ -40,7 +42,7 @@ kind: "package-reference"
 - name: '@deepseek-ai/dsh-tool-cordis'
 ```
 
-[Web bundle patch](../../bundle/web-app/cordis.patch.yml) 挂载 host runner，[Creator preset](../../preset/agent-presets/presets/cordis/agent.cordis.yml) 添加本工具。带浏览器半的包还额外需要客户端组合里的浏览器 runner 与 UI 包；纯 host 包则两者都不需要。
+[Web bundle patch](../../bundle/web-app/cordis.patch.yml) 挂载 host runner，[Creator preset patch](../../bundle/web-app/presets/cordis.patch.yml) 添加本工具。带浏览器半的包还额外需要客户端组合里的浏览器 runner 与 UI 包；纯 host 包则两者都不需要。
 
 ### 工具能做什么
 

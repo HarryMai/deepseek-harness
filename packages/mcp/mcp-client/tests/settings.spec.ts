@@ -1,25 +1,24 @@
-/** Dynamic user-owned MCP settings resolve into Loader child entries. */
+/** Profile-backed MCP settings resolve into dynamic Loader child entries. */
 
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { EntryGroup } from '@deepseek-ai/cordis-plugin-loader'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
-import { FileSettingsProvider } from '@deepseek-ai/dsh-settings-file'
+import Loader, { type EntryGroup } from '@deepseek-ai/cordis-plugin-loader'
+import Group from '@deepseek-ai/cordis-plugin-group'
 import * as settingsPlugin from '@deepseek-ai/dsh-mcp-client/src/settings.ts'
 import {
-  DEFAULT_MCP_SETTINGS, MCP_SETTINGS_NAMESPACE, McpClientSettingsGroup,
-  McpSettingsConfig, inject, name, resolveMcpClientEntries,
+  DEFAULT_MCP_SETTINGS,
+  MCP_SETTINGS_GROUP_ID,
+  MCP_SETTINGS_NAMESPACE,
+  McpClientSettingsManager,
+  McpSettingsConfig,
+  name,
+  resolveMcpClientEntries,
 } from '@deepseek-ai/dsh-mcp-client/src/settings.ts'
 
 const contexts: Context[] = []
-const directories: string[] = []
 
 afterEach(async () => {
   while (contexts.length > 0) await contexts.pop()!.fiber.dispose()
-  while (directories.length > 0) await rm(directories.pop()!, { recursive: true, force: true })
 })
 
 interface DynamicEvents {
@@ -27,11 +26,18 @@ interface DynamicEvents {
   stopped: string[]
 }
 
-/** Boot the real settings manager while substituting its external child module with a lifecycle recorder. */
-async function bootManager(directory: string, events: DynamicEvents): Promise<{ ctx: Context; group: EntryGroup }> {
+interface ManagerHarness {
+  ctx: Context
+  managerId: string
+  group: EntryGroup
+}
+
+/** Boot the profile manager and substitute its external MCP clients with lifecycle recorders. */
+async function bootManager(events: DynamicEvents): Promise<ManagerHarness> {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(Loader)
+  ctx.loader.builtins.group = Group
   ctx.loader.internal = {
     import: async (specifier: string) => {
       if (specifier === '@deepseek-ai/dsh-mcp-client/settings') return settingsPlugin
@@ -47,26 +53,28 @@ async function bootManager(directory: string, events: DynamicEvents): Promise<{ 
       throw new Error(`unexpected Loader import ${specifier}`)
     },
   } as never
-  await ctx.plugin(FileSettingsProvider, { path: join(directory, 'settings.yaml'), watch: false })
-  const id = await ctx.loader.create({
+  const groupOptions = { id: MCP_SETTINGS_GROUP_ID, name: 'cordis:group', group: true, config: [] }
+  await ctx.loader.create(groupOptions)
+  const managerOptions = {
+    id: MCP_SETTINGS_NAMESPACE,
     name: '@deepseek-ai/dsh-mcp-client/settings',
-    group: true,
-    config: [],
-  })
+    config: {},
+  }
+  const managerId = await ctx.loader.create(managerOptions)
   await ctx.loader.await()
-  const group = ctx.loader.resolve(id).subgroup
-  if (group === undefined) throw new Error('MCP settings entry did not create a Loader group')
-  return { ctx, group }
+  return { ctx, managerId, group: ctx.loader.resolveGroup(MCP_SETTINGS_GROUP_ID) }
 }
 
 describe('mcp-client settings configuration', () => {
-  it('defaults to disabled with no server records', () => {
-    expect(McpSettingsConfig({})).toEqual(DEFAULT_MCP_SETTINGS)
+  it('defaults to a disabled collection with no server records', () => {
+    const config = McpSettingsConfig({})
+    expect(config.enabled.get()).toBe(DEFAULT_MCP_SETTINGS.enabled)
+    expect(config.servers.get()).toEqual(DEFAULT_MCP_SETTINGS.servers)
     expect(resolveMcpClientEntries(DEFAULT_MCP_SETTINGS)).toEqual({ entries: [], issues: [] })
   })
 
   it('defaults each saved server to disabled until that server is explicitly enabled', () => {
-    const settings = McpSettingsConfig({
+    const config = McpSettingsConfig({
       enabled: true,
       servers: {
         codegraph: {
@@ -75,11 +83,12 @@ describe('mcp-client settings configuration', () => {
       },
     })
 
+    const settings = { enabled: config.enabled.get(), servers: config.servers.get() }
     expect(settings.servers.codegraph?.enabled).toBe(false)
     expect(resolveMcpClientEntries(settings)).toEqual({ entries: [], issues: [] })
   })
 
-  it('maps only individually enabled stdio and Streamable HTTP records to independent client entries', () => {
+  it('maps individually enabled stdio and Streamable HTTP records to independent client entries', () => {
     const resolved = resolveMcpClientEntries({
       enabled: true,
       servers: {
@@ -191,77 +200,72 @@ describe('mcp-client settings configuration', () => {
     expect(resolved).toEqual({ entries: [], issues: [{ id: 'invalid', reason: 'invalid-environment' }] })
   })
 
-  it('keeps the settings manager as a Loader group and does not bake a server into its entry config', () => {
+  it('uses the MCP settings profile id and mounts a separate Loader group', () => {
     expect(MCP_SETTINGS_NAMESPACE).toBe('mcp-client')
+    expect(MCP_SETTINGS_GROUP_ID).toBe('mcp-settings')
     expect(name).toBe('mcp-client-settings')
-    expect(inject).toEqual([])
-    expect(McpClientSettingsGroup[EntryGroup.key]).toBe(true)
+    expect(McpClientSettingsManager.Config).toBe(McpSettingsConfig)
+    expect(settingsPlugin.Config).toBe(McpSettingsConfig)
   })
 
-  it('persists master and per-server switches, restores them on the next boot, and unloads only the switched record', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'dsh-mcp-settings-'))
-    directories.push(directory)
-    const firstEvents: DynamicEvents = { started: [], stopped: [] }
-    const first = await bootManager(directory, firstEvents)
+  it('starts valid enabled servers and reconciles profile updates by stopping replaced clients', async () => {
+    const events: DynamicEvents = { started: [], stopped: [] }
+    const harness = await bootManager(events)
+    expect(harness.group.data).toEqual([])
 
-    expect(first.group.data).toEqual([])
-    await first.ctx.settings.update(MCP_SETTINGS_NAMESPACE, {
-      enabled: true,
-      servers: {
-        codegraph: {
-          enabled: true, transport: 'stdio', serverName: 'codegraph', command: 'codegraph', args: ['serve', '--mcp'], cwd: '', url: '',
-        },
-        node_repl: {
-          enabled: false, transport: 'stdio', serverName: 'node_repl', command: '/fixture/node_repl', args: [], cwd: '', url: '',
-        },
-        'computer-use': {
-          enabled: false, transport: 'stdio', serverName: 'computer-use', command: './Codex Computer Use.app/Contents/MacOS/SkyComputerUseClient', args: ['mcp'], cwd: '.', url: '',
+    await harness.ctx.loader.resolve(harness.managerId).update({
+      config: {
+        enabled: true,
+        servers: {
+          codegraph: {
+            enabled: true, transport: 'stdio', serverName: 'codegraph', command: 'codegraph', args: ['serve', '--mcp'], cwd: '', url: '',
+          },
+          node_repl: {
+            enabled: false, transport: 'stdio', serverName: 'node_repl', command: '/fixture/node_repl', args: [], cwd: '', url: '',
+          },
         },
       },
     })
     await vi.waitFor(() => {
-      expect(first.group.data.map(entry => entry.id)).toEqual(['mcp-codegraph'])
-      expect(firstEvents.started).toEqual(['codegraph'])
-    })
-    const persisted = await readFile(join(directory, 'settings.yaml'), 'utf8')
-    expect(persisted).toMatch(/codegraph:\n\s+enabled: true/u)
-    expect(persisted).toMatch(/node_repl:\n\s+enabled: false/u)
-    expect(persisted).toMatch(/computer-use:\n\s+enabled: false/u)
-
-    await first.ctx.fiber.dispose()
-    contexts.splice(contexts.indexOf(first.ctx), 1)
-    expect(firstEvents.stopped).toEqual(['codegraph'])
-
-    const secondEvents: DynamicEvents = { started: [], stopped: [] }
-    const second = await bootManager(directory, secondEvents)
-    await vi.waitFor(() => {
-      expect(second.group.data.map(entry => entry.id)).toEqual(['mcp-codegraph'])
-      expect(secondEvents.started).toEqual(['codegraph'])
+      expect(harness.group.data.map(entry => entry.id)).toEqual(['mcp-codegraph'])
+      expect(events.started).toEqual(['codegraph'])
     })
 
-    await second.ctx.settings.update(MCP_SETTINGS_NAMESPACE, {
-      servers: {
-        codegraph: {
-          enabled: false, transport: 'stdio', serverName: 'codegraph', command: 'codegraph', args: ['serve', '--mcp'], cwd: '', url: '',
-        },
-        node_repl: {
-          enabled: true, transport: 'stdio', serverName: 'node_repl', command: '/fixture/node_repl', args: [], cwd: '', url: '',
-        },
-        'computer-use': {
-          enabled: false, transport: 'stdio', serverName: 'computer-use', command: './Codex Computer Use.app/Contents/MacOS/SkyComputerUseClient', args: ['mcp'], cwd: '.', url: '',
+    await harness.ctx.loader.resolve(harness.managerId).update({
+      config: {
+        enabled: true,
+        servers: {
+          codegraph: {
+            enabled: false, transport: 'stdio', serverName: 'codegraph', command: 'codegraph', args: ['serve', '--mcp'], cwd: '', url: '',
+          },
+          node_repl: {
+            enabled: true, transport: 'stdio', serverName: 'node_repl', command: '/fixture/node_repl', args: [], cwd: '', url: '',
+          },
         },
       },
     })
     await vi.waitFor(() => {
-      expect(second.group.data.map(entry => entry.id)).toEqual(['mcp-node_repl'])
-      expect(secondEvents.started).toEqual(['codegraph', 'node_repl'])
-      expect(secondEvents.stopped).toEqual(['codegraph'])
+      expect(harness.group.data.map(entry => entry.id)).toEqual(['mcp-node_repl'])
+      expect(events.started).toEqual(['codegraph', 'node_repl'])
+      expect(events.stopped).toEqual(['codegraph'])
     })
 
-    await second.ctx.settings.update(MCP_SETTINGS_NAMESPACE, { enabled: false })
+    await harness.ctx.loader.resolve(harness.managerId).update({
+      config: {
+        enabled: false,
+        servers: {
+          codegraph: {
+            enabled: false, transport: 'stdio', serverName: 'codegraph', command: 'codegraph', args: ['serve', '--mcp'], cwd: '', url: '',
+          },
+          node_repl: {
+            enabled: true, transport: 'stdio', serverName: 'node_repl', command: '/fixture/node_repl', args: [], cwd: '', url: '',
+          },
+        },
+      },
+    })
     await vi.waitFor(() => {
-      expect(second.group.data).toEqual([])
-      expect(secondEvents.stopped).toEqual(['codegraph', 'node_repl'])
+      expect(harness.group.data).toEqual([])
+      expect(events.stopped).toEqual(['codegraph', 'node_repl'])
     })
   })
 })

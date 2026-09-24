@@ -1,0 +1,37 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "disableSourceOfProjectReferenceRedirect": true
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../packages/boot/app-boot"
+    },
+    {
+      "path": "../cli"
+    },
+    {
+      "path": "../../packages/util/home-paths"
+    },
+    {
+      "path": "../../packages/subprocess/subprocess-local"
+    },
+    {
+      "path": "../../packages/credentials/deepseek-account"
+    },
+    {
+      "path": "../../packages/api/gateway/tsconfig.host.json"
+    },
+    {
+      "path": "../../packages/client/ui-sidebar-browser/tsconfig.host.json"
+    }
+  ],
+  "exclude": [
+    "src/client"
+  ]
+}

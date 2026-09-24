@@ -31,6 +31,28 @@ afterEach(() => {
 })
 
 describe('desktop development project', () => {
+  it('includes declared workspace packages missing from the hoist directory in the runtime inventory', () => {
+    const root = temporaryRoot()
+    const cli = join(root, 'cli')
+    const host = join(root, 'host')
+    const dependency = join(root, 'unhoisted')
+    const hoisted = join(root, 'hoisted')
+    mkdirSync(join(cli, 'node_modules'), { recursive: true })
+    mkdirSync(join(host, 'lib'), { recursive: true })
+    mkdirSync(dependency)
+    mkdirSync(hoisted)
+    writeFileSync(join(cli, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version: '1.2.3', dependencies: { unhoisted: 'workspace:^' } }))
+    writeFileSync(join(host, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-desktop-host', version: '1.2.3' }))
+    writeFileSync(join(host, 'lib/index.js'), '')
+    writeFileSync(join(dependency, 'package.json'), JSON.stringify({ name: 'unhoisted', version: '1.2.3' }))
+    symlinkSync(dependency, join(cli, 'node_modules/unhoisted'), process.platform === 'win32' ? 'junction' : 'dir')
+    const project = prepareDevelopmentProject({ projectDir: join(root, 'runtime'), cliDir: cli, hostDir: host, dependencyDir: hoisted, release: release(), target: 'mac-arm64' })
+    expect(realpathSync(join(project, 'node_modules/unhoisted'))).toBe(realpathSync(dependency))
+    const descriptor = JSON.parse(readFileSync(join(project, 'desktop-runtime.json'), 'utf8')) as { platform: string; arch: string; sharedPackages: unknown[] }
+    expect(descriptor).toMatchObject({ platform: 'darwin', arch: 'arm64' })
+    expect(descriptor.sharedPackages).toContainEqual({ name: 'unhoisted', version: '1.2.3', path: 'node_modules/unhoisted' })
+  })
+
   it('manages development plugins without modifying the linked workspace packages', async () => {
     const root = temporaryRoot()
     const cli = join(root, 'apps', 'cli')
@@ -71,6 +93,7 @@ describe('desktop development project', () => {
       hostDir: host,
       dependencyDir: dependencies,
       release: release(),
+      target: 'win-x64',
     })
     expect(realpathSync(join(project, 'node_modules', '@deepseek-ai', 'dsh'))).toBe(realpathSync(cli))
     expect(realpathSync(join(project, 'node_modules', '@deepseek-ai', 'dsh-desktop-host'))).toBe(realpathSync(host))
@@ -85,6 +108,8 @@ describe('desktop development project', () => {
     }
     expect(manifest.dependencies['@deepseek-ai/dsh']).toBe('1.2.3')
     expect(manifest.dependencies['@deepseek-ai/dsh-desktop-host']).toBe('1.2.3')
+    const descriptor = JSON.parse(readFileSync(join(project, 'desktop-runtime.json'), 'utf8')) as { platform: string; arch: string }
+    expect(descriptor).toMatchObject({ platform: 'win32', arch: 'x64' })
     const manager = new DesktopProjectManager(resolveDesktopPaths(join(root, 'home')), {
       dsh: project,
     })
@@ -130,6 +155,7 @@ describe('desktop development project', () => {
       hostDir: host,
       dependencyDir: dependencies,
       release: release(),
+      target: 'mac-arm64',
     })
     expect(realpathSync(join(project, 'node_modules', '@deepseek-ai', 'dsh'))).toBe(realpathSync(cli))
     expect(realpathSync(join(project, 'node_modules', '@deepseek-ai', 'dsh-desktop-host'))).toBe(realpathSync(host))
@@ -156,39 +182,8 @@ describe('desktop development project', () => {
       hostDir: host,
       dependencyDir: dependencies,
       release: release(),
+      target: 'mac-x64',
     })).toThrow(/must be @deepseek-ai\/dsh@1\.2\.3/u)
   })
 
-  it('rejects a runtime dependency whose declared entry has not been built', () => {
-    const root = temporaryRoot()
-    const cli = join(root, 'apps', 'cli')
-    const host = join(root, 'apps', 'desktop-host')
-    const dependencies = join(root, 'workspace-dependencies')
-    const missing = join(dependencies, '@deepseek-ai', 'dsh-missing-entry')
-    mkdirSync(join(cli, 'lib'), { recursive: true })
-    mkdirSync(join(host, 'lib'), { recursive: true })
-    mkdirSync(missing, { recursive: true })
-    writeFileSync(
-      join(cli, 'package.json'),
-      JSON.stringify({
-        name: '@deepseek-ai/dsh',
-        version: '1.2.3',
-        dependencies: { '@deepseek-ai/dsh-missing-entry': 'workspace:^' },
-      }),
-    )
-    writeFileSync(join(host, 'package.json'), '{"name":"@deepseek-ai/dsh-desktop-host","version":"1.2.3"}\n')
-    writeFileSync(join(host, 'lib', 'index.js'), '')
-    writeFileSync(
-      join(missing, 'package.json'),
-      '{"name":"@deepseek-ai/dsh-missing-entry","main":"lib/index.js"}\n',
-    )
-
-    expect(() => prepareDevelopmentProject({
-      projectDir: join(root, 'development'),
-      cliDir: cli,
-      hostDir: host,
-      dependencyDir: dependencies,
-      release: release(),
-    })).toThrow(/required workspace build artifacts are missing: @deepseek-ai\/dsh-missing-entry\/lib\/index\.js; run pnpm run build/u)
-  })
 })

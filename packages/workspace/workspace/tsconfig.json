@@ -15,6 +15,9 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../../../vendor/loader"
+    },
+    {
       "path": "../../../vendor/schemastery"
     },
     {
@@ -22,9 +25,6 @@
     },
     {
       "path": "../../storage/storage-domain"
-    },
-    {
-      "path": "../../settings/settings"
     },
     {
       "path": "../../core/session"

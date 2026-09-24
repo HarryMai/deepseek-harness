@@ -14,6 +14,8 @@ import type { WorkspaceId } from './types.ts'
 /** Workspace id schema at the durable boundary; branding has no runtime representation. */
 const workspaceId = z.string().transform(value => value as WorkspaceId)
 
+const sessionId = z.string().transform(value => brandString<SessionId>(value))
+
 /**
  * Durable shape of one workspace record. `path` is the `fs.realpath` canon
  * stamped at create; `sessionIds` is the ordered ownership account (array
@@ -22,7 +24,7 @@ const workspaceId = z.string().transform(value => value as WorkspaceId)
 export const workspaceRecord = z.object({
   path: z.string(),
   title: z.string(),
-  sessionIds: z.array(z.string().transform(value => brandString<SessionId>(value))),
+  sessionIds: z.array(sessionId),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -54,18 +56,25 @@ const workspacePendingMutation = z.discriminatedUnion('operation', [
  * from one that still needs the header-only history bootstrap;
  * `workspaceIds` is the authoritative display order. `archivedSessionIds` is
  * the registry-global archive set layered over workspace accounting: an
- * archived session keeps its `sessionIds` slot, so the set never participates
- * in the one-owner accounting invariant. `recycleBinEntries` tracks which
- * archived Sessions remain recoverable, while `clearedArchivedSessionIds`
- * prevents a cleared archive from being treated as legacy data on restart.
- * Every archive field defaults so records written before it parse unchanged.
+ * archived session keeps its `sessionIds` slot (unarchiving must restore the
+ * position), so the set never participates in the one-owner accounting
+ * invariant. `recycleBinEntries` tracks which archived Sessions remain
+ * recoverable, while `clearedArchivedSessionIds` prevents cleared archives
+ * from being treated as legacy data on restart. `pinnedSessionIds` is the
+ * registry-global pin set in pin order (most recently pinned first); pinning
+ * and archival are mutually exclusive, so archiving drops the session's pin.
+ * Every session collection defaults so records written before these fields
+ * parse unchanged.
  */
 export const workspaceDomainState = z.object({
   initialized: z.boolean(),
+  /** First-use Workspace identity, retained after its registration is deleted. */
+  defaultWorkspaceId: workspaceId.optional(),
   workspaceIds: z.array(workspaceId),
-  archivedSessionIds: z.array(z.string().transform(value => brandString<SessionId>(value))).default([]),
+  archivedSessionIds: z.array(sessionId).default([]),
   recycleBinEntries: z.array(workspaceRecycleBinEntry).default([]),
   clearedArchivedSessionIds: z.array(z.string().transform(value => brandString<SessionId>(value))).default([]),
+  pinnedSessionIds: z.array(sessionId).default([]),
   pendingMutation: workspacePendingMutation.optional(),
 })
 
@@ -89,6 +98,7 @@ export const workspaceDomainSpec = defineDomain({
       archivedSessionIds: [],
       recycleBinEntries: [],
       clearedArchivedSessionIds: [],
+      pinnedSessionIds: [],
     },
   },
   tables: { workspaces: domainTable<WorkspaceId, WorkspaceRecord>(workspaceRecord) },

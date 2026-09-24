@@ -6,7 +6,7 @@ The application ships MCP support but ships no MCP server definition, command, e
 
 Settings contains a top-level **Custom Configuration** tab alongside **Models** and **Agent Presets**. The tab lets a user save any number of MCP server records, control the collection with a master switch, and control each record with its own switch.
 
-Every new record starts with its own switch off. A record loads only when the master switch and that record's switch are both on and its fields are valid. The master switch, every record, and every record switch are persisted in the user's settings document, so the next application launch restores their saved state. Turning the master switch off unloads every dynamic MCP client; turning one record off unloads only that client while retaining its configuration.
+Every new record starts with its own switch off. A record loads only when the master switch and that record's switch are both on and its fields are valid. The master switch, every record, and every record switch are saved in the active profile's settings, so the next application launch restores their state. Turning the master switch off unloads every dynamic MCP client; turning one record off unloads only that client while retaining its configuration.
 
 ## Supported records
 
@@ -15,7 +15,7 @@ Each record has a user-chosen `serverName`, which namespaces its tools as `mcp__
 - **Local program (stdio):** an executable or runtime command, repeatable arguments, repeatable key-value environment variables, and an optional working directory. Arguments and environment rows can be added or removed; an empty starter row is shown for each array editor. A locally installed program such as CodeGraph is configured this way; the application does not bundle that program.
 - **Streamable HTTP:** an `http:` or `https:` MCP endpoint URL.
 
-Incomplete, malformed, duplicate server-name, or invalid-environment records stay saved but do not load. A valid enabled record continues to load when another enabled record is invalid. Stdio environment variables are saved as a string map and passed to the child process; values are written to the settings file as supplied, so do not use this field for secrets that require protected credential storage. HTTP headers are not exposed by the settings page.
+Incomplete, malformed, duplicate server-name, or invalid-environment records stay saved but do not load. A valid enabled record continues to load when another enabled record is invalid. Stdio environment variables are saved as a string map and passed to the child process; values are saved as supplied, so do not use this field for secrets that require protected credential storage. HTTP headers are not exposed by the settings page.
 
 ## JSON import and connection test
 

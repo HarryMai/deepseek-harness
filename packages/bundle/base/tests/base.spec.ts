@@ -46,14 +46,12 @@ describe('dsh-base bundle', () => {
     expect(rows.find(row => row.id === 'tool-web')?.config).toMatchObject({ fetch: true })
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-codex')
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
-    const mcpSettings = rows.find(row => row.id === 'mcp-settings')
-    expect(mcpSettings).toMatchObject({
-      name: '@deepseek-ai/dsh-mcp-client/settings',
-      group: true,
-    })
-    // The shared profile carries only the settings-backed group. No server
-    // entry exists until a user enables and completes one in settings.yaml.
-    expect(mcpSettings?.config).toEqual([])
+    const mcpGroup = rows.find(row => row.id === 'mcp-settings')
+    expect(mcpGroup).toMatchObject({ name: 'cordis:group', group: true, config: [] })
+    const mcpSettings = rows.find(row => row.id === 'mcp-client')
+    expect(mcpSettings).toMatchObject({ name: '@deepseek-ai/dsh-mcp-client/settings', config: {} })
+    // Profile settings control the manager; the separate group starts empty.
+    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-settings-file')
     expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-web-fetch-http')
   })
 

@@ -36,8 +36,7 @@ function sessionState(ids: readonly SessionId[]): SessionListState {
     ids: sessionIds,
     byId: Object.fromEntries(summaries.map(summary => [summary.id, summary])),
     phase: 'ready',
-    subagentsByParent: {},
-    jobsBySession: {},
+    projectionsBySession: {},
   }
 }
 
@@ -49,6 +48,7 @@ function workspaceState(ids: readonly SessionId[]): WorkspaceSnapshot {
       sessionId,
       archivedAt: '2026-09-18T00:00:00.000Z',
     })),
+    pinnedSessionIds: [],
     state: 'idle',
     phase: 'ready',
     error: null,

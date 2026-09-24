@@ -1,16 +1,17 @@
 /** Browser-side draft and save behavior for user-owned MCP records. */
 
 import { describe, expect, it, vi } from 'vitest'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   DEFAULT_MCP_SETTINGS, McpSettingsController, parseMcpJson, serverIssue,
 } from '../src/client/settings.ts'
 import type { McpConnectionTester, McpSettings } from '../src/client/settings.ts'
 
-class MemoryScope implements SettingsScope<McpSettings> {
+class MemoryConfigForm implements ConfigForm<McpSettings> {
   readonly writes: Array<{ field: string; value: unknown }> = []
   private readonly listeners = new Set<() => void>()
-  private snapshot: SettingsScopeSnapshot<McpSettings>
+  private snapshot: ConfigFormSnapshot<McpSettings>
+  rejectNextWrite = false
 
   constructor(value: McpSettings = DEFAULT_MCP_SETTINGS, readonly writable = true) {
     this.snapshot = {
@@ -24,7 +25,7 @@ class MemoryScope implements SettingsScope<McpSettings> {
     }
   }
 
-  getSnapshot(): SettingsScopeSnapshot<McpSettings> {
+  getSnapshot(): ConfigFormSnapshot<McpSettings> {
     return this.snapshot
   }
 
@@ -33,10 +34,14 @@ class MemoryScope implements SettingsScope<McpSettings> {
     return () => { this.listeners.delete(listener) }
   }
 
-  async mutate(): Promise<void> {}
+  async mutate(): Promise<boolean> { return true }
 
-  async set(field: string, value: unknown): Promise<void> {
+  async set(field: string, value: unknown): Promise<boolean> {
     this.writes.push({ field, value: structuredClone(value) })
+    if (this.rejectNextWrite) {
+      this.rejectNextWrite = false
+      return false
+    }
     this.snapshot = {
       ...this.snapshot,
       value: { ...this.snapshot.value!, [field]: structuredClone(value) },
@@ -44,15 +49,16 @@ class MemoryScope implements SettingsScope<McpSettings> {
       revision: (this.snapshot.revision ?? 0) + 1,
     }
     for (const listener of this.listeners) listener()
+    return true
   }
 
-  async unset(_field: string): Promise<void> {}
+  async unset(_field: string): Promise<boolean> { return true }
 }
 
 describe('McpSettingsController', () => {
   it('defaults every added service to disabled, stages individual switches, then saves records before enabling the collection', async () => {
-    const scope = new MemoryScope()
-    const controller = new McpSettingsController(scope)
+    const form = new MemoryConfigForm()
+    const controller = new McpSettingsController(form)
 
     expect(controller.store.getSnapshot()).toMatchObject({
       status: 'ready', writable: true, dirty: false, settings: DEFAULT_MCP_SETTINGS,
@@ -74,8 +80,8 @@ describe('McpSettingsController', () => {
 
     await controller.save()
 
-    expect(scope.writes.map(write => write.field)).toEqual(['servers', 'enabled'])
-    expect(scope.getSnapshot().value).toEqual({
+    expect(form.writes.map(write => write.field)).toEqual(['servers', 'enabled'])
+    expect(form.getSnapshot().value).toEqual({
       enabled: true,
       servers: {
         'server-1': {
@@ -86,8 +92,8 @@ describe('McpSettingsController', () => {
         },
       },
     })
-    expect(controller.store.getSnapshot()).toMatchObject({ dirty: false, failed: false, settings: scope.getSnapshot().value })
-    const reopened = new McpSettingsController(scope)
+    expect(controller.store.getSnapshot()).toMatchObject({ dirty: false, failed: false, settings: form.getSnapshot().value })
+    const reopened = new McpSettingsController(form)
     expect(reopened.store.getSnapshot()).toMatchObject({
       dirty: false,
       settings: {
@@ -102,20 +108,35 @@ describe('McpSettingsController', () => {
   })
 
   it('writes disablement before changing records, so live clients stop before their collection is replaced', async () => {
-    const scope = new MemoryScope({
+    const form = new MemoryConfigForm({
       enabled: true,
       servers: {
         local: { enabled: true, transport: 'stdio', serverName: 'local', command: 'node', args: [], cwd: '', url: '' },
       },
     })
-    const controller = new McpSettingsController(scope)
+    const controller = new McpSettingsController(form)
 
     controller.setEnabled(false)
     controller.removeServer('local')
     await controller.save()
 
-    expect(scope.writes.map(write => write.field)).toEqual(['enabled', 'servers'])
-    expect(scope.getSnapshot().value).toEqual(DEFAULT_MCP_SETTINGS)
+    expect(form.writes.map(write => write.field)).toEqual(['enabled', 'servers'])
+    expect(form.getSnapshot().value).toEqual(DEFAULT_MCP_SETTINGS)
+  })
+
+  it('stops after Host refusal so a rejected record update cannot be followed by enabling the collection', async () => {
+    const form = new MemoryConfigForm()
+    form.rejectNextWrite = true
+    const controller = new McpSettingsController(form)
+    controller.addServer()
+    controller.editServer('server-1', { enabled: true, serverName: 'codegraph', command: 'codegraph' })
+    controller.setEnabled(true)
+
+    await controller.save()
+
+    expect(form.writes.map(write => write.field)).toEqual(['servers'])
+    expect(form.getSnapshot().value).toEqual(DEFAULT_MCP_SETTINGS)
+    expect(controller.store.getSnapshot()).toMatchObject({ saving: false, failed: true, dirty: true })
   })
 
   it('surfaces the conditions that leave a saved record unloaded', () => {
@@ -166,8 +187,8 @@ describe('McpSettingsController', () => {
       ],
     })
 
-    const scope = new MemoryScope({ enabled: true, servers: {} })
-    const controller = new McpSettingsController(scope)
+    const form = new MemoryConfigForm({ enabled: true, servers: {} })
+    const controller = new McpSettingsController(form)
     expect(controller.inject().importJson(JSON.stringify({
       mcp_servers: { node_repl: { command: 'node', args: ['repl.mjs'] } },
     }))).toEqual({ ok: true, count: 1 })
@@ -180,7 +201,7 @@ describe('McpSettingsController', () => {
         },
       },
     })
-    expect(scope.writes).toEqual([])
+    expect(form.writes).toEqual([])
     controller.dispose()
   })
 
@@ -202,8 +223,8 @@ describe('McpSettingsController', () => {
   it('tests a disabled draft record without saving, enabling, or retaining stale test results after an edit', async () => {
     const pending: PromiseWithResolvers<{ ok: true; toolCount: number }> = Promise.withResolvers()
     const tester: McpConnectionTester = { test: vi.fn(() => pending.promise) }
-    const scope = new MemoryScope()
-    const controller = new McpSettingsController(scope, tester)
+    const form = new MemoryConfigForm()
+    const controller = new McpSettingsController(form, tester)
     controller.addServer()
     controller.editServer('server-1', { serverName: 'codegraph', command: 'codegraph', args: ['serve'] })
 
@@ -214,21 +235,21 @@ describe('McpSettingsController', () => {
     expect(tester.test).toHaveBeenCalledWith({
       enabled: false, transport: 'stdio', serverName: 'codegraph', command: 'codegraph', args: ['serve'], env: {}, cwd: '', url: '',
     }, expect.any(AbortSignal))
-    expect(scope.writes).toEqual([])
+    expect(form.writes).toEqual([])
 
     controller.editServer('server-1', { args: ['serve', '--mcp'] })
     pending.resolve({ ok: true, toolCount: 4 })
     await Promise.resolve()
     expect(controller.store.getSnapshot().tests).toEqual({})
     expect(controller.store.getSnapshot().settings.servers['server-1']?.enabled).toBe(false)
-    expect(scope.writes).toEqual([])
+    expect(form.writes).toEqual([])
     controller.dispose()
   })
 
   it('reports a successful temporary connection test without persisting its result', async () => {
     const tester: McpConnectionTester = { test: vi.fn(async () => ({ ok: true as const, toolCount: 6 })) }
-    const scope = new MemoryScope()
-    const controller = new McpSettingsController(scope, tester)
+    const form = new MemoryConfigForm()
+    const controller = new McpSettingsController(form, tester)
     controller.addServer()
     controller.editServer('server-1', { serverName: 'computer-use', command: 'computer-use' })
 
@@ -236,7 +257,7 @@ describe('McpSettingsController', () => {
     await vi.waitFor(() => {
       expect(controller.store.getSnapshot().tests).toEqual({ 'server-1': { status: 'success', toolCount: 6 } })
     })
-    expect(scope.writes).toEqual([])
+    expect(form.writes).toEqual([])
     expect(controller.store.getSnapshot().settings.enabled).toBe(false)
     controller.dispose()
   })
