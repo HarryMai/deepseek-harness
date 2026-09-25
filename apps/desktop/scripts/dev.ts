@@ -124,7 +124,7 @@ export function resolveDevelopmentLaunch(
   const mainPort = debugPort('DSH_DESKTOP_MAIN_INSPECT_PORT', 9229, environment)
   const rendererPort = debugPort('DSH_DESKTOP_RENDERER_DEBUG_PORT', 9222, environment)
   const hostPort = debugPort('DSH_DESKTOP_HOST_INSPECT_PORT', 9230, environment)
-  const userData = join(DEVELOPMENT_ROOT, 'electron-user-data')
+  const userData = resolve(environment.DSH_DESKTOP_USER_DATA_DIR ?? join(DEVELOPMENT_ROOT, 'electron-user-data'))
   const launchArguments = [
     `--inspect=127.0.0.1:${String(mainPort)}`,
     `--remote-debugging-port=${String(rendererPort)}`,
@@ -154,6 +154,7 @@ async function launchElectron(projectDir: string, mode: DesktopDevelopmentLaunch
   if (typeof electron !== 'string') throw new Error('desktop development: electron executable is unavailable')
   const launch = resolveDevelopmentLaunch(mode, projectDir)
   console.log(`desktop development: DSH_HOME=${launch.home}`)
+  if (launch.userData !== undefined) console.log(`desktop development: userData=${launch.userData}`)
   if (mode === 'isolated') {
     console.log(`desktop development: inspectors main=${launch.arguments[0]?.split(':').at(-1)}, renderer=${launch.arguments[1]?.split('=').at(-1)}, host=${launch.environment.DSH_DESKTOP_HOST_INSPECT_PORT}`)
   }

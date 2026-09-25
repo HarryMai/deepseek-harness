@@ -1,6 +1,58 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/extensions/tool-cordis/README.md
-README.md: 4c5e806e56b94ea4a381d3be4757e7fd0e38d1e3
-README.zh.md: 9997a4e9fe0d5f59d9f8f3b132c930a87aff5022
+/:
+  en: 784a82be07311e99
+  zh: 85d917ecc6386ec9
+/deepseek-ai-dsh-tool-cordis:
+  en: ea2c0ac7e7932a08
+  zh: 5562e6f26d700b64
+/deepseek-ai-dsh-tool-cordis/summary:
+  en: 7c1c5507642b70af
+  zh: b3a7ae89b4dec86c
+/deepseek-ai-dsh-tool-cordis/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 3a2f21ff0dc3420d
+/deepseek-ai-dsh-tool-cordis/use-this-package:
+  en: b96a79688863196c
+  zh: ae19344202d586aa
+/deepseek-ai-dsh-tool-cordis/use-this-package/minimal-composition:
+  en: ed1429a7f19571f1
+  zh: 0b81def468b7ce29
+/deepseek-ai-dsh-tool-cordis/use-this-package/what-the-tools-do:
+  en: 8fa449baa7a0e105
+  zh: ff01e23c732eda21
+/deepseek-ai-dsh-tool-cordis/use-this-package/a-typical-workflow:
+  en: 4586415c43bc1220
+  zh: 592b869f97f1c376
+/deepseek-ai-dsh-tool-cordis/use-this-package/boundaries-to-plan-around:
+  en: dbe8b05fef403311
+  zh: 744af3bcd066682f
+/deepseek-ai-dsh-tool-cordis/understand-the-implementation:
+  en: 067b997fb3a2304e
+  zh: 58583eee99305eec
+/deepseek-ai-dsh-tool-cordis/further-exploration:
+  en: 1863373f02bcc196
+  zh: 3efdbf5569411562
+/deepseek-ai-dsh-tool-cordis/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-tool-cordis/model-experience/runtime-inspection:
+  en: 72ffb7cae674c31a
+  zh: 85674f298a78592a
+/deepseek-ai-dsh-tool-cordis/model-experience/runtime-inspection/what-the-model-sees:
+  en: 51dba06a6ce1f38e
+  zh: c066474eb3ccc561
+/deepseek-ai-dsh-tool-cordis/model-experience/runtime-inspection/token-effect:
+  en: d112669c8e681403
+  zh: 9d5bdc96582a9973
+/deepseek-ai-dsh-tool-cordis/model-experience/runtime-inspection/kv-cache-effect:
+  en: 51d1c28aae0283a2
+  zh: 2263e3e95cadfb2f
+/deepseek-ai-dsh-tool-cordis/known-limitations-and-deferred-work:
+  en: 6ef8eec20d369fa2
+  zh: 118c9db3cd351d2a
+/deepseek-ai-dsh-tool-cordis/known-limitations-and-deferred-work/dev-note:
+  en: 0a1253c6f7b5e8b9
+  zh: 9f56528562c7c914

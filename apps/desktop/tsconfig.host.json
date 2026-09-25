@@ -27,7 +27,13 @@
       "path": "../../packages/client/ui-sidebar-browser/tsconfig.host.json"
     },
     {
+      "path": "../../packages/client/shortcuts/tsconfig.host.json"
+    },
+    {
       "path": "../../packages/subprocess/subprocess-local"
+    },
+    {
+      "path": "../../packages/util/atomic-write"
     }
   ],
   "exclude": [
