@@ -30,7 +30,7 @@ export type DesktopDevelopmentLaunchMode = 'isolated' | 'compatibility'
 export interface DesktopDevelopmentLaunch {
   /** Harness home passed to the Desktop main process and Host child. */
   readonly home: string
-  /** Explicit Electron user-data directory, when the launch mode requires one. */
+  /** Explicit Electron user-data directory, when configured or required by the launch mode. */
   readonly userData: string | undefined
   /** Environment inherited by Electron. */
   readonly environment: NodeJS.ProcessEnv
@@ -89,7 +89,7 @@ async function runPackageScript(script: string, cwd: string): Promise<void> {
  *
  * Isolated mode uses disposable Harness and Electron data directories with
  * debug endpoints. Compatibility mode uses the resolved shared Harness home,
- * Electron's default user-data directory, and no debug endpoints.
+ * Electron's default user-data directory unless overridden, and no debug endpoints.
  * @param mode - Isolated development mode or the root-command compatibility mode.
  * @param projectDir - Prepared development project passed to the main process.
  * @param environment - Environment to inherit and resolve launch overrides from.
@@ -106,9 +106,12 @@ export function resolveDevelopmentLaunch(
     ? resolveDshHome(undefined, environment)
     : resolve(environment.DSH_HOME ?? join(DEVELOPMENT_ROOT, 'home'))
   if (compatibility) {
+    const userData = environment.DSH_DESKTOP_USER_DATA_DIR === undefined
+      ? undefined
+      : resolve(environment.DSH_DESKTOP_USER_DATA_DIR)
     return {
       home,
-      userData: undefined,
+      userData,
       environment: {
         ...environment,
         DSH_HOME: home,
@@ -118,14 +121,14 @@ export function resolveDevelopmentLaunch(
         DSH_DESKTOP_NODE_BINARY: process.execPath,
         DSH_DESKTOP_OPEN_DEVTOOLS: '0',
       },
-      arguments: [APP_ROOT],
+      arguments: userData === undefined ? [APP_ROOT] : [`--user-data-dir=${userData}`, APP_ROOT],
     }
   }
 
   const mainPort = debugPort('DSH_DESKTOP_MAIN_INSPECT_PORT', 9229, environment)
   const rendererPort = debugPort('DSH_DESKTOP_RENDERER_DEBUG_PORT', 9222, environment)
   const hostPort = debugPort('DSH_DESKTOP_HOST_INSPECT_PORT', 9230, environment)
-  const userData = join(DEVELOPMENT_ROOT, 'electron-user-data')
+  const userData = resolve(environment.DSH_DESKTOP_USER_DATA_DIR ?? join(DEVELOPMENT_ROOT, 'electron-user-data'))
   const launchArguments = [
     `--inspect=127.0.0.1:${String(mainPort)}`,
     `--remote-debugging-port=${String(rendererPort)}`,
@@ -155,6 +158,7 @@ async function launchElectron(projectDir: string, mode: DesktopDevelopmentLaunch
   if (typeof electron !== 'string') throw new Error('desktop development: electron executable is unavailable')
   const launch = resolveDevelopmentLaunch(mode, projectDir)
   console.log(`desktop development: DSH_HOME=${launch.home}`)
+  if (launch.userData !== undefined) console.log(`desktop development: userData=${launch.userData}`)
   if (mode === 'isolated') {
     console.log(`desktop development: inspectors main=${launch.arguments[0]?.split(':').at(-1)}, renderer=${launch.arguments[1]?.split('=').at(-1)}, host=${launch.environment.DSH_DESKTOP_HOST_INSPECT_PORT}`)
   }
