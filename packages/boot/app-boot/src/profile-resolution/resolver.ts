@@ -610,20 +610,30 @@ class ResolutionRouter {
   }
 }
 
+/**
+ * Read Node loader internals through the exposed runtime when the launcher provides it.
+ * @returns The current ESM and CommonJS loader interfaces.
+ */
 function internalModules(): InternalModules {
   const require = createRequire(import.meta.url)
-  const addon = require('node-addon-require-builtin') as { requireBuiltin(moduleId: string): unknown }
-  const esmModule = addon.requireBuiltin('internal/modules/esm/loader') as {
+  let loadInternalModule: (moduleId: string) => unknown
+  if (process.execArgv.includes('--expose-internals')) {
+    loadInternalModule = moduleId => require(moduleId)
+  } else {
+    const addon = require('node-addon-require-builtin') as { requireBuiltin(moduleId: string): unknown }
+    loadInternalModule = moduleId => addon.requireBuiltin(moduleId)
+  }
+  const esmModule = loadInternalModule('internal/modules/esm/loader') as {
     getOrInitializeCascadedLoader(): ModuleLoaderV1 | ModuleLoaderV2
   }
-  const cjsModule = addon.requireBuiltin('internal/modules/cjs/loader') as { Module: CommonJsModule }
-  const cjsHelpers = addon.requireBuiltin('internal/modules/helpers') as {
+  const cjsModule = loadInternalModule('internal/modules/cjs/loader') as { Module: CommonJsModule }
+  const cjsHelpers = loadInternalModule('internal/modules/helpers') as {
     getCjsConditions(): ReadonlySet<string>
   }
-  const esmUtils = addon.requireBuiltin('internal/modules/esm/utils') as {
+  const esmUtils = loadInternalModule('internal/modules/esm/utils') as {
     getDefaultConditions(): readonly string[]
   }
-  const esmResolve = addon.requireBuiltin('internal/modules/esm/resolve') as {
+  const esmResolve = loadInternalModule('internal/modules/esm/resolve') as {
     defaultResolve(
       specifier: string,
       context: { parentURL?: string; conditions?: readonly string[] },
