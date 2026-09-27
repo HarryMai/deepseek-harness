@@ -222,7 +222,7 @@ async function main(): Promise<void> {
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : error)
+    console.error(error)
     process.exitCode = 1
   })
 }

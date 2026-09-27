@@ -1,8 +1,8 @@
 /** Prepare pinned, relocatable script interpreters without installing into the build host. */
 
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { cp } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -13,6 +13,106 @@ import { x as extractTar } from 'tar'
 import { parsePrimaryRuntime, workspaceDependencyPaths, type PrimaryRuntimeManifest } from '../../packages/skill/tool-workspace-dependencies/src/index.ts'
 import lock from './lock.json' with { type: 'json' }
 
+const FETCH_IDLE_TIMEOUT_MS = 20_000
+const CURL_CONNECT_TIMEOUT_SECONDS = 8
+const CURL_TOTAL_TIMEOUT_SECONDS = 20
+const CURL_RETRIES = 2
+const CURL_RANGE_BYTES = 256 * 1024
+const CURL_NULL_DEVICE = process.platform === 'win32' ? 'NUL' : '/dev/null'
+
+/** Download one asset with Node's Fetch implementation, stopping after an idle interval. */
+async function downloadWithFetch(url: string): Promise<Buffer> {
+  const controller = new AbortController()
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const refreshIdleTimeout = (): void => {
+    if (timeout !== undefined) clearTimeout(timeout)
+    timeout = setTimeout(() => {
+      controller.abort(new Error(`primary runtime download: no bytes received for ${String(FETCH_IDLE_TIMEOUT_MS)}ms`))
+    }, FETCH_IDLE_TIMEOUT_MS)
+  }
+  try {
+    refreshIdleTimeout()
+    const response = await fetch(url, { signal: controller.signal })
+    if (!response.ok) throw new Error(`primary runtime download: ${String(response.status)} ${url}`)
+    const reader = response.body?.getReader()
+    if (reader === undefined) throw new Error(`primary runtime download: response has no body for ${url}`)
+    const chunks: Uint8Array[] = []
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) return Buffer.concat(chunks)
+      chunks.push(value)
+      refreshIdleTimeout()
+    }
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout)
+  }
+}
+
+/** Run curl and collect its standard output as one binary response. */
+async function runCurl(args: readonly string[]): Promise<Buffer> {
+  return await new Promise<Buffer>((resolve, reject) => {
+    const child = spawn('curl', [
+      '--disable', '--fail', '--location', '--http1.1', '--silent', '--show-error',
+      '--retry', String(CURL_RETRIES),
+      '--connect-timeout', String(CURL_CONNECT_TIMEOUT_SECONDS),
+      '--max-time', String(CURL_TOTAL_TIMEOUT_SECONDS),
+      ...args,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const output: Buffer[] = []
+    const errors: Buffer[] = []
+    child.stdout.on('data', (chunk: Buffer) => { output.push(chunk) })
+    child.stderr.on('data', (chunk: Buffer) => { errors.push(chunk) })
+    child.once('error', reject)
+    child.once('close', (code, signal) => {
+      if (code === 0) {
+        resolve(Buffer.concat(output))
+        return
+      }
+      const diagnostic = Buffer.concat(errors).toString('utf8').trim()
+      reject(new Error(`primary runtime curl download exited with ${String(code ?? signal)}${diagnostic === '' ? '' : `: ${diagnostic}`}`))
+    })
+  })
+}
+
+/** Read the complete size advertised by curl's final byte-range response. */
+async function curlRangeSize(url: string): Promise<number> {
+  const headers = (await runCurl(['--range', '0-0', '--dump-header', '-', '--output', CURL_NULL_DEVICE, url])).toString('utf8')
+  let size: number | undefined
+  for (const line of headers.split(/\r?\n/u)) {
+    const match = /^content-range:\s*bytes\s+\d+-\d+\/(\d+)$/iu.exec(line)
+    if (match !== null) size = Number(match[1])
+  }
+  if (size === undefined || !Number.isSafeInteger(size) || size < 1) {
+    throw new Error(`primary runtime curl download: ${url} did not return a valid content range`)
+  }
+  return size
+}
+
+/** Download one asset through resumable curl byte ranges when Fetch cannot read its body. */
+async function downloadWithCurlRanges(url: string, partial: string): Promise<Buffer> {
+  const size = await curlRangeSize(url)
+  let start = 0
+  try {
+    start = statSync(partial).size
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  if (start > size || (start !== size && start % CURL_RANGE_BYTES !== 0)) {
+    rmSync(partial, { force: true })
+    start = 0
+  }
+  for (; start < size; start += CURL_RANGE_BYTES) {
+    const end = Math.min(start + CURL_RANGE_BYTES, size) - 1
+    const chunk = await runCurl(['--range', `${String(start)}-${String(end)}`, url])
+    const expected = end - start + 1
+    if (chunk.byteLength !== expected) {
+      throw new Error(`primary runtime curl download: ${url} returned ${String(chunk.byteLength)} bytes for range ${String(start)}-${String(end)}, expected ${String(expected)}`)
+    }
+    appendFileSync(partial, chunk)
+  }
+  return readFileSync(partial)
+}
+
 /**
  * Download or reuse an archive only when its bytes match the release lock.
  * @param url - Locked archive URL.
@@ -22,15 +122,28 @@ import lock from './lock.json' with { type: 'json' }
  */
 export async function downloadPrimaryRuntimeAsset(url: string, sha256: string, cache: string): Promise<string> {
   const destination = join(cache, sha256)
+  const partial = `${destination}.partial`
   let bytes: Buffer
   try { bytes = readFileSync(destination) } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    const response = await fetch(url)
-    if (!response.ok) throw new Error(`primary runtime download: ${String(response.status)} ${url}`)
-    bytes = Buffer.from(await response.arrayBuffer())
+    try {
+      bytes = await downloadWithFetch(url)
+    } catch (fetchError) {
+      const reason = fetchError instanceof Error ? fetchError.message : String(fetchError)
+      console.warn(`primary runtime download: Fetch failed for ${url}; retrying with curl byte ranges (${reason})`)
+      try {
+        bytes = await downloadWithCurlRanges(url, partial)
+      } catch (curlError) {
+        throw new AggregateError([fetchError, curlError], `primary runtime download failed for ${url}`)
+      }
+    }
   }
-  if (createHash('sha256').update(bytes).digest('hex') !== sha256) throw new Error(`primary runtime download: checksum mismatch for ${url}`)
+  if (createHash('sha256').update(bytes).digest('hex') !== sha256) {
+    rmSync(partial, { force: true })
+    throw new Error(`primary runtime download: checksum mismatch for ${url}`)
+  }
   writeFileSync(destination, bytes)
+  rmSync(partial, { force: true })
   return destination
 }
 
