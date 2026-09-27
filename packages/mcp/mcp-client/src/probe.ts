@@ -85,7 +85,7 @@ export function apply(ctx: Context, config: McpConnectionProbeConfig): void {
 }
 
 /**
- * Connect a temporary MCP client and list every advertised tool.
+ * Connect with the managed client's version negotiation policy and list every advertised tool.
  *
  * @param payload - untrusted request body from the settings page.
  * @param upstream - caller cancellation propagated by the Connection route.
@@ -102,7 +102,7 @@ export async function probeMcpConnection(
 
   const client = new Client(
     { name: 'dsh-mcp-settings-probe', version: '0.0.1' },
-    { capabilities: {} },
+    { capabilities: {}, versionNegotiation: { mode: 'auto' } },
   )
   using testDeadline = deadline(upstream, timeoutMs, TEST_TIMEOUT_CODE)
   try {
