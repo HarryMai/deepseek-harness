@@ -198,8 +198,9 @@ export function resolveMcpClientEntries(settings: McpSettings): McpClientEntries
 
 /**
  * Profile-backed settings owner that reconciles MCP client entries in the
- * separate `mcp-settings` group. A serial queue prevents overlapping volatile
- * updates from interleaving Loader rollback work.
+ * sibling `mcp-settings` group from the Loader tree containing this entry. A
+ * serial queue prevents overlapping volatile updates from interleaving Loader
+ * rollback work.
  */
 export class McpClientSettingsManager extends Service {
   static Config = McpSettingsConfig
@@ -220,7 +221,9 @@ export class McpClientSettingsManager extends Service {
 
   /** Reconcile the initial profile values and clear managed clients during teardown. */
   async *[Service.init](): AsyncGenerator<() => Promise<void>, void, void> {
-    const entry = this.ctx.loader.resolve(MCP_SETTINGS_GROUP_ID)
+    const owner = this.ctx.fiber.entry
+    if (owner === undefined) throw new Error('MCP settings owner has no Loader entry')
+    const entry = owner.parent.tree.resolve(MCP_SETTINGS_GROUP_ID)
     await entry._initTask
     await entry.fiber?.await()
     this.group = entry.subgroup
