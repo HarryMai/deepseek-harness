@@ -1,7 +1,7 @@
 /** Host registry and HTTP adapter for generic Connection RPC channels. */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import type { WebRoute, WebServer } from '@deepseek-ai/dsh-host-webserver'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import {
   RpcId,
@@ -46,6 +46,11 @@ interface RegisteredFetchRoute {
   readonly fetch: ConnectionFetchRoute['fetch']
 }
 
+interface RegisteredRpcRoute {
+  readonly route: WebRoute
+  detach?: () => void
+}
+
 interface ConnectionServerResponse {
   readonly type: 'server-response'
   readonly rpcId: RpcIdType
@@ -65,6 +70,8 @@ export class HostConnectionService extends Service implements HostConnectionHand
   readonly operator: PeerScope
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
   private readonly fetchRoutes = new Map<string, RegisteredFetchRoute>()
+  private readonly rpcRoutes = new Map<string, RegisteredRpcRoute>()
+  private webServer: WebServer | undefined
 
   /**
    * Provide the Host half over the active HTTP server.
@@ -120,6 +127,27 @@ export class HostConnectionService extends Service implements HostConnectionHand
   /** Add this process's launch token to the clean application URL. */
   authenticatedUrl(baseUrl: string): string {
     return this.browserAuth.authenticatedUrl(baseUrl)
+  }
+
+  /**
+   * Attach generic RPC channels to the active browser HTTP server.
+   * @param webServer - server that owns the current route table.
+   * @returns disposer that detaches every generic route from this server.
+   */
+  bindWebServer(webServer: WebServer): () => void {
+    if (this.webServer !== undefined) throw new Error('connection: generic RPC routes already have a WebServer')
+    try {
+      for (const registered of this.rpcRoutes.values()) this.attachRpcRoute(webServer, registered)
+      this.webServer = webServer
+    } catch (error) {
+      for (const registered of this.rpcRoutes.values()) this.detachRpcRoute(registered)
+      throw error
+    }
+    return () => {
+      if (this.webServer !== webServer) return
+      this.webServer = undefined
+      for (const registered of this.rpcRoutes.values()) this.detachRpcRoute(registered)
+    }
   }
 
   /**
@@ -188,10 +216,33 @@ export class HostConnectionService extends Service implements HostConnectionHand
         await bridge(req, res, fetchHandler)
       },
     }
-    return owner.effect(
-      () => owner.webServer.register(route),
-      `client-connection: ${channel} rpc channel`,
-    )
+    const registered: RegisteredRpcRoute = { route }
+    return owner.effect(() => {
+      if (this.rpcRoutes.has(channel)) {
+        throw new Error(`connection: duplicate route ${JSON.stringify(channel)}`)
+      }
+      this.rpcRoutes.set(channel, registered)
+      try {
+        if (this.webServer !== undefined) this.attachRpcRoute(this.webServer, registered)
+      } catch (error) {
+        this.rpcRoutes.delete(channel)
+        throw error
+      }
+      return () => {
+        this.detachRpcRoute(registered)
+        this.rpcRoutes.delete(channel)
+      }
+    }, `client-connection: ${channel} rpc channel`)
+  }
+
+  private attachRpcRoute(webServer: WebServer, registered: RegisteredRpcRoute): void {
+    if (registered.detach !== undefined) throw new Error(`connection: RPC route ${JSON.stringify(registered.route.path)} is already attached`)
+    registered.detach = webServer.register(registered.route)
+  }
+
+  private detachRpcRoute(registered: RegisteredRpcRoute): void {
+    registered.detach?.()
+    delete registered.detach
   }
 
   private registerInterceptor(
