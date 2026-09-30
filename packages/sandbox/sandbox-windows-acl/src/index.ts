@@ -63,6 +63,7 @@ export { tempWriteSid, workspaceWriteSid } from './workspace-sid.ts'
  * reads this name in the host process and forwards it on runner argv.
  */
 export const ACL_RUNNER_DEBUG_LOG_ENV = 'DSH_ACL_DEBUG_LOG'
+export { ACL_DIAGNOSIS_SKILL, registerAclDiagnosisSkill } from './acl-skill.ts'
 /** Construction options: the workspace/temp allowlists and their distinct SID identities. */
 export interface AclSandboxOptions {
   /** Directories the confined child may write into (must exist and be caller-owned). */

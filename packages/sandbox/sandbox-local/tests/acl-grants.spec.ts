@@ -50,6 +50,7 @@ vi.mock('@deepseek-ai/dsh-sandbox-windows-acl', () => {
     }
   }
   return {
+    registerAclDiagnosisSkill: vi.fn(),
     AclWriteGrant: MockAclWriteGrant,
     ACL_RUNNER_DEBUG_LOG_ENV: 'DSH_ACL_DEBUG_LOG',
     assertTempRootOutsideWorkspace: (workspaceRoot: string, tempRoot: string) => {
