@@ -7,6 +7,7 @@ import type { CordisInspectMethodManifest } from '../src/types.ts'
 
 const AGENT = { id: 'inspect-session' } as Agent
 const SIGNAL = new AbortController().signal
+const CLIENT_QUERY_TIMEOUT_MS = 100
 
 const OBJECT_METHOD: CordisInspectMethodManifest = {
   name: 'read',
@@ -27,7 +28,7 @@ const OBJECT_METHOD: CordisInspectMethodManifest = {
 
 describe('Cordis inspect nested JSON recovery', () => {
   it('normalizes valid JSON text before forwarding a Host query', async () => {
-    const registry = new CordisInspectRegistryService(new Context())
+    const registry = new CordisInspectRegistryService(new Context(), CLIENT_QUERY_TIMEOUT_MS)
     const seen: JsonValue[] = []
     registry.register({
       manifest: { id: 'probe', description: 'Probe provider.', methods: [OBJECT_METHOD] },
@@ -45,7 +46,7 @@ describe('Cordis inspect nested JSON recovery', () => {
 
   it('normalizes valid JSON text before forwarding a Client query', async () => {
     const ctx = new Context()
-    const registry = new CordisInspectRegistryService(ctx)
+    const registry = new CordisInspectRegistryService(ctx, CLIENT_QUERY_TIMEOUT_MS)
     registry.syncClientManifest([{ id: 'slots', description: 'Slot provider.', methods: [OBJECT_METHOD] }])
     let seen: JsonValue | undefined
     ctx.on('cordis/inspect-query', (request) => {
@@ -62,7 +63,7 @@ describe('Cordis inspect nested JSON recovery', () => {
   })
 
   it('preserves a valid string input without decoding it', async () => {
-    const registry = new CordisInspectRegistryService(new Context())
+    const registry = new CordisInspectRegistryService(new Context(), CLIENT_QUERY_TIMEOUT_MS)
     const jsonText = '{"root":"shell.overlay"}'
     registry.register({
       manifest: {
@@ -84,7 +85,7 @@ describe('Cordis inspect nested JSON recovery', () => {
   })
 
   it('keeps the original schema failure when JSON text is malformed or still invalid', async () => {
-    const registry = new CordisInspectRegistryService(new Context())
+    const registry = new CordisInspectRegistryService(new Context(), CLIENT_QUERY_TIMEOUT_MS)
     registry.register({
       manifest: { id: 'probe', description: 'Probe provider.', methods: [OBJECT_METHOD] },
       async query() {

@@ -76,7 +76,7 @@ async function bootManager(directory: string, events: DynamicEvents): Promise<{ 
     Object.assign(root.loader.builtins, { editor: ConfigEditor, settings: Settings })
   })
   contexts.push(ctx)
-  const entry = ctx.loader.entries().find(candidate => candidate.options.id === MCP_SETTINGS_NAMESPACE)
+  const entry = [...ctx.loader.entries()].find(candidate => candidate.options.id === MCP_SETTINGS_NAMESPACE)
   const group = entry?.subgroup
   if (group === undefined) throw new Error('MCP settings entry did not create a Loader group')
   return { ctx, group, patchPath: profile.patchPath }
