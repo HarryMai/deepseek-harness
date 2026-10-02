@@ -166,6 +166,22 @@ pnpm run dev:desktop
 pnpm run start:desktop
 ```
 
+### 合并后的 Windows 兼容性冒烟
+
+在 Windows checkout 合并 `upstream/master` 后，重新构建 workspace，运行聚焦的兼容性回归，再启动 Desktop：
+
+```sh
+pnpm clean
+pnpm install
+pnpm run build
+pnpm run test:desktop:compatibility
+pnpm desktop
+```
+
+`test:desktop:compatibility` 保留三条启动规则：没有包清单的虚拟 store 链接不能投影为依赖；primary-runtime 下载使用包含 IPv4 的有界重试序列；未配置强制更新策略的 Windows 必须向 preload 返回不阻塞的更新视图。
+
+`pnpm desktop` 是最终的交互式冒烟。针对非 Windows 平台的可选原生包警告属于预期；进程必须输出 `Office runtime versions and document round trips passed.`、`No broken requirements found.` 以及一行 `dsh web: http://127.0.0.1:<port>/...`。观察到地址后停止正在运行的应用。读取依赖 `package.json` 时出现 `ENOENT`、出现 `fetch failed`，或出现 `No handler registered for 'dsh-desktop:mandatory-status'` 均表示失败。
+
 Web 侧的对应命令是 `pnpm run dev:web` 与 `pnpm run start:web`，见[开发指南](../../docs/development.zh.md)。Workspace 开发使用 Electron RunAsNode 运行当前 CLI 与私有 Desktop Host 包，插件管理和恢复使用 `$DSH_HOME/profiles/desktop`，与一次性工作区运行时分离。Host 在开发与打包构建中都使用 runtime 模块解析，不创建官方包的 fallback 链接；开发者安装的包（包括链接）保留原生优先级。需要验证 Electron RunAsNode、内置 pnpm、内置 dsh 资源、插件安装和修复时，应运行未封装安装器的应用目录。
 
 [原生输入与渲染进程键盘测试](tests/keyboard.spec.ts)直接纳入仓库 Client 类型检查。它只导入不依赖 Cordis 的 Desktop 输入、持久化、IPC、浏览器 guest 和蒙层模块。

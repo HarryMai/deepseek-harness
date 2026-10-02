@@ -693,6 +693,18 @@ describe('desktop main startup', () => {
     }
   })
 
+  it('returns an inert policy view to the Windows overlay without a mandatory policy configuration', async () => {
+    await readyForUpdate()
+    const status = harness.handlers.get(MANDATORY_IPC.status)
+    if (status === undefined) throw new Error('missing fallback mandatory status handler')
+    const sender = harness.windows[0]!.webContents
+    await expect(Promise.resolve(status({ sender, senderFrame: sender.mainFrame }))).resolves.toMatchObject({
+      policy: { blocking: false, checking: false }, update: { phase: 'idle' }, deferred: false,
+    })
+    expect(() => status({ sender: {}, senderFrame: sender.mainFrame })).toThrow('unowned renderer')
+    expect(harness.handlers.has(MANDATORY_IPC.action)).toBe(false)
+  })
+
   it.each(['darwin', 'win32', 'linux'] as const)('limits native titlebar styling to macOS on %s', async (platform) => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
     await import('../src/main.ts')

@@ -30,8 +30,11 @@
   en: 84a9cc7ca9455aa8
   zh: 4091b8aa8231b74a
 /deepseek-harness-desktop/develop:
-  en: 5854d1e30e43afec
-  zh: dfddeb89ce5fb24f
+  en: 66c23be4d7cd19fa
+  zh: 7e6399376f3f2ff0
+/deepseek-harness-desktop/develop/post-merge-windows-compatibility-smoke:
+  en: 3b10e1b767335299
+  zh: 1e517553b8926275
 /deepseek-harness-desktop/develop/startup-onboarding:
   en: a51346b8d880ddba
   zh: 7913214c1c66063c

@@ -49,7 +49,8 @@ import { desktopErrorState } from './startup-error.ts'
 import { readDesktopLoginShellEnvironment, resolveDesktopLoginShellConfig } from './login-shell-environment.ts'
 import { DesktopMandatoryUpdatePolicy, resolveDesktopPolicyConfig, type DesktopPolicyState } from './mandatory-update-policy.ts'
 import { desktopClientMetadata, desktopClientVersion } from './client-metadata.ts'
-import { DesktopMandatoryUpdateWindow } from './mandatory-update-window.ts'
+import { DesktopMandatoryUpdateWindow, type MandatoryUpdateView } from './mandatory-update-window.ts'
+import { MANDATORY_IPC } from './mandatory-update-ipc.ts'
 import { DesktopPolicyTestAuth } from './policy-test-auth.ts'
 import { DesktopUpdateDialog, type UpdateDialogOptions } from './update-dialog.ts'
 import { readDesktopRuntime } from './runtime-tree.ts'
@@ -1332,6 +1333,17 @@ async function main(): Promise<void> {
     void mandatoryPolicy.check('launch').then((state) => {
       if (app.isPackaged && state.error === 'authentication-required' && !isQuitting()) queuePolicyAuthentication()
     }).catch((error: unknown) => { console.error(error) })
+  } else if (process.platform === 'win32') {
+    ipcMain.handle(MANDATORY_IPC.status, (event) => {
+      assertProductSender(event)
+      const view: MandatoryUpdateView = {
+        locale,
+        policy: { blocking: false, checking: false },
+        update: updateState,
+        deferred: false,
+      }
+      return view
+    })
   }
   automaticCheck()
   await reconcileBackend().catch(() => undefined)

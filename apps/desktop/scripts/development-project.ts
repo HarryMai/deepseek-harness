@@ -69,6 +69,10 @@ function linkDirectory(source: string, destination: string): void {
   symlinkSync(realpathSync(source), destination, process.platform === 'win32' ? 'junction' : 'dir')
 }
 
+function hasPackageManifest(directory: string): boolean {
+  return existsSync(join(directory, 'package.json'))
+}
+
 function mirrorDependencyLinks(sourceRoot: string, destinationRoot: string): string[] {
   const names: string[] = []
   for (const entry of readdirSync(sourceRoot, { withFileTypes: true })) {
@@ -81,12 +85,15 @@ function mirrorDependencyLinks(sourceRoot: string, destinationRoot: string): str
         if (!scoped.isDirectory() && !scoped.isSymbolicLink()) continue
         const scopedSource = join(source, scoped.name)
         if (scoped.isSymbolicLink() && !existsSync(scopedSource)) continue
+        if (!hasPackageManifest(scopedSource)) continue
         linkDirectory(scopedSource, join(destinationRoot, entry.name, scoped.name))
         names.push(`${entry.name}/${scoped.name}`)
       }
       continue
     }
-    if ((entry.isDirectory() || entry.isSymbolicLink()) && !(entry.isSymbolicLink() && !existsSync(source))) {
+    if ((entry.isDirectory() || entry.isSymbolicLink())
+      && !(entry.isSymbolicLink() && !existsSync(source))
+      && hasPackageManifest(source)) {
       linkDirectory(source, join(destinationRoot, entry.name))
       names.push(entry.name)
     }

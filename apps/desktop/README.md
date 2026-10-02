@@ -164,6 +164,22 @@ After an explicit build, `start:desktop` reconstructs the disposable project and
 pnpm run start:desktop
 ```
 
+### Post-merge Windows compatibility smoke
+
+After merging `upstream/master` into a Windows checkout, rebuild the workspace, run the focused compatibility regressions, and launch Desktop:
+
+```sh
+pnpm clean
+pnpm install
+pnpm run build
+pnpm run test:desktop:compatibility
+pnpm desktop
+```
+
+`test:desktop:compatibility` retains three startup rules: a virtual-store link without a package manifest is not a dependency projection, a primary-runtime download uses a bounded retry sequence that includes IPv4, and Windows without a mandatory-update policy returns an unblocked update view to the preload.
+
+`pnpm desktop` is the final interactive smoke. Warnings for optional native packages targeting non-Windows platforms are expected; the process must reach `Office runtime versions and document round trips passed.`, `No broken requirements found.`, and a `dsh web: http://127.0.0.1:<port>/...` line. Stop the running application after observing the address. An `ENOENT` while reading a dependency `package.json`, `fetch failed`, or `No handler registered for 'dsh-desktop:mandatory-status'` is a failure.
+
 The Web counterparts are `pnpm run dev:web` and `pnpm run start:web`, documented in the [development guide](../../docs/development.md). Workspace development runs the current CLI and private Desktop Host packages under Electron RunAsNode. Plugin management and recovery use `$DSH_HOME/profiles/desktop`, separate from the disposable workspace runtime. The Host uses runtime module resolution in both development and packaged builds without creating official-package fallback links; developer-installed packages, including links, retain native priority. Use an unpacked application to exercise Electron RunAsNode, bundled pnpm, bundled dsh resources, plugin installation and repair paths.
 
 The [native/renderer keyboard tests](tests/keyboard.spec.ts) compile as part of the repository Client typecheck. Their Desktop imports are limited to Cordis-free input, persistence, IPC, browser-guest, and overlay modules.

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createServer, type RequestListener } from 'node:http'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { zipSync } from 'fflate'
@@ -16,6 +17,25 @@ it('covers every SDK wheel target with the shared interpreter lock', () => {
 const libraryWheel = Buffer.from('UEsDBAoAAAAAAASeLl0sYMPjDAAAAAwAAAAJAAAAc2FtcGxlLnB5c2FtcGxlID0gNDIKUEsBAh4DCgAAAAAABJ4uXSxgw+MMAAAADAAAAAkAAAAAAAAAAQAAAKSBAAAAAHNhbXBsZS5weVBLBQYAAAAAAQABADcAAAAzAAAAAAA=', 'base64')
 const relocatedWheel = Buffer.from('UEsDBAoAAAAAAASeLl3x0Nj9FAAAABQAAAAeAAAAc2FtcGxlLTEuMC5kYXRhL3NjcmlwdHMvc2FtcGxlcmVxdWlyZXMgcmVsb2NhdGlvbgpQSwECHgMKAAAAAAAEni5d8dDY/RQAAAAUAAAAHgAAAAAAAAABAAAApIEAAAAAc2FtcGxlLTEuMC5kYXRhL3NjcmlwdHMvc2FtcGxlUEsFBgAAAAABAAEATAAAAFAAAAAAAA==', 'base64')
 const externalLibraryWheel = Buffer.from('UEsDBBQAAAAAAAAAIVyBOE8OHAAAABwAAAAhAAAAc2FtcGxlLTEuMC5kYXRhL3B1cmVsaWIvc2FtcGxlLnB5cmVxdWlyZXMgbGlicmFyeSByZWxvY2F0aW9uClBLAQIUAxQAAAAAAAAAIVyBOE8OHAAAABwAAAAhAAAAAAAAAAAAAACAAQAAAABzYW1wbGUtMS4wLmRhdGEvcHVyZWxpYi9zYW1wbGUucHlQSwUGAAAAAAEAAQBPAAAAWwAAAAAA', 'base64')
+
+async function downloadServer(handler: RequestListener): Promise<{ origin: string; close(): Promise<void> }> {
+  const server = createServer(handler)
+  await new Promise<void>((resolvePromise, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolvePromise)
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('primary runtime test server has no TCP address')
+  return {
+    origin: `http://127.0.0.1:${String(address.port)}`,
+    close: () => new Promise<void>((resolvePromise, reject) => {
+      server.close((error) => {
+        if (error === undefined) resolvePromise()
+        else reject(error)
+      })
+    }),
+  }
+}
 
 it.each(Object.entries(lock.targets))('records every locked wheel distribution and version for %s', (_target, artifact) => {
   const normalize = (name: string): string => name.toLowerCase().replace(/[-_.]+/gu, '-')
@@ -67,6 +87,75 @@ it('extracts a hash-verified cached library without a Python installer or networ
     await writeFile(archive, 'corrupt archive')
     await expect(downloadPrimaryRuntimeAsset('https://unused.invalid/library.whl', hash, root)).rejects.toThrow('checksum mismatch')
   } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it('follows redirects before caching a verified runtime download', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'desktop-download-'))
+  const requests: string[] = []
+  const server = await downloadServer((request, response) => {
+    requests.push(request.url ?? '')
+    if (request.url === '/start') {
+      response.writeHead(302, { location: '/asset' })
+      response.end()
+      return
+    }
+    if (request.url === '/asset') {
+      response.end(libraryWheel)
+      return
+    }
+    response.writeHead(404)
+    response.end()
+  })
+  try {
+    const hash = createHash('sha256').update(libraryWheel).digest('hex')
+    const archive = await downloadPrimaryRuntimeAsset(`${server.origin}/start`, hash, root)
+    expect(await readFile(archive)).toEqual(libraryWheel)
+    expect(requests).toEqual(['/start', '/asset'])
+  } finally {
+    await server.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it('retries a reset runtime download before caching its verified bytes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'desktop-download-'))
+  let requests = 0
+  const server = await downloadServer((request, response) => {
+    requests++
+    if (requests === 1) {
+      request.socket.destroy()
+      return
+    }
+    response.end(libraryWheel)
+  })
+  try {
+    const hash = createHash('sha256').update(libraryWheel).digest('hex')
+    const archive = await downloadPrimaryRuntimeAsset(`${server.origin}/asset`, hash, root)
+    expect(await readFile(archive)).toEqual(libraryWheel)
+    expect(requests).toBe(2)
+  } finally {
+    await server.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it('does not retry an HTTP status failure while downloading a runtime asset', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'desktop-download-'))
+  let requests = 0
+  const server = await downloadServer((_request, response) => {
+    requests++
+    response.writeHead(404)
+    response.end()
+  })
+  try {
+    const hash = createHash('sha256').update(libraryWheel).digest('hex')
+    await expect(downloadPrimaryRuntimeAsset(`${server.origin}/missing`, hash, root))
+      .rejects.toThrow(`primary runtime download: 404 ${server.origin}/missing`)
+    expect(requests).toBe(1)
+  } finally {
+    await server.close()
     await rm(root, { recursive: true, force: true })
   }
 })

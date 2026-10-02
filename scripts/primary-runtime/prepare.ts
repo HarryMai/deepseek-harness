@@ -4,6 +4,8 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { cp } from 'node:fs/promises'
+import { get as getHttp } from 'node:http'
+import { get as getHttps } from 'node:https'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -12,6 +14,69 @@ import extractZip from 'extract-zip'
 import { x as extractTar } from 'tar'
 import { parsePrimaryRuntime, workspaceDependencyPaths, type PrimaryRuntimeManifest } from '../../packages/skill/tool-workspace-dependencies/src/index.ts'
 import lock from './lock.json' with { type: 'json' }
+
+const DOWNLOAD_REDIRECT_LIMIT = 5
+const DOWNLOAD_SOCKET_TIMEOUT_MS = 10_000
+const DOWNLOAD_ATTEMPT_FAMILIES = [4, undefined, 4] as const
+const RETRYABLE_DOWNLOAD_ERRORS = new Set(['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN'])
+
+function downloadFailure(status: number, url: URL): Error {
+  return new Error(`primary runtime download: ${String(status)} ${url.toString()}`)
+}
+
+function retryableDownloadFailure(error: unknown): boolean {
+  return error instanceof Error && 'code' in error
+    && typeof error.code === 'string' && RETRYABLE_DOWNLOAD_ERRORS.has(error.code)
+}
+
+function downloadTimeoutFailure(url: URL): Error & { code: string } {
+  return Object.assign(new Error(`primary runtime download: timed out while reading ${url.toString()}`), { code: 'ETIMEDOUT' })
+}
+
+async function downloadBytes(url: URL, redirects = 0, family?: 4): Promise<Buffer> {
+  const get = url.protocol === 'https:' ? getHttps : url.protocol === 'http:' ? getHttp : undefined
+  if (get === undefined) throw new Error(`primary runtime download: unsupported protocol ${url.protocol}`)
+  return await new Promise<Buffer>((resolvePromise, reject) => {
+    const request = get(url, family === undefined ? {} : { family }, (response) => {
+      const status = response.statusCode ?? 0
+      if ([301, 302, 303, 307, 308].includes(status)) {
+        response.resume()
+        const location = response.headers.location
+        if (typeof location !== 'string' || redirects >= DOWNLOAD_REDIRECT_LIMIT) {
+          reject(downloadFailure(status, url))
+          return
+        }
+        downloadBytes(new URL(location, url), redirects + 1, family).then(resolvePromise, reject)
+        return
+      }
+      if (status < 200 || status >= 300) {
+        response.resume()
+        reject(downloadFailure(status, url))
+        return
+      }
+      const chunks: Buffer[] = []
+      response.on('data', (chunk: Buffer) => chunks.push(chunk))
+      response.once('end', () => {
+        resolvePromise(Buffer.concat(chunks))
+      })
+      response.once('error', reject)
+    })
+    request.setTimeout(DOWNLOAD_SOCKET_TIMEOUT_MS, () => request.destroy(downloadTimeoutFailure(url)))
+    request.once('error', reject)
+  })
+}
+
+async function downloadWithRetry(url: string): Promise<Buffer> {
+  for (const [attempt, family] of DOWNLOAD_ATTEMPT_FAMILIES.entries()) {
+    try {
+      return await downloadBytes(new URL(url), 0, family)
+    } catch (error) {
+      if (!retryableDownloadFailure(error) || attempt === DOWNLOAD_ATTEMPT_FAMILIES.length - 1) throw error
+      await new Promise<void>(resolvePromise => setTimeout(resolvePromise, 100 * 2 ** attempt))
+    }
+  }
+  throw new Error('primary runtime download: retry loop completed without a result')
+}
 
 /**
  * Download or reuse an archive only when its bytes match the release lock.
@@ -25,9 +90,7 @@ export async function downloadPrimaryRuntimeAsset(url: string, sha256: string, c
   let bytes: Buffer
   try { bytes = readFileSync(destination) } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    const response = await fetch(url)
-    if (!response.ok) throw new Error(`primary runtime download: ${String(response.status)} ${url}`)
-    bytes = Buffer.from(await response.arrayBuffer())
+    bytes = await downloadWithRetry(url)
   }
   if (createHash('sha256').update(bytes).digest('hex') !== sha256) throw new Error(`primary runtime download: checksum mismatch for ${url}`)
   writeFileSync(destination, bytes)

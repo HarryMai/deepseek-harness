@@ -70,6 +70,13 @@ describe('desktop development project', () => {
     writeFileSync(join(dependencies, 'plain-dependency', 'package.json'), '{}\n')
     mkdirSync(join(dependencies, '@scope', 'dependency'))
     writeFileSync(join(dependencies, '@scope', 'dependency', 'package.json'), '{}\n')
+    const staleLandlockPackage = join(root, 'stale-landlock-package')
+    mkdirSync(staleLandlockPackage)
+    symlinkSync(
+      staleLandlockPackage,
+      join(dependencies, '@deepseek-ai', 'node-addon-landlock-run'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
     const unavailableScope = join(root, 'missing-optional-scope')
     const unavailablePackage = join(root, 'missing-optional-package')
     mkdirSync(unavailableScope)
@@ -101,6 +108,7 @@ describe('desktop development project', () => {
       .toBe(realpathSync(join(dependencies, 'plain-dependency')))
     expect(realpathSync(join(project, 'node_modules', '@scope', 'dependency')))
       .toBe(realpathSync(join(dependencies, '@scope', 'dependency')))
+    expect(existsSync(join(project, 'node_modules', '@deepseek-ai', 'node-addon-landlock-run'))).toBe(false)
     expect(existsSync(join(project, 'node_modules', '@unavailable'))).toBe(false)
     expect(existsSync(join(project, 'node_modules', '@scope', 'unavailable'))).toBe(false)
     const manifest = JSON.parse(readFileSync(join(project, 'package.json'), 'utf8')) as {
