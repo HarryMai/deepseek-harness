@@ -29,9 +29,18 @@ describe('desktop build paths', () => {
     for (const key of mutableKeys) {
       expect(new Set([arm64[key], x64[key], windows[key]]).size).toBe(3)
     }
-    expect(arm64.artifacts).toContain(join('targets', 'mac-arm64', 'artifacts'))
+    expect(arm64.artifacts).toContain(join('out', 'targets', 'mac-arm64', 'artifacts'))
     expect(x64.dsh).toContain(join('targets', 'mac-x64', 'dsh'))
     expect(windows.runtime).toContain(join('targets', 'win-x64', 'runtime'))
+  })
+
+  it.each(['mac-arm64', 'mac-x64', 'win-x64'] as const)('places %s final artifacts under out and preparation under .desktop-build', (target) => {
+    const paths = desktopTargetBuildPaths(target)
+    expect(paths.artifacts).toContain(join('out', 'targets', target, 'artifacts'))
+    expect(paths.unsignedArtifacts).toContain(join('out', 'targets', target, 'unsigned-artifacts'))
+    expect(paths.root).toContain(join('.desktop-build', 'targets', target))
+    expect(paths.artifacts.startsWith(`${paths.root}${sep}`)).toBe(false)
+    expect(paths.unsignedArtifacts.startsWith(`${paths.root}${sep}`)).toBe(false)
   })
 
   it('shares only the immutable upstream download cache', () => {

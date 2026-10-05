@@ -43,7 +43,7 @@ describe('desktop macOS release signature', () => {
     const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
     const config = createElectronBuilderConfig(RELEASE_ENVIRONMENT, 'darwin', 'arm64')
     expect(config.protocols).toEqual([{ name: 'DeepSeek Harness', schemes: ['dsh'] }])
-    expect(portablePath(config.directories.output)).toContain('/.desktop-build/targets/mac-arm64/artifacts')
+    expect(portablePath(config.directories.output)).toContain('/out/targets/mac-arm64/artifacts')
     expect(config.mac.extendInfo.NSMicrophoneUsageDescription).toContain('microphone')
     expect(config.mac.entitlementsInherit).toBe(config.mac.entitlements)
     const entitlements = readFileSync(config.mac.entitlements, 'utf8')
@@ -108,7 +108,7 @@ describe('desktop macOS release signature', () => {
       DSH_DESKTOP_APP_ID: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
       DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
       DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }),
-      DSH_DESKTOP_TARGET_PLATFORM: 'win32',
+      DSH_DESKTOP_TARGET_PLATFORM: 'win32', DSH_DESKTOP_UNSIGNED: '0',
     }, 'win32')).toThrow(/DSH_DESKTOP_WINDOWS_CER_FILE/u)
   })
 
@@ -129,10 +129,8 @@ describe('desktop macOS release signature', () => {
     })
   })
 
-  it('rejects unsigned macOS builds and malformed signing modes', async () => {
+  it('rejects malformed signing modes', async () => {
     const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
-    expect(() => createElectronBuilderConfig({ ...RELEASE_ENVIRONMENT, DSH_DESKTOP_UNSIGNED: '1' }))
-      .toThrow(/unsigned builds require Windows/u)
     expect(() => createElectronBuilderConfig({ ...RELEASE_ENVIRONMENT, DSH_DESKTOP_UNSIGNED: 'yes' }))
       .toThrow(/must be 0 or 1/u)
   })
@@ -233,4 +231,19 @@ describe('desktop macOS release signature', () => {
     expect(submitted).toEqual(['/tmp/release.dmg'])
     expect(verified).toEqual(['/tmp/release.dmg'])
   })
+})
+
+it.each(['arm64', 'x64'] as const)('packages unsigned macOS %s with ad-hoc signing and no release services', async (arch) => {
+  const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
+  for (const env of [{}, { ...RELEASE_ENVIRONMENT, DSH_DESKTOP_UNSIGNED: '1' }]) {
+    const config = createElectronBuilderConfig({ ...env, DSH_DESKTOP_TARGET_ARCH: arch }, 'darwin', arch)
+    expect(config.mac).toMatchObject({ identity: '-', forceCodeSigning: false, notarize: false, hardenedRuntime: true })
+    expect(config.dmg.sign).toBe(false)
+    expect(config.publish).toBeNull()
+    expect(config.extraMetadata).not.toHaveProperty('dshMandatoryUpdatePolicy')
+    expect(config.afterSign).toBeUndefined()
+    expect(config.artifactBuildCompleted).toBeUndefined()
+    expect(config.artifactName).toContain('-unsigned')
+    expect(portablePath(config.directories.output)).toContain(`/targets/mac-${arch}/unsigned-artifacts`)
+  }
 })

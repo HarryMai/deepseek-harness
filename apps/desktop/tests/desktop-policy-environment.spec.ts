@@ -6,6 +6,10 @@ import { resolveDesktopPolicyConfig } from '../src/mandatory-update-policy.ts'
 const origins = { DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://test.example.com',
   DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN: 'https://prod.example.com' }
 const auth = { DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }) }
+const signing = {
+  win32: { DSH_DESKTOP_WINDOWS_CER_FILE: 'missing.cer' },
+  darwin: { DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Example Company (TEAMID1234)', DSH_DESKTOP_MACOS_TEAM_ID: 'TEAMID1234' },
+} as const
 
 it.each(['test', 'production'] as const)('selects the %s policy and authentication together', (deployment) => {
   const policy = resolveDesktopPolicyEnvironment({ ...origins, ...(deployment === 'test' ? auth : {}), DSH_DESKTOP_AUTO_UPDATE_ENV: deployment })
@@ -47,9 +51,28 @@ it('rejects login origins in production', () => {
     .toThrow('must not configure allowedAuthOrigins')
 })
 
-it.each([{ unsigned: true }, { prepareOnly: true }, {}])('fails before signing/preparation when policy is absent in %j', (options) => {
+it('accepts an empty unsigned configuration for both platforms', () => {
   for (const platform of ['win32', 'darwin'] as const) {
-    expect(() => { validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'com.example.test' }, { platform, arch: 'x64' }, options) })
-      .toThrow('DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN')
+    expect(() => {
+      validateDesktopPackageEnvironment({}, { platform, arch: 'x64' })
+    }).not.toThrow()
+  }
+})
+
+it('lets explicit unsigned mode override an existing certificate selector', () => {
+  for (const platform of ['win32', 'darwin'] as const) {
+    expect(() => {
+      validateDesktopPackageEnvironment({ ...signing[platform], DSH_DESKTOP_APP_ID: 'com.example.test' },
+        { platform, arch: 'x64' }, { unsigned: true })
+    }).not.toThrow()
+  }
+})
+
+it.each([{ prepareOnly: true }, {}])('requires policy before signing in automatic signed mode %j', (options) => {
+  for (const platform of ['win32', 'darwin'] as const) {
+    expect(() => {
+      validateDesktopPackageEnvironment({ ...signing[platform], DSH_DESKTOP_APP_ID: 'com.example.test' },
+        { platform, arch: 'x64' }, options)
+    }).toThrow('DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN')
   }
 })

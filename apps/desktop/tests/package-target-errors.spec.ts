@@ -6,11 +6,14 @@ import { expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({ root: '', directory: '' }))
 vi.mock('../scripts/desktop-package-environment.mjs', () => ({
-  loadDesktopPackageEnvironment: () => ({ DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'credential-sentinel' }),
+  loadDesktopPackageEnvironment: (platform: NodeJS.Platform) => platform === 'win32'
+    ? { DSH_DESKTOP_WINDOWS_CER_FILE: 'fixture.cer', DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'credential-sentinel' }
+    : { DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Fixture', DSH_DESKTOP_MACOS_TEAM_ID: 'TEAMID1234',
+      DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'credential-sentinel' },
   validateDesktopPackageEnvironment: () => {},
 }))
 vi.mock('../scripts/macos-signing-keychain.mjs', () => ({
-  withMacOSSigningKeychain: async (_environment: object, action: (environment: object) => Promise<unknown>) => action({}),
+  withMacOSSigningKeychain: async (environment: object, action: (environment: object) => Promise<unknown>) => action(environment),
 }))
 // This test fakes the host platform, so the real probes would report the absent Windows compilers rather than the failure under test.
 vi.mock('../scripts/desktop-toolchain-preflight.ts', () => ({ requireDesktopToolchain: async () => {} }))

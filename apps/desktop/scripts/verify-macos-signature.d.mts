@@ -10,31 +10,43 @@ export function assertMacOSSignatureDetails(details: string, expected: MacOSSign
 /**
  * Require the signature properties Apple validates for executable runtime content.
  * @param details - Output from `codesign --display --verbose=4`.
- * @param expected - Public release identity.
+ * @param expected - Public release identity; undefined for an ad-hoc runtime.
+ * @param identifier - Stable runtime identifier, when verifying one runtime file.
  */
-export function assertMacOSRuntimeSignatureDetails(details: string, expected: MacOSSigningEnvironment): void
+export function assertMacOSRuntimeSignatureDetails(
+  details: string,
+  expected: MacOSSigningEnvironment | undefined,
+  identifier?: string,
+): void
 
 /**
- * Sign one Mach-O file using the packaging-owned CSC_KEYCHAIN; missing setup rejects before signing.
+ * Sign one Mach-O file with a release identity or an ad-hoc identity.
  * @param path - Writable standalone Mach-O file.
  * @param identifier - Stable code-signing identifier derived from the release app ID and CAS digest.
- * @param expected - Public release identity.
+ * @param expected - Public release identity; undefined selects ad-hoc signing without a keychain.
  * @param entitlements - Optional entitlement plist for this executable.
  * @returns Resolves after codesign exits successfully.
  */
 export function signMacOSRuntimeCode(
   path: string,
   identifier: string,
-  expected: MacOSSigningEnvironment,
+  expected: MacOSSigningEnvironment | undefined,
   entitlements?: string,
 ): Promise<void>
 
 /**
  * Verify one Mach-O file embedded in the runtime tree.
  * @param path - Mach-O file to inspect.
- * @param expected - Public release identity.
+ * @param expected - Public release identity; undefined for an ad-hoc runtime.
+ * @param identifier - Stable runtime identifier to verify.
+ * @param entitlements - Expected entitlement plist, when one was applied.
  */
-export function verifyMacOSRuntimeCode(path: string, expected: MacOSSigningEnvironment): void
+export function verifyMacOSRuntimeCode(
+  path: string,
+  expected: MacOSSigningEnvironment | undefined,
+  identifier?: string,
+  entitlements?: string,
+): void
 
 /**
  * Verify the full application signature and its release owner.

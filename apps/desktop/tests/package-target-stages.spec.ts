@@ -30,6 +30,7 @@ afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks() })
 
 const environment = { DSH_DESKTOP_APP_ID: 'com.example.test', DSH_DESKTOP_AUTO_UPDATE_ENV: 'test',
   DOWNLOAD_TEST_ORIGIN: 'https://updates.example.com', DOWNLOAD_TEST_RELEASE_ID: '0123456789abcdef0123456789abcdef',
+  DSH_DESKTOP_WINDOWS_CER_FILE: 'fixture.cer', DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Example (TEAMID1234)',
   DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'fixture-pin', DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_CONCURRENCY: '2' }
 
 function supervisor(failure?: string) {
@@ -166,5 +167,38 @@ it('does not write a release completion record when Apple proxy cleanup fails', 
   vi.mocked(withMacOSNotarizationProxy).mockRejectedValueOnce(new Error('proxy restoration failed'))
   await expect(packageTarget(parseDesktopPackageInvocation(['mac-arm64'], 'darwin', 'arm64'), environment, run))
     .rejects.toThrow('proxy restoration failed')
+  expect(writeFileSync).not.toHaveBeenCalled()
+})
+
+it.each([
+  ['win-x64', 'win32', 'x64'], ['mac-x64', 'darwin', 'x64'], ['mac-arm64', 'darwin', 'arm64'],
+] as const)('builds local %s artifacts without certificates or update services', async (name, platform, arch) => {
+  const { run, stages } = supervisor()
+  await packageTarget(parseDesktopPackageInvocation([name], platform, arch), {}, run)
+  expect(stages[0]).toBe('run build:official')
+  expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')
+  for (const call of run.run.mock.calls) expect(call[3].env).toHaveProperty('DSH_DESKTOP_UNSIGNED', '1')
+  expect(withWindowsSigningStage).not.toHaveBeenCalled()
+  expect(withMacOSNotarizationProxy).not.toHaveBeenCalled()
+  expect(packageMacOSArtifacts).not.toHaveBeenCalled()
+  expect(writeFileSync).not.toHaveBeenCalled()
+})
+
+it.each([false, true])('keeps explicitly unsigned macOS builds certificate-free (directory=%s)', async (directory) => {
+  const { run, stages } = supervisor()
+  await packageTarget(parseDesktopPackageInvocation(['mac-x64', '--unsigned', ...(directory ? ['--dir'] : [])], 'darwin', 'x64'), {
+    ...environment, CSC_LINK: 'private.p12', CSC_KEY_PASSWORD: 'secret', APPLE_API_KEY: 'private.p8',
+  }, run)
+  const builder = run.run.mock.calls.find(call => call[0].startsWith('exec electron-builder'))
+  expect(builder?.[2].includes('--dir')).toBe(directory)
+  for (const call of run.run.mock.calls) {
+    expect(call[3].env).toHaveProperty('DSH_DESKTOP_UNSIGNED', '1')
+    for (const credential of ['CSC_LINK', 'CSC_KEY_PASSWORD', 'APPLE_API_KEY', 'DSH_DESKTOP_MACOS_SIGNING_IDENTITY']) {
+      expect(call[3].env).not.toHaveProperty(credential)
+    }
+  }
+  expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')
+  expect(withMacOSNotarizationProxy).not.toHaveBeenCalled()
+  expect(packageMacOSArtifacts).not.toHaveBeenCalled()
   expect(writeFileSync).not.toHaveBeenCalled()
 })

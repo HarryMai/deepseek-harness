@@ -11,6 +11,7 @@ const POLICY = { DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.examp
   DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }) }
 const RELEASE = { ...POLICY, DSH_DESKTOP_APP_ID: 'com.example.desktop', DOWNLOAD_TEST_ORIGIN: 'https://updates.example.com',
   DOWNLOAD_TEST_RELEASE_ID: '0123456789abcdef0123456789abcdef' }
+const WINDOWS_SIGNING = { DSH_DESKTOP_WINDOWS_CER_FILE: 'missing.cer' }
 const MAC_IDENTITY = { DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Example Company (TEAMID1234)', DSH_DESKTOP_MACOS_TEAM_ID: 'TEAMID1234' }
 
 async function withDirectory(action: (directory: string) => Promise<void>): Promise<void> {
@@ -86,8 +87,9 @@ describe('Desktop local packaging configuration', () => {
       await writeFile(file, settings.replace(`DOWNLOAD_TEST_RELEASE_ID='${RELEASE.DOWNLOAD_TEST_RELEASE_ID}'\n`, ''))
       const missing = loadDesktopPackageEnvironment(platform, parent, directory)
       expect(missing.DOWNLOAD_TEST_RELEASE_ID).toBeUndefined()
+      const signing = platform === 'win32' ? WINDOWS_SIGNING : MAC_IDENTITY
       expect(() => {
-        validateDesktopPackageEnvironment(missing, platform === 'win32' ? WINDOWS : MACOS)
+        validateDesktopPackageEnvironment({ ...missing, ...signing }, platform === 'win32' ? WINDOWS : MACOS)
       }).toThrow(/DOWNLOAD_TEST_RELEASE_ID/u)
       expect(parent.DOWNLOAD_TEST_RELEASE_ID).toBe('a'.repeat(32))
     })
@@ -120,22 +122,31 @@ describe('Desktop local packaging configuration', () => {
 
   it('checks application and update configuration before Windows credentials while preserving unsigned and preparation modes', () => {
     expect(() => {
-      validateDesktopPackageEnvironment({}, WINDOWS, { unsigned: true })
-    }).toThrow(/DSH_DESKTOP_APP_ID/u)
+      validateDesktopPackageEnvironment({}, WINDOWS)
+    }).not.toThrow()
+    expect(() => {
+      validateDesktopPackageEnvironment({}, MACOS)
+    }).not.toThrow()
     expect(() => {
       validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'invalid' }, WINDOWS)
     }).toThrow(/reverse-DNS/u)
     expect(() => {
-      validateDesktopPackageEnvironment({ ...POLICY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, WINDOWS)
+      validateDesktopPackageEnvironment({ ...POLICY, ...WINDOWS_SIGNING, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, WINDOWS)
     }).toThrow(/DOWNLOAD_TEST_ORIGIN/u)
     expect(() => {
-      validateDesktopPackageEnvironment(RELEASE, WINDOWS)
-    }).toThrow(/DSH_DESKTOP_WINDOWS_CER_FILE/u)
+      validateDesktopPackageEnvironment({ ...RELEASE, ...WINDOWS_SIGNING }, WINDOWS)
+    }).toThrow(/certificate/u)
     expect(() => {
-      validateDesktopPackageEnvironment({ ...POLICY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, WINDOWS, { unsigned: true })
+      validateDesktopPackageEnvironment({ ...POLICY, ...WINDOWS_SIGNING, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID },
+        WINDOWS, { unsigned: true })
     }).not.toThrow()
     expect(() => {
-      validateDesktopPackageEnvironment({ ...POLICY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, WINDOWS, { prepareOnly: true })
+      validateDesktopPackageEnvironment({ ...POLICY, ...MAC_IDENTITY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID },
+        MACOS, { unsigned: true })
+    }).not.toThrow()
+    expect(() => {
+      validateDesktopPackageEnvironment({ ...POLICY, ...WINDOWS_SIGNING, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID },
+        WINDOWS, { prepareOnly: true })
     }).not.toThrow()
   })
 
@@ -154,7 +165,7 @@ describe('Desktop local packaging configuration', () => {
   it('rejects incomplete macOS identity and credentials and checks referenced files without contacting Apple', async () => {
     expect(() => {
       validateDesktopPackageEnvironment(RELEASE, MACOS)
-    }).toThrow(/DSH_DESKTOP_MACOS_SIGNING_IDENTITY/u)
+    }).not.toThrow()
     expect(() => {
       validateDesktopPackageEnvironment({ ...RELEASE, ...MAC_IDENTITY }, MACOS)
     }).toThrow(/macOS packaging requires/u)

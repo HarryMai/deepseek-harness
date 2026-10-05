@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const BUILD_ROOT = join(APP_ROOT, '.desktop-build')
+const OUTPUT_ROOT = join(APP_ROOT, 'out', 'targets')
 const SUPPORTED_TARGETS = new Set(['mac-arm64', 'mac-x64', 'win-x64'])
 
 /**
@@ -46,8 +47,8 @@ export function desktopTargetBuildPaths(target) {
   const packed = join(root, 'packed')
   return {
     root,
-    artifacts: join(root, 'artifacts'),
-    unsignedArtifacts: join(root, 'unsigned-artifacts'),
+    artifacts: join(OUTPUT_ROOT, target, 'artifacts'),
+    unsignedArtifacts: join(OUTPUT_ROOT, target, 'unsigned-artifacts'),
     runtime: join(root, 'runtime'),
     packageSet: join(root, 'package-set'),
     dsh: join(root, 'dsh'),

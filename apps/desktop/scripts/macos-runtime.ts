@@ -23,16 +23,18 @@ function magic(path: string): string {
  * Sign and verify every materialized Mach-O file, awaiting all signers on failure.
  * @param root - Self-contained production runtime without symlinks.
  * @param appId - Release application identifier.
- * @param expected - Required signing identity.
+ * @param expected - Release signing identity; undefined selects ad-hoc runtime signing.
  * @param arch - Target runtime architecture, independent of the signing host.
- * @param cacheDirectory - Optional content-addressed cache; requires the keychain-owned signing probe.
+ * @param cacheDirectory - Optional content-addressed cache for certificate-backed signing; ignored for ad-hoc signing.
  * @returns Number of signed native files.
  */
 export async function signMacOSRuntime(
-  root: string, appId: string, expected: MacOSSigningEnvironment, arch: 'arm64' | 'x64', cacheDirectory?: string,
+  root: string, appId: string, expected: MacOSSigningEnvironment | undefined, arch: 'arm64' | 'x64', cacheDirectory?: string,
 ): Promise<number> {
   const files = inventoryDesktopRuntime(root).map(file => file.path).filter(path => MACH_O_MAGICS.has(magic(join(root, path))))
-  const policy = cacheDirectory === undefined ? undefined : macOSCachePolicy(process.env.DSH_DESKTOP_MACOS_SIGNING_PROBE ?? '')
+  const usableCacheDirectory = expected === undefined ? undefined : cacheDirectory
+  const policy = usableCacheDirectory === undefined
+    ? undefined : macOSCachePolicy(process.env.DSH_DESKTOP_MACOS_SIGNING_PROBE ?? '')
   let hits = 0
   let misses = 0
   let next = 0
@@ -46,23 +48,27 @@ export async function signMacOSRuntime(
         || /^node_modules\/@deepseek-ai\/libreoffice-kit-darwin-(?:arm64|x64)\/bin\/libreoffice-kit$/u.test(path)
       const entitlementsFile = isNode && arch === 'x64'
         ? 'node-x64-entitlements.plist' : 'jit-entitlements.plist'
-      const entitlements = needsJit ? join(import.meta.dirname, entitlementsFile) : undefined
+      // Local interpreters must load bundled libraries that have no Developer ID team.
+      const entitlements = expected === undefined
+        ? join(import.meta.dirname, needsJit ? `local-${isNode && arch === 'x64' ? 'node-x64' : 'jit'}-entitlements.plist`
+          : 'local-native-entitlements.plist')
+        : needsJit ? join(import.meta.dirname, entitlementsFile) : undefined
       const file = join(root, path)
       const thin = ['cefaedfe', 'cffaedfe', 'feedface', 'feedfacf'].includes(magic(file))
-      if (cacheDirectory !== undefined && policy !== undefined && thin) {
-        if (await cachedMacOSSignature(file, cacheDirectory, policy(identifier, expected, entitlements))) hits++
+      if (usableCacheDirectory !== undefined && expected !== undefined && policy !== undefined && thin) {
+        if (await cachedMacOSSignature(file, usableCacheDirectory, policy(identifier, expected, entitlements))) hits++
         else misses++
       } else {
         await signMacOSRuntimeCode(file, identifier, expected, entitlements)
-        verifyMacOSRuntimeCode(file, expected)
+        verifyMacOSRuntimeCode(file, expected, identifier, entitlements)
       }
     }
   })
   const results = await Promise.allSettled(workers)
   const errors = results.filter(result => result.status === 'rejected').map(result => result.reason as unknown)
   if (errors.length > 0) throw new AggregateError(errors, 'desktop runtime: native signing failed')
-  if (cacheDirectory !== undefined) {
-    pruneMacOSSignatureCache(cacheDirectory)
+  if (usableCacheDirectory !== undefined) {
+    pruneMacOSSignatureCache(usableCacheDirectory)
     console.info(`desktop macOS signing cache: ${hits} hits, ${misses} misses, ${files.length - hits - misses} uncached`)
   }
   return files.length

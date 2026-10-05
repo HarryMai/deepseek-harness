@@ -196,13 +196,13 @@ it.each([true, false])('validates the real builder hook for unsigned=%s', async 
   await config.beforePack(input.context)
   await packageFixture(input)
   await config.afterPack(input.context)
-  if (!unsigned) await config.afterSign(input.context)
+  if (!unsigned) await config.afterSign!(input.context)
   const file = join(input.resources, 'app.asar.unpacked', 'dsh', 'node_modules', 'foo', 'custom.binary')
   await writeFile(file, 'changed after packaging')
   if (unsigned) await expect(config.afterPack(input.context)).rejects.toThrow('PE bytes changed')
   else {
     await config.afterPack(input.context)
-    await expect(config.afterSign(input.context)).rejects.toThrow('PE bytes changed')
+    await expect(config.afterSign!(input.context)).rejects.toThrow('PE bytes changed')
   }
 })
 

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -23,7 +23,7 @@ it('signs Mach-O files in their final locations and verifies each signature', as
   writeFileSync(join(path, 'source.js'), 'export {}')
   await expect(signMacOSRuntime(path, 'com.example.app', identity, 'arm64')).resolves.toBe(1)
   expect(signMacOSRuntimeCode).toHaveBeenCalledWith(join(path, 'addon.node'), expect.stringMatching(/^com\.example\.app\.runtime\.[a-f0-9]{64}$/u), identity, undefined)
-  expect(verifyMacOSRuntimeCode).toHaveBeenCalledWith(join(path, 'addon.node'), identity)
+  expect(verifyMacOSRuntimeCode).toHaveBeenCalledWith(join(path, 'addon.node'), identity, expect.stringMatching(/^com\.example\.app\.runtime\.[a-f0-9]{64}$/u), undefined)
 })
 it('awaits other signers before rejecting and permitting output cleanup', async () => {
   const path = root()
@@ -44,7 +44,24 @@ it('awaits other signers before rejecting and permitting output cleanup', async 
     expect(completed).toBe(false)
   } finally { release() }
   expect(await result).toBeInstanceOf(AggregateError)
-  expect(verifyMacOSRuntimeCode).toHaveBeenCalledWith(join(path, 'b.node'), identity)
+  expect(verifyMacOSRuntimeCode).toHaveBeenCalledWith(join(path, 'b.node'), identity, expect.stringMatching(/^com\.example\.app\.runtime\.[a-f0-9]{64}$/u), undefined)
+})
+
+it('uses ad-hoc signing without reading or writing the release signature cache', async () => {
+  const path = root()
+  const node = join(path, 'dependencies/node/bin/node')
+  const cache = join(path, 'signature-cache')
+  mkdirSync(join(path, 'dependencies/node/bin'), { recursive: true })
+  writeFileSync(node, Buffer.from('cffaedfe00000000', 'hex'))
+  await expect(signMacOSRuntime(path, 'com.example.app', undefined, 'x64', cache)).resolves.toBe(1)
+  const nodePlist = join(import.meta.dirname, '../scripts/local-node-x64-entitlements.plist')
+  expect(signMacOSRuntimeCode).toHaveBeenCalledWith(
+    node, expect.stringMatching(/^com\.example\.app\.runtime\.[a-f0-9]{64}$/u), undefined, nodePlist,
+  )
+  expect(verifyMacOSRuntimeCode).toHaveBeenCalledWith(
+    node, undefined, expect.stringMatching(/^com\.example\.app\.runtime\.[a-f0-9]{64}$/u), nodePlist,
+  )
+  expect(existsSync(cache)).toBe(false)
 })
 
 it.each(['arm64', 'x64'] as const)('selects %s Node entitlements and keeps helpers JIT-only', async (arch) => {

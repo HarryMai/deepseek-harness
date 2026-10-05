@@ -1,6 +1,7 @@
 /** Sign runtime code and verify that packaged macOS artifacts carry the company release identity. */
 
 import { spawn, spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { resolveMacOSSigningEnvironment } from './desktop-release-environment.mjs'
 import { loadDesktopPackageEnvironment } from './desktop-package-environment.mjs'
@@ -24,18 +25,54 @@ export function assertMacOSSignatureDetails(details, expected) {
 /**
  * Require the signature properties Apple validates for executable runtime content.
  * @param {string} details - Output from `codesign --display --verbose=4`.
- * @param {{ signingIdentity: string, teamId: string }} expected - Public release identity.
+ * @param {{ signingIdentity: string, teamId: string } | undefined} expected - Public release identity; undefined for ad-hoc runtime signing.
+ * @param {string | undefined} identifier - Stable runtime identifier, when verifying one runtime file.
  * @returns {void}
  */
-export function assertMacOSRuntimeSignatureDetails(details, expected) {
-  assertMacOSSignatureDetails(details, expected)
+export function assertMacOSRuntimeSignatureDetails(details, expected, identifier) {
   const fields = details.split(/\r?\n/u).map(line => line.trim())
-  if (!fields.some(line => /^Timestamp=.+/u.test(line))) {
-    throw new Error('desktop macOS signing: runtime signature has no secure timestamp')
+  if (identifier !== undefined && !fields.includes(`Identifier=${identifier}`)) {
+    throw new Error(`desktop macOS signing: runtime signature has unexpected identifier: ${identifier}`)
   }
-  if (!fields.some(line => /\bflags=0x[0-9a-f]+\(runtime\)(?:\s|$)/iu.test(line))) {
+  if (expected === undefined) {
+    if (!fields.includes('Signature=adhoc')) {
+      throw new Error('desktop macOS signing: runtime signature is not ad-hoc')
+    }
+  } else {
+    assertMacOSSignatureDetails(details, expected)
+    if (!fields.some(line => /^Timestamp=.+/u.test(line))) {
+      throw new Error('desktop macOS signing: runtime signature has no secure timestamp')
+    }
+  }
+  if (!fields.some(line => /\bflags=0x[0-9a-f]+\([^)]*\bruntime\b[^)]*\)(?:\s|$)/iu.test(line))) {
     throw new Error('desktop macOS signing: runtime signature does not enable hardened runtime')
   }
+}
+
+/**
+ * Execute one Apple release tool and return its separate diagnostic streams.
+ * @param {string} command - Absolute executable path.
+ * @param {readonly string[]} args - Tool arguments.
+ * @param {string} label - Stable diagnostic name.
+ * @param {string | undefined} input - Optional standard input.
+ * @returns {{ stdout: string, stderr: string }} Separate output streams.
+ */
+function runAppleCommandResult(command, args, label, input) {
+  const result = spawnSync(command, args, {
+    encoding: 'utf8',
+    ...(input === undefined ? {} : { input }),
+  })
+  if (result.error !== undefined) {
+    throw new Error(`desktop macOS signing: could not execute ${label}: ${result.error.message}`)
+  }
+  if (result.signal !== null) {
+    throw new Error(`desktop macOS signing: ${label} was terminated by ${result.signal}`)
+  }
+  if (result.status !== 0) {
+    const diagnostic = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
+    throw new Error(`desktop macOS signing: ${label} exited with ${String(result.status)}${diagnostic === '' ? '' : `: ${diagnostic}`}`)
+  }
+  return { stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
 }
 
 /**
@@ -46,17 +83,7 @@ export function assertMacOSRuntimeSignatureDetails(details, expected) {
  * @returns {string} Combined stdout and stderr.
  */
 function runAppleCommand(command, args, label) {
-  const result = spawnSync(command, args, { encoding: 'utf8' })
-  if (result.error !== undefined) {
-    throw new Error(`desktop macOS signing: could not execute ${label}: ${result.error.message}`)
-  }
-  if (result.signal !== null) {
-    throw new Error(`desktop macOS signing: ${label} was terminated by ${result.signal}`)
-  }
-  if (result.status !== 0) {
-    const diagnostic = `${result.stdout}${result.stderr}`.trim()
-    throw new Error(`desktop macOS signing: ${label} exited with ${String(result.status)}${diagnostic === '' ? '' : `: ${diagnostic}`}`)
-  }
+  const result = runAppleCommandResult(command, args, label)
   return `${result.stdout}${result.stderr}`
 }
 
@@ -107,22 +134,24 @@ function runCodeSign(args) {
 }
 
 /**
- * Sign one Mach-O file using the packaging-owned CSC_KEYCHAIN; missing setup rejects before signing.
+ * Sign one Mach-O file with a release identity or an ad-hoc identity.
  * @param {string} path - Writable standalone Mach-O file.
  * @param {string} identifier - Stable code-signing identifier derived from the release app ID and CAS digest.
- * @param {{ signingIdentity: string, teamId: string }} expected - Public release identity.
+ * @param {{ signingIdentity: string, teamId: string } | undefined} expected - Public release identity; undefined selects ad-hoc signing.
  * @param {string | undefined} entitlements - Optional entitlement plist for this executable.
  * @returns {Promise<void>} Resolves after codesign exits successfully.
  */
 export async function signMacOSRuntimeCode(path, identifier, expected, entitlements) {
-  const keychain = process.env.CSC_KEYCHAIN
-  if (!keychain) throw new Error('desktop macOS signing: run through the package command to prepare the signing keychain')
+  const keychain = expected === undefined ? undefined : process.env.CSC_KEYCHAIN
+  if (expected !== undefined && !keychain) {
+    throw new Error('desktop macOS signing: run through the package command to prepare the signing keychain')
+  }
   await runAppleCommandAsync('/usr/bin/codesign', [
     '--force',
-    '--sign', expected.signingIdentity,
-    '--keychain', keychain,
+    '--sign', expected?.signingIdentity ?? '-',
+    ...(keychain === undefined ? [] : ['--keychain', keychain]),
     '--identifier', identifier,
-    '--timestamp',
+    ...(expected === undefined ? ['--timestamp=none'] : ['--timestamp']),
     '--options', 'runtime',
     ...(entitlements === undefined ? [] : ['--entitlements', entitlements]),
     path,
@@ -132,13 +161,35 @@ export async function signMacOSRuntimeCode(path, identifier, expected, entitleme
 /**
  * Verify one Mach-O file embedded in the runtime tree.
  * @param {string} path - Mach-O file to inspect.
- * @param {{ signingIdentity: string, teamId: string }} expected - Public release identity.
+ * @param {{ signingIdentity: string, teamId: string } | undefined} expected - Public release identity; undefined for an ad-hoc runtime.
+ * @param {string | undefined} identifier - Stable runtime identifier to verify.
+ * @param {string | undefined} entitlements - Expected entitlement plist, when one was applied.
  * @returns {void}
  */
-export function verifyMacOSRuntimeCode(path, expected) {
+export function verifyMacOSRuntimeCode(path, expected, identifier, entitlements) {
   runCodeSign(['--verify', '--strict', '--verbose=2', path])
   const details = runCodeSign(['--display', '--verbose=4', path])
-  assertMacOSRuntimeSignatureDetails(details, expected)
+  assertMacOSRuntimeSignatureDetails(details, expected, identifier)
+  if (expected !== undefined) return
+  const actual = runAppleCommandResult('/usr/bin/codesign', ['--display', '--entitlements', '-', '--xml', path], 'codesign entitlements').stdout
+  const desired = entitlements === undefined ? '' : readFileSync(entitlements, 'utf8')
+  const normalizedActual = normalizeMacOSPlist(actual, 'codesign entitlements')
+  const normalizedDesired = normalizeMacOSPlist(desired, 'entitlement plist')
+  if (normalizedActual !== normalizedDesired) {
+    throw new Error(`desktop macOS signing: runtime entitlements do not match: ${path}`)
+  }
+}
+
+/**
+ * Convert one Apple property list to canonical JSON for semantic comparison.
+ * @param {string} source - XML property list, or an empty string for no entitlements.
+ * @param {string} label - Stable diagnostic name.
+ * @returns {string} Canonical JSON representation.
+ */
+function normalizeMacOSPlist(source, label) {
+  if (source.trim() === '') return ''
+  const parsed = JSON.parse(runAppleCommandResult('/usr/bin/plutil', ['-convert', 'json', '-o', '-', '-'], label, source).stdout)
+  return JSON.stringify(Object.fromEntries(Object.entries(parsed).sort(([left], [right]) => left.localeCompare(right))))
 }
 
 /**
