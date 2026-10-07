@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-23-cordis-nested-json-argument-recovery.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-23-cordis-nested-json-argument-recovery.md
-2026-08-23-cordis-nested-json-argument-recovery.md: c1a9ef40c741c685448151ef16a9468708143821
-2026-08-23-cordis-nested-json-argument-recovery.zh.md: 0b5343423f7fa0640b5e2d4549c3a31ba9a53589
+/agent-note-schema-aware-cordis-nested-json-argument-recovery:
+  en: 61c1d42e4fd06048
+  zh: eb9a8c64e1f8ff79
+/agent-note-schema-aware-cordis-nested-json-argument-recovery/problem:
+  en: 75e980079e0e7bf6
+  zh: c9561754af690e6b
+/agent-note-schema-aware-cordis-nested-json-argument-recovery/decision:
+  en: ef97bb47b8f8672d
+  zh: 83b9037ab474356d
+/agent-note-schema-aware-cordis-nested-json-argument-recovery/alternatives-considered:
+  en: deb18a715fbdd71b
+  zh: 510c1b0b08396cb0
+/agent-note-schema-aware-cordis-nested-json-argument-recovery/consequences:
+  en: f9e79e01f969423f
+  zh: fd6877eaba8e4828

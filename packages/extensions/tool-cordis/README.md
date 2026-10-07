@@ -63,7 +63,7 @@ Inspect before writing, then define, then run: `cordis_inspect_query` reads the 
 
 ### Boundaries to plan around
 
-Definitions are session-scoped and process-local: a package is visible and controllable only in the session that defined it, stays active across later turns, and can affect other sessions in the same process while running. Stopping, removing, unloading the toolset, or restarting DSH clears it. The sandbox isolates globals but is not a security boundary — treat a dynamic package like bash access, and load this plugin as deliberately as you would grant one.
+Definitions are session-scoped and process-local: a package is visible and controllable only in the session that defined it, stays active across later turns, and can affect other sessions in the same process while running. Stopping ends its active run and retains its definition; removing the plugin, unloading the toolset, or restarting DSH clears its definition. The sandbox isolates globals but is not a security boundary — treat a dynamic package like bash access, and load this plugin as deliberately as you would grant one.
 
 -----
 
@@ -76,6 +76,8 @@ Definitions are session-scoped and process-local: a package is visible and contr
 Host providers combine generated Service/Event catalogs, the live Loader tree projected through the app-boot Config projector, and the requesting agent's tool registry. Client providers synchronize their manifests through the existing inspection registry and answer queries from a connected page. The `/host` entry owns process-global provider registrations, while each preset row owns inspection and optional lifecycle tools through Cordis effects; the registry rejects duplicate provider ids, so providers register once per process. No invariant companion is published because inspection reads its providers directly and maintains no independent runtime projection.
 
 </details>
+
+Instruction messages record producer attribution in `source`. Readers preserve these messages and their source metadata without this plugin; the source does not control validation, replay, or authority.
 
 -----
 
@@ -108,7 +110,7 @@ Unchanged tool schemas and guidance remain prefix-stable. Query results append t
 
 - Client queries need a responding page and use the Host runner's [bounded wait and retry policy](../cordis-host-runner/README.md#client-inspection). Inspection cannot invoke service methods, configure plugins, or execute generated code.
 - `Config.listConfigs` walks the profile Loader tree only. Agent preset `plugins` lists mount in detached preset trees, so a plugin present only inside a preset declaration is not listed unless the profile tree also mounts it.
-- Dynamic packages are session-scoped and process-local. They can affect other sessions while running, and they disappear when stopped, unloaded, or when DSH restarts.
+- Dynamic packages are session-scoped and process-local. They can affect other sessions while running. Stopping retains their definitions; removing the plugin, unloading the toolset, or restarting DSH clears them.
 
 <a id="dev-note"></a>
 ### Dev Note

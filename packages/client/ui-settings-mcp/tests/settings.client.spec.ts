@@ -202,7 +202,8 @@ describe('McpSettingsController', () => {
 
   it('tests a disabled draft record without saving, enabling, or retaining stale test results after an edit', async () => {
     const pending: PromiseWithResolvers<{ ok: true; toolCount: number }> = Promise.withResolvers()
-    const tester: McpConnectionTester = { test: vi.fn(() => pending.promise) }
+    const test = vi.fn<McpConnectionTester['test']>(() => pending.promise)
+    const tester: McpConnectionTester = { test }
     const form = new MemoryConfigForm()
     const controller = new McpSettingsController(form, tester)
     controller.addServer()
@@ -212,7 +213,7 @@ describe('McpSettingsController', () => {
     await vi.waitFor(() => {
       expect(controller.store.getSnapshot().tests).toEqual({ 'server-1': { status: 'testing' } })
     })
-    expect(tester.test).toHaveBeenCalledWith({
+    expect(test).toHaveBeenCalledWith({
       enabled: false, transport: 'stdio', serverName: 'codegraph', command: 'codegraph', args: ['serve'], env: {}, cwd: '', url: '',
     }, expect.any(AbortSignal))
     expect(form.writes).toEqual([])

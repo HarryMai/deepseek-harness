@@ -27,4 +27,4 @@ The `files` list of every package must cover the runtime chunks its entries impo
 - The missing-chunk class now fails at gate time with the exact `file -> specifier` pair, instead of at packaged-Host boot inside the Cordis loader; removing the glob from `dsh-subprocess-local` fails `verify-built-package-invariants` with `lib/index.js -> ./process-inspector-DNK_Zw9B.js`.
 - Any package that gains a multi-entry rolldown build must declare its chunk glob; the gate names the missing file, so the fix is mechanical.
 - The gate reads every staged lib file's source, which adds negligible time to a gate that already imports 226 companions.
-- The [package invariant contracts Agent Note](../architecture/2026-07-19-package-invariant-runtime-contracts.md) keeps owning what companions assert; this note owns only the declared-files closure the gate now enforces.
+- The [package invariant contracts Agent Note](../../archived/architecture/2026-07-19-package-invariant-runtime-contracts.md) keeps owning what companions assert; this note owns only the declared-files closure the gate now enforces.

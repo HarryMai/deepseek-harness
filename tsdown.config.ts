@@ -22,7 +22,7 @@ export default defineConfig(({ env }) => {
     workspace: client
       ? ['vendor/*', 'packages/*/*', 'apps/cli']
       : ['vendor/*', 'packages/*/*', 'apps/cli', 'apps/desktop-host'],
-    entry: client ? '' : ['lib/types/{index,invariant,process-inspector,startup}.js'],
+    entry: client ? '' : ['lib/types/{index,process-inspector,startup}.js'],
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',

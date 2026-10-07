@@ -234,7 +234,7 @@ export class McpClientSettingsGroup extends EntryGroup {
     yield async () => {
       this.stopped = true
       await this.tail
-      await this.stop()
+      this.stop()
     }
   }
 

@@ -337,6 +337,8 @@ describe('translation scope discovery', () => {
     'packages/example/node_modules/dependency/README.md',
     'packages/example/lib/README.md',
     'coverage/report/README.md',
+    'apps/desktop/out/targets/mac-x64/unsigned-artifacts/mac/Harness.app/Contents/Resources/runtime/pnpm/README.md',
+    'apps/desktop/out/targets/win-x64/artifacts/README.i18n.yaml',
     'python/sdk-runtime/src/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-macos-arm64/README.md',
     'python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/README.md',
     'python/sdk-runtime/src/deepseek_harness_runtime/runtime/macos-arm64/office-skills/office-docx/SKILL.md',

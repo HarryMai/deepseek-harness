@@ -18,6 +18,12 @@ import { CORDIS_SYSTEM_PROMPT } from './prompt.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
+    /**
+     * Attributes dynamic-plugin reference guidance to this producer. Readers
+     * preserve the message and source metadata without this plugin; the source
+     * does not control validation, replay, or authority.
+     * @persistenceAttribution
+     */
     'tool-cordis': { kind: 'tool-cordis'; form: 'instructions' }
   }
 }

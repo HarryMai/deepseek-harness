@@ -1,6 +1,43 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/client/ui-settings-mcp/README.md
-README.md: 837dedb81e88961280685972e3c3e524cc146ae0
-README.zh.md: 8b4e20496ea969ba93c53ca0407401a6f1856512
+/:
+  en: 791e6f6cb7e3c2d0
+  zh: 4f82f7e8898fbdeb
+/deepseek-ai-dsh-client-ui-settings-mcp:
+  en: 6ba6f9819727d227
+  zh: 8e2801429e74acc3
+/deepseek-ai-dsh-client-ui-settings-mcp/summary:
+  en: ebfd88a832481937
+  zh: 524ebdfc810b0d7a
+/deepseek-ai-dsh-client-ui-settings-mcp/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-client-ui-settings-mcp/use-this-package:
+  en: 10dcc9cf6f4fccfb
+  zh: 81bbe5bc26d79210
+/deepseek-ai-dsh-client-ui-settings-mcp/use-this-package/configure-servers:
+  en: 013437f8f4ed1964
+  zh: a63ee472eb51d673
+/deepseek-ai-dsh-client-ui-settings-mcp/use-this-package/import-and-test-a-draft:
+  en: a935841c2bd5f275
+  zh: a08ee1a1db459990
+/deepseek-ai-dsh-client-ui-settings-mcp/understand-the-implementation:
+  en: 10eb3201c7e1bf7e
+  zh: 2cccdbfb2798ec11
+/deepseek-ai-dsh-client-ui-settings-mcp/further-exploration:
+  en: 77b4904bb184227c
+  zh: da36a1cecad60d7c
+/deepseek-ai-dsh-client-ui-settings-mcp/model-experience:
+  en: 8cd50e8ae5680cd1
+  zh: aa090002efdcf0ae
+/deepseek-ai-dsh-client-ui-settings-mcp/model-experience/kv-cache-effect:
+  en: 23d28f8a8c035138
+  zh: d2c873328eb4b55a
+/deepseek-ai-dsh-client-ui-settings-mcp/known-limitations-and-deferred-work:
+  en: b5e2592dbac93db0
+  zh: 0c629f24ad89287a
+/deepseek-ai-dsh-client-ui-settings-mcp/known-limitations-and-deferred-work/dev-note:
+  en: ba58af91ffaeb9e0
+  zh: eaddec964c00e08b

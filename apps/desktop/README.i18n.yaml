@@ -3,8 +3,8 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write apps/desktop/README.md
 /deepseek-harness-desktop:
-  en: eccac345d51428fa
-  zh: 4a448b3d63cb8117
+  en: 0f0f6ea914eff51e
+  zh: 4934245b04e9f1c0
 /deepseek-harness-desktop/terminal-command:
   en: bef92953c237363f
   zh: d21d6effd21b8c00
@@ -15,17 +15,17 @@
   en: 069fdfd72d2ea26a
   zh: 76ae549d43c99bb4
 /deepseek-harness-desktop/key-technical-decisions/bundled-workspace-dependencies:
-  en: 320733f93ede61a4
-  zh: 33206c3c4753c802
+  en: 0f9b6c1d6761d108
+  zh: 77127063f244c361
 /deepseek-harness-desktop/bundled-command-runtime:
-  en: beecf076aa2f0796
-  zh: c9001ce0f22d2379
+  en: 09f0b75af9f0ed14
+  zh: 60bbc2e67d5e87a8
 /deepseek-harness-desktop/installation-ownership:
   en: 22153a298a6662e1
   zh: 3600803c8c9d0274
 /deepseek-harness-desktop/installation-ownership/runtime-and-plugin-activation:
-  en: 0d11af8639977a6d
-  zh: 86b086b12d2210d3
+  en: a1a47b09f4a72ba4
+  zh: 7b1cf27f0b72cf31
 /deepseek-harness-desktop/installation-ownership/host-environment:
   en: 84a9cc7ca9455aa8
   zh: 4091b8aa8231b74a
@@ -33,8 +33,8 @@
   en: 66c23be4d7cd19fa
   zh: 7e6399376f3f2ff0
 /deepseek-harness-desktop/develop/post-merge-windows-compatibility-smoke:
-  en: 3b10e1b767335299
-  zh: 1e517553b8926275
+  en: 919fa75d030d4d54
+  zh: 66fe2ea21f273bb3
 /deepseek-harness-desktop/develop/startup-onboarding:
   en: a51346b8d880ddba
   zh: 7913214c1c66063c
@@ -45,8 +45,8 @@
   en: 4cd8a8da6977928d
   zh: 9f624855a2edac37
 /deepseek-harness-desktop/package/release-versions:
-  en: 1a822892a0e565fe
-  zh: 95748c1ca288d35a
+  en: 3f92e6d8dc3be3b4
+  zh: 17b835964bee8447
 /deepseek-harness-desktop/package/runtime-file-selection:
   en: e7c1eb8e78fe46e3
   zh: aa00e9aa605cd33f
@@ -57,8 +57,8 @@
   en: 3e2479b92ec19ace
   zh: 309fd89507253785
 /deepseek-harness-desktop/package/windows-installer-interface:
-  en: f176a8b1c7de3064
-  zh: 6ea2dbe6bb808c34
+  en: 94ddb11f514d8dea
+  zh: 15021ae8e3bc8a9c
 /deepseek-harness-desktop/package/windows-ev-signing:
   en: 881f32c963d754c5
   zh: 8d0e60526824ece3
@@ -66,8 +66,8 @@
   en: d0df867b69cbffa4
   zh: eeb47b79b86fe5ee
 /deepseek-harness-desktop/updates/mandatory-update-policy:
-  en: 2336e284ac7cd8b3
-  zh: 34e0c505d861d1f4
+  en: 7a3431e2ad1b7173
+  zh: 3da155b556141e51
 /deepseek-harness-desktop/updates/local-updater-qualification:
   en: bc50fd8a4d96c227
   zh: fb0a6ce80c31cda6

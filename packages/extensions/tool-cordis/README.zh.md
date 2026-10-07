@@ -63,7 +63,7 @@ Host 的 `Config` provider 分页列出运行中的 Loader entry（`offset`、�
 
 ### 需要规划的边界
 
-定义以会话为界、以进程为本：包只在定义它的会话里可见可控，可跨后续轮次保持活跃，运行时也可能影响同一进程中的其他会话。停止、移除、卸载工具集或重启 DSH 都会清除它。沙箱隔离全局变量，但不是安全边界——对待动态包要像对待 bash 访问一样慎重，加载本插件时也要像授予 bash 工具那样慎重。
+定义以会话为界、以进程为本：包只在定义它的会话里可见可控，可跨后续轮次保持活跃，运行时也可能影响同一进程中的其他会话。停止会结束当前运行并保留定义；移除插件、卸载工具集或重启 DSH 会清除定义。沙箱隔离全局变量，但不是安全边界——对待动态包要像对待 bash 访问一样慎重，加载本插件时也要像授予 bash 工具那样慎重。
 
 -----
 
@@ -76,6 +76,8 @@ Host 的 `Config` provider 分页列出运行中的 Loader entry（`offset`、�
 Host provider 结合生成的 Service/Event 目录、经 app-boot Config 投影器投影的运行中 Loader 树，以及请求 agent 的工具注册表。Client provider 通过现有检查注册表同步清单，并从已连接页面回答查询。`/host` 条目负责进程级 provider 注册，每个 preset 条目通过 Cordis effect 持有检查工具和可选的生命周期工具；注册表拒绝重复的 provider id，所以 provider 按进程注册一次。检查直接读取 provider，不维护独立运行时投影，因此不发布不变式配套插件。
 
 </details>
+
+指令消息在 `source` 中记录来源标记。即使没有本插件，读取方仍保留这些消息及其来源元数据；来源标记不决定校验、回放或权限。
 
 -----
 
@@ -108,7 +110,7 @@ Host provider 结合生成的 Service/Event 目录、经 app-boot Config 投影�
 
 - Client 查询需要页面响应，并采用 Host runner 的[有界等待与重试策略](../cordis-host-runner/README.zh.md#client-inspection)。检查不能调用服务方法、配置插件或执行生成代码。
 - `Config.listConfigs` 只遍历 profile 的 Loader 树。Agent preset 的 `plugins` 列表挂载在独立的 preset 树中，所以只出现在 preset 声明里的插件不会被列出，除非 profile 树也挂载了它。
-- 动态包以会话为界、以进程为本。运行时可能影响同一进程中的其他会话，停止、卸载或 DSH 重启后会消失。
+- 动态包以会话为界、以进程为本。运行时可能影响同一进程中的其他会话。停止会保留定义；移除插件、卸载工具集或重启 DSH 会清除定义。
 
 <a id="dev-note"></a>
 ### 开发备注

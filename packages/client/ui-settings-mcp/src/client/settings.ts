@@ -144,8 +144,8 @@ const IMPORT_SERVER_KEYS = new Set([
 const UNSUPPORTED_IMPORT_SERVER_KEYS = new Set(['headers'])
 
 const unavailableConnectionTester: McpConnectionTester = {
-  async test(): Promise<McpConnectionTestResult> {
-    return { ok: false, reason: 'unavailable' }
+  test(): Promise<McpConnectionTestResult> {
+    return Promise.resolve({ ok: false, reason: 'unavailable' })
   },
 }
 
@@ -166,9 +166,9 @@ function cloneSettings(value: McpSettings): McpSettings {
 function normalizeSettings(value: McpSettings | undefined): McpSettings {
   if (value === undefined) return cloneSettings(DEFAULT_MCP_SETTINGS)
   return {
-    enabled: value.enabled === true,
-    servers: Object.fromEntries(Object.entries(value.servers ?? {}).map(([id, server]) => [id, {
-      enabled: server.enabled === true,
+    enabled: value.enabled,
+    servers: Object.fromEntries(Object.entries(value.servers).map(([id, server]) => [id, {
+      enabled: server.enabled,
       transport: server.transport === 'streamable-http' ? 'streamable-http' : 'stdio',
       serverName: typeof server.serverName === 'string' ? server.serverName : '',
       command: typeof server.command === 'string' ? server.command : '',

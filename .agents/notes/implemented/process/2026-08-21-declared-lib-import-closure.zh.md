@@ -27,4 +27,4 @@ Status: implemented
 - 缺 chunk 这一类问题现在在门禁阶段失败，并给出精确的 `file -> specifier` 对，而不是在 packaged-Host 启动时从 Cordis loader 深处抛出；从 `dsh-subprocess-local` 删掉该 glob 会让 `verify-built-package-invariants` 以 `lib/index.js -> ./process-inspector-DNK_Zw9B.js` 失败。
 - 任何新增多入口 rolldown 构建的包都必须声明其 chunk glob；门禁会点名缺失的文件，修复是机械操作。
 - 门禁需要读取每个被 stage 的 lib 文件源码，相对一个本就要导入 226 个伴随模块的门禁，开销可忽略。
-- [包不变量契约 Agent Note](../architecture/2026-07-19-package-invariant-runtime-contracts.zh.md) 继续拥有伴随模块断言内容的决策；本条只拥有门禁现在强制执行的声明文件闭包。
+- [包不变量契约 Agent Note](../../archived/architecture/2026-07-19-package-invariant-runtime-contracts.md) 继续拥有伴随模块断言内容的决策；本条只拥有门禁现在强制执行的声明文件闭包。

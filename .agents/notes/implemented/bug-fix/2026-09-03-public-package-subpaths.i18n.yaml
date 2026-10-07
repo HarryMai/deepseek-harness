@@ -1,6 +1,31 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-03-public-package-subpaths.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-03-public-package-subpaths.md
-2026-09-03-public-package-subpaths.md: 23cd61ababca15bf4c9fe8203d9e500412d1d457
-2026-09-03-public-package-subpaths.zh.md: 4022decbe16c0026b717fca9ec40b9ed5148df7c
+/agent-note-public-package-subpaths-keep-their-complete-integration:
+  en: 90b859c20b1059f4
+  zh: e6df2a1bc2cde206
+/agent-note-public-package-subpaths-keep-their-complete-integration/problem:
+  en: 99d4ac6c7334cd9b
+  zh: adbf38231df8aa0e
+/agent-note-public-package-subpaths-keep-their-complete-integration/decision:
+  en: a15c7c13f167e5ac
+  zh: ff261e3705c47ff0
+/agent-note-public-package-subpaths-keep-their-complete-integration/decision/public-subpath-tuple:
+  en: 2aa557f18a6ef765
+  zh: f841cd635ee7ece9
+/agent-note-public-package-subpaths-keep-their-complete-integration/decision/mcp-settings-integration:
+  en: f3ec62e73acdc095
+  zh: 241b2778316edb1c
+/agent-note-public-package-subpaths-keep-their-complete-integration/decision/invariant-omission:
+  en: 1656693cec513529
+  zh: 8c598ba13d98e1ff
+/agent-note-public-package-subpaths-keep-their-complete-integration/testing:
+  en: 67bebf0c618774c4
+  zh: b3f03856060968e1
+/agent-note-public-package-subpaths-keep-their-complete-integration/alternatives-considered:
+  en: 7593c86de31fa1a1
+  zh: 91ec104476a3d82c
+/agent-note-public-package-subpaths-keep-their-complete-integration/consequences:
+  en: fd0ea546e1a5717b
+  zh: 205bb8f5be7dc822

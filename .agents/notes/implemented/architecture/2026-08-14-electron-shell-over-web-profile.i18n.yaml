@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-14-electron-shell-over-web-profile.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-14-electron-shell-over-web-profile.md
-2026-08-14-electron-shell-over-web-profile.md: adfaf8c00409bc19eb59fbbbd49b01d4b9c10e9c
-2026-08-14-electron-shell-over-web-profile.zh.md: cfd197434843602e85a6891db6c4afb9018b9fe2
+/agent-note-electron-wraps-the-existing-web-profile-through-a-loopback-host-child:
+  en: 4cbaafa45de4b617
+  zh: 3e197721b27a10e1
+/agent-note-electron-wraps-the-existing-web-profile-through-a-loopback-host-child/problem:
+  en: ea6e4ce5ef4728ef
+  zh: 40535aa12f18abb5
+/agent-note-electron-wraps-the-existing-web-profile-through-a-loopback-host-child/decision:
+  en: fd29bcc9b46fa18e
+  zh: 4c7221138148243a
+/agent-note-electron-wraps-the-existing-web-profile-through-a-loopback-host-child/verification:
+  en: 5cd0b075850202c8
+  zh: 74e93eaaac7e3c7f
+/agent-note-electron-wraps-the-existing-web-profile-through-a-loopback-host-child/alternatives-considered:
+  en: d023ca2d37b800f4
+  zh: bf3902f563c7fc7d
+/agent-note-electron-wraps-the-existing-web-profile-through-a-loopback-host-child/consequences:
+  en: 9ebc50864d38ac8c
+  zh: 2e19d6be758ccc60

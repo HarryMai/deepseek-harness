@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-17-unsigned-macos-dmg-packaging.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-17-unsigned-macos-dmg-packaging.md
-2026-08-17-unsigned-macos-dmg-packaging.md: db376444df46df32015a5a5a00c10d4cc2587687
-2026-08-17-unsigned-macos-dmg-packaging.zh.md: 2183306bf926f96998697728b949368a7f0570ed
+/agent-note-macos-desktop-packaging-builds-unsigned-per-architecture-dmgs:
+  en: 0e54fc4d8c171eaa
+  zh: 89ac69eaec9ab2b8
+/agent-note-macos-desktop-packaging-builds-unsigned-per-architecture-dmgs/problem:
+  en: 61b6ff5aa90f0ee0
+  zh: 86fc82b68883155c
+/agent-note-macos-desktop-packaging-builds-unsigned-per-architecture-dmgs/decision:
+  en: c044201cbced3f17
+  zh: f18af2e5a13c10ae
+/agent-note-macos-desktop-packaging-builds-unsigned-per-architecture-dmgs/verification:
+  en: c67a0e5af5bce00a
+  zh: 330c0825c724cf1d
+/agent-note-macos-desktop-packaging-builds-unsigned-per-architecture-dmgs/alternatives-considered:
+  en: e9162bcc41ccc46b
+  zh: 6f4755d89c9d11cb
+/agent-note-macos-desktop-packaging-builds-unsigned-per-architecture-dmgs/consequences:
+  en: 8b79e8947bea4335
+  zh: 2bdcdaacefed822e

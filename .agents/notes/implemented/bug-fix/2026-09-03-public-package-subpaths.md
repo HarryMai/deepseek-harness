@@ -24,7 +24,7 @@ The following public imports are maintained as complete tuples: `@deepseek-ai/ds
 
 ### Invariant omission
 
-The MCP client keeps no `./invariant` export, file entry, build entry, or project reference. Restoring unrelated metadata wholesale would contradict the deliberate omission recorded in the [invariant-companion note](../simplification/2026-08-28-omit-unneeded-invariant-companions.md).
+The MCP client keeps no `./invariant` export, file entry, build entry, or project reference. Restoring unrelated metadata wholesale would contradict the deliberate omission recorded in the [invariant-companion note](../../archived/simplification/2026-08-28-omit-unneeded-invariant-companions.md).
 
 ## Testing
 

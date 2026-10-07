@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-21-declared-lib-import-closure.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-21-declared-lib-import-closure.md
-2026-08-21-declared-lib-import-closure.md: 40fa396c472c2605979d351399b2482566fde666
-2026-08-21-declared-lib-import-closure.zh.md: df7a1038be60897264076224b5a5937287d620fe
+/agent-note-the-declared-files-view-must-be-import-closed:
+  en: 239bb56c76cfc8f4
+  zh: 95a67fc9f21fe94b
+/agent-note-the-declared-files-view-must-be-import-closed/problem:
+  en: 6e12e9ed4d28d5f3
+  zh: 1433e76924095abf
+/agent-note-the-declared-files-view-must-be-import-closed/decision:
+  en: a1e775885a4af46a
+  zh: 6239e2c9fb6e09b2
+/agent-note-the-declared-files-view-must-be-import-closed/alternatives-considered:
+  en: 1c7964f9f6adc54c
+  zh: 828dcf7a52c9e977
+/agent-note-the-declared-files-view-must-be-import-closed/consequences:
+  en: c6fab5393b05105c
+  zh: 61618a12f664569c

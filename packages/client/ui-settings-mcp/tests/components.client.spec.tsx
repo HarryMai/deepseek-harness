@@ -70,7 +70,10 @@ function renderSection(form = new MemoryConfigForm(), tester?: McpConnectionTest
     useWorkspaces: unusedHook,
     t: (key, values) => (zh[key as McpSettingsKey] ?? '').replace(/\{(\w+)\}/gu, (_match, name: string) => {
       const value = values?.[name]
-      return value === undefined ? `{${name}}` : String(value)
+      if (value === undefined) return `{${name}}`
+      if (typeof value === 'string') return value
+      if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+      return JSON.stringify(value) ?? ''
     }),
     close: () => {},
   }

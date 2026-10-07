@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-29-classify-node-loader-apis-by-methods.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-29-classify-node-loader-apis-by-methods.md
-2026-08-29-classify-node-loader-apis-by-methods.md: 751ac95c2f946f0364d77336c58b48eafcc803d9
-2026-08-29-classify-node-loader-apis-by-methods.zh.md: 0f4b49c81aaf1e05569c6f549bfd0a64024dfe8d
+/agent-note-classify-node-loader-apis-by-methods:
+  en: 77e9a9ad97e8f7ce
+  zh: e207635b001f0b38
+/agent-note-classify-node-loader-apis-by-methods/problem:
+  en: df3211d61b091c2f
+  zh: c8a039bd41491fe2
+/agent-note-classify-node-loader-apis-by-methods/decision:
+  en: b27b022618a83344
+  zh: 8e45a26a8ca9e3ac
+/agent-note-classify-node-loader-apis-by-methods/alternatives-considered:
+  en: 12cead1b1d5714a7
+  zh: 1a3794a2d36e96d7
+/agent-note-classify-node-loader-apis-by-methods/consequences:
+  en: 062add3cbac73d50
+  zh: 591214d79f2bea77

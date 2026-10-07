@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-22-desktop-packaging-platform-native-loads.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-22-desktop-packaging-platform-native-loads.md
-2026-08-22-desktop-packaging-platform-native-loads.md: b828d4bdae34db729f330393258ae819f8ab0ca0
-2026-08-22-desktop-packaging-platform-native-loads.zh.md: 9947074028ca22a5d6224c4d458812edf2723aa4
+/agent-note-desktop-packaging-defers-platform-native-loads:
+  en: 45493976c0a009b4
+  zh: 50ddf576b60d51c6
+/agent-note-desktop-packaging-defers-platform-native-loads/problem:
+  en: 47c44a2a63f3c30c
+  zh: 2d386c1692376de4
+/agent-note-desktop-packaging-defers-platform-native-loads/decision:
+  en: fb6455463c183d62
+  zh: c0dabf00d39ff974
+/agent-note-desktop-packaging-defers-platform-native-loads/verification:
+  en: e4f68bc631108d19
+  zh: 7491d5624e03f1f3
+/agent-note-desktop-packaging-defers-platform-native-loads/alternatives-considered:
+  en: 99be02c82656f0d3
+  zh: a524e383c8ecc70e
+/agent-note-desktop-packaging-defers-platform-native-loads/consequences:
+  en: 1e2cf43976178163
+  zh: 18566fe837fe8ee4

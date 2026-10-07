@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-05-merge-resolution-preserves-configuration-entries.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-05-merge-resolution-preserves-configuration-entries.md
-2026-09-05-merge-resolution-preserves-configuration-entries.md: 451c380d9ff5d638e7695e06a6d29617b8022b31
-2026-09-05-merge-resolution-preserves-configuration-entries.zh.md: dbf16c4002e3a6c596d4d4504a0bfc93b4477359
+/agent-note-merge-resolution-preserves-independent-configuration-entries:
+  en: d33e0664f8de9b11
+  zh: 1480c77bf1ccb672
+/agent-note-merge-resolution-preserves-independent-configuration-entries/problem:
+  en: d700c3fef129093b
+  zh: a64fd2346fdd2ce7
+/agent-note-merge-resolution-preserves-independent-configuration-entries/decision:
+  en: e7da264f080ec5b0
+  zh: 27749b36a09d6616
+/agent-note-merge-resolution-preserves-independent-configuration-entries/alternatives-considered:
+  en: b5cee39dacf6f0d6
+  zh: 2fa770ddac12027f
+/agent-note-merge-resolution-preserves-independent-configuration-entries/consequences:
+  en: cad149e67417dfee
+  zh: 5ff9632356abbc77

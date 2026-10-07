@@ -24,7 +24,7 @@ MCP 客户端的 settings 与 probe 模块、CLI 的 desktop-host 模块、以�
 
 ### 不保留 invariant
 
-MCP 客户端不保留 `./invariant` 导出、文件条目、构建条目或项目引用。原样恢复无关元数据会违背[invariant 伴随模块笔记](../simplification/2026-08-28-omit-unneeded-invariant-companions.zh.md)记录的刻意省略。
+MCP 客户端不保留 `./invariant` 导出、文件条目、构建条目或项目引用。原样恢复无关元数据会违背[invariant 伴随模块笔记](../../archived/simplification/2026-08-28-omit-unneeded-invariant-companions.md)记录的刻意省略。
 
 ## 测试
 

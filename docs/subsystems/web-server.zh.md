@@ -2,7 +2,7 @@
 
 [English](web-server.md) | 中文
 
-[dsh-host-webserver](../../packages/host/webserver) 是 GUI 宿主的浏览器 HTTP 载体：它是一个提供 `ctx.webServer` 的 `node:http` 插件，包含具名路由注册表、可选的 gzip 响应压缩、index.html 转换回调，以及一个可由插件认领的回退处理器。它不属于 agent loop（智能体循环），也不是能力 seam；它不了解任何 harness 概念。其他插件负责注册所有功能路由，包括 `/api` 桥接、插件 bundle 和 HMR（热模块替换）事件流（[分层说明](../../.agents/notes/implemented/architecture/2026-07-24-web-config-tree-boot-and-transport-layering.zh.md)）。随附的 Electron 应用在独立的普通 Node 进程中启动原样不变的 Web profile，把本服务器绑定到由 OS 分配的回环端口，并在启用 sandbox 的 renderer 中加载该 URL（[桌面壳说明](../../.agents/notes/implemented/architecture/2026-08-14-electron-shell-over-web-profile.zh.md)）。
+[dsh-host-webserver](../../packages/host/webserver) 是 GUI 宿主的浏览器 HTTP 载体：它是一个提供 `ctx.webServer` 的 `node:http` 插件，包含具名路由注册表、可选的 gzip 响应压缩、index.html 转换回调，以及一个可由插件认领的回退处理器。它不属于 agent loop（智能体循环），也不是能力 seam；它不了解任何 harness 概念。其他插件负责注册所有功能路由，包括 `/api` 桥接、插件 bundle 和 HMR（热模块替换）事件流（[分层参考](../../packages/boot/app-boot/README.zh.md)）。随附的 Electron 应用在 Electron Node 模式中启动共享的 Web profile，从 `dsh-app://app/` 加载打包的前端资源，并将应用 HTTP 请求转发到这个经过认证的回环服务器（[桌面应用](../../apps/desktop/README.zh.md)）。
 
 源码：[`packages/host/webserver/src/index.ts`](../../packages/host/webserver/src/index.ts)
 

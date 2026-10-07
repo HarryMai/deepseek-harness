@@ -194,16 +194,16 @@ function parseServer(value: Record<string, unknown>): McpServerSettings | undefi
 
 /** Await an SDK operation while making a non-abort-aware transport observe cancellation. */
 function awaitWithSignal<T>(start: () => Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(signal.reason)
+  if (signal.aborted) return Promise.reject(rejectionError(signal.reason, 'MCP connection test cancelled'))
   return new Promise<T>((resolve, reject) => {
-    const abort = (): void => { reject(signal.reason) }
+    const abort = (): void => { reject(rejectionError(signal.reason, 'MCP connection test cancelled')) }
     signal.addEventListener('abort', abort, { once: true })
     let operation: Promise<T>
     try {
       operation = start()
     } catch (error) {
       signal.removeEventListener('abort', abort)
-      reject(error)
+      reject(rejectionError(error, 'MCP connection test failed'))
       return
     }
     void operation.then(
@@ -211,12 +211,17 @@ function awaitWithSignal<T>(start: () => Promise<T>, signal: AbortSignal): Promi
         signal.removeEventListener('abort', abort)
         resolve(value)
       },
-      (error) => {
+      (error: unknown) => {
         signal.removeEventListener('abort', abort)
-        reject(error)
+        reject(rejectionError(error, 'MCP connection test failed'))
       },
     )
   })
+}
+
+/** Preserve Error reasons and retain non-Error protocol values as causes. */
+function rejectionError(reason: unknown, message: string): Error {
+  return reason instanceof Error ? reason : new Error(message, { cause: reason })
 }
 
 /** List every MCP tool without installing it into the harness registry. */
