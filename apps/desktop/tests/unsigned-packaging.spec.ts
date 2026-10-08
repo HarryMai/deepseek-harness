@@ -1,12 +1,20 @@
 /** Protect the local package commands that upstream integrations must preserve. */
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 import { parseDesktopPackageInvocation } from '../scripts/package-target.ts'
 import { validateDesktopPackageEnvironment } from '../scripts/desktop-package-environment.mjs'
 import { createElectronBuilderConfig } from '../scripts/electron-builder-config.mjs'
+import { releaseFamily } from '../../../scripts/release/families.ts'
 
-const root = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')) as { scripts: Record<string, string> }
+const root = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')) as { version: string; scripts: Record<string, string> }
 const desktop = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { scripts: Record<string, string> }
+
+it('keeps every Desktop release input on the current product version after upstream integration', () => {
+  const members = releaseFamily('dsh').members(fileURLToPath(new URL('../../../', import.meta.url)))
+  expect(members.filter(member => member.version !== root.version)
+    .map(member => ({ directory: member.directory, version: member.version }))).toEqual([])
+})
 
 it.each([
   ['mac-arm64', 'darwin', 'arm64', 'mac:arm64'],

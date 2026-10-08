@@ -2,7 +2,7 @@
 
 DeepSeek Harness is an all-plugin Cordis agent harness. Read [docs/architecture.md](docs/architecture.md) before changing `packages/`; follow [docs/AGENTS.md](docs/AGENTS.md) for documentation.
 
-**Upstream merges:** Preserve [certificate-free Desktop packaging](apps/desktop/README.md#unsigned-local-packages), final outputs under `apps/desktop/out/`, and signed-release checks. Run `pnpm run test:desktop:unsigned` after conflict resolution; retain its regression tests.
+**Upstream merges:** Preserve [certificate-free Desktop packaging](apps/desktop/README.md#unsigned-local-packages), final outputs under `apps/desktop/out/`, and signed-release checks. Align branch-only DSH package versions with root `package.json`. Run `pnpm run test:desktop:unsigned` after conflict resolution; retain its regression tests.
 
 ## Pre-stable APIs and released Session data
 
