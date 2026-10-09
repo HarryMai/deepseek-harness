@@ -87,6 +87,8 @@ Linux 普通进程和终端进程即使在 bootstrap 消费启动请求前被取
 
 ### 源码地图
 
+发布包包含 `lib/` 下所有顶层 JavaScript bundle，包括 `process-inspector` 入口以及服务和 runner 使用的共享分块。
+
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 服务接线：存活句柄集合、dispose、宿主退出最终清理、可执行文件查找 |

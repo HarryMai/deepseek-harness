@@ -40,5 +40,6 @@ it('smokes an x64 target verified on an arm64 build host without revalidating ag
   expect(payload.mock.calls[0]![1]).toEqual(expect.arrayContaining([root, resources]))
   expect(smokeDesktopRuntime).toHaveBeenCalledWith(root, electron, descriptor, expect.any(Object), resources)
   const environment = vi.mocked(smokeDesktopRuntime).mock.calls[0]![3]
+  expect(environment.DSH_CLIENT_VERSION).toBe(fixture.release.version)
   expect(existsSync(environment.NARB_NATIVE_CACHE_DIR!)).toBe(false)
 })

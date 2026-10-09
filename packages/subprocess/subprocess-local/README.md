@@ -87,6 +87,8 @@ Each spawn selects one owner for both signalling and quiescence. Supported Linux
 
 ### Source map
 
+The published package includes every top-level JavaScript bundle in `lib/`, including the `process-inspector` entry and shared chunks used by the service and runner.
+
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Service wiring: live-handle sets, disposal, host-exit finalization, executable lookup |
