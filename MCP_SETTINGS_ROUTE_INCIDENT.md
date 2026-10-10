@@ -49,11 +49,16 @@ Connection Host 测试覆盖以下生命周期：
 
 该测试文件的 20 项测试全部通过，其中包含本次新增的 WebServer 延迟出现、销毁、替换和调用方清理检查。
 
+实际 Desktop 运行时还需确认构建产物已经更新：根目录的 `pnpm desktop` 会执行 `start:compatibility`，即 `tsx scripts/dev.ts --skip-build --compatibility`，不会编译 TypeScript 源码。
+
+本次浏览器控制台的 `405` 对应旧的 Connection 构建产物；重新执行 `pnpm run build` 并重启 Desktop 后，未认证的 `POST /mcp-settings/test` 返回 `401`，表明专用路由已挂载并进入 Connection 认证处理。
+
 ## 后续排查顺序
 
-1. 先检查测试请求的状态：`405` 表示 Host 路由未挂载，`401` 表示路由已到达 Connection 认证层。
-2. 只有路由已挂载后，才检查 MCP 命令、参数、环境变量、工作目录和 CodeGraph 子进程日志。
-3. 专用 RPC 路由必须通过 Connection 已注入 `webServer` 的生命周期挂载，不能假设 RPC 调用方 Context 自己能解析 `webServer`。
+1. 修改 Host 或 Connection 源码后，先执行 `pnpm run build`，再启动或重启 `pnpm desktop`；单独执行 `pnpm desktop` 不会更新构建产物。
+2. 检查测试请求的状态：`405` 表示 Host 路由未挂载，`401` 表示路由已到达 Connection 认证层。
+3. 只有路由已挂载后，才检查 MCP 命令、参数、环境变量、工作目录和 CodeGraph 子进程日志。
+4. 专用 RPC 路由必须通过 Connection 已注入 `webServer` 的生命周期挂载，不能假设 RPC 调用方 Context 自己能解析 `webServer`。
 
 ## 相关位置
 
