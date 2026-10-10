@@ -394,6 +394,45 @@ describe('connection node half', () => {
     expect(routes).toHaveLength(0)
   })
 
+  it('attaches pending dedicated RPC channels when WebServer becomes available', async () => {
+    const ctx = new Context()
+    const routes: WebRoute[] = []
+    provideBrowserCredentials(ctx)
+    const connectionFiber = ctx.plugin({ inject: [...inject], apply })
+    const caller = ctx.plugin((callerCtx) => {
+      callerCtx.inject(['connection'], (connectionCtx) => {
+        connectionCtx.connection.rpc.handle('/rpc', async () => ({ ok: true, value: null }))
+      })
+    })
+    const mountWebServer = () => ctx.plugin((serverCtx) => {
+      serverCtx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
+    })
+    let server: { dispose: () => Promise<void> } | undefined
+
+    try {
+      await connectionFiber.await()
+      await caller.await()
+      expect(routes).toEqual([])
+
+      server = await mountWebServer()
+      await expect.poll(() => routes.map(route => route.path).sort()).toEqual([API_PATH, '/rpc'])
+
+      await server.dispose()
+      server = undefined
+      await expect.poll(() => routes).toEqual([])
+
+      server = await mountWebServer()
+      await expect.poll(() => routes.map(route => route.path).sort()).toEqual([API_PATH, '/rpc'])
+
+      await caller.dispose()
+      await expect.poll(() => routes.map(route => route.path)).toEqual([API_PATH])
+    } finally {
+      await caller.dispose()
+      await server?.dispose()
+      await connectionFiber.dispose()
+    }
+  })
+
   it('dispatches claimed /api endpoints and withdraws the claim', async () => {
     const ctx = new Context()
     const routes: WebRoute[] = []
