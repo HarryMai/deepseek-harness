@@ -24,6 +24,22 @@ async function withDirectory(action: (directory: string) => Promise<void>): Prom
 }
 
 describe('Desktop local packaging configuration', () => {
+  it.each(['win32', 'darwin'] as const)('loads Electron mirror settings from the %s platform file', async (platform) => {
+    await withDirectory(async (directory) => {
+      await writeFile(join(directory, platform === 'win32' ? '.env.windows' : '.env.macos'),
+        'ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/\nELECTRON_CUSTOM_DIR={{ version }}\nDSH_DESKTOP_ELECTRON_DOWNLOAD_TIMEOUT_MS=90000\n')
+      const environment = loadDesktopPackageEnvironment(platform, {}, directory)
+      expect(environment).toMatchObject({ ELECTRON_MIRROR: 'https://npmmirror.com/mirrors/electron/',
+        ELECTRON_CUSTOM_DIR: '{{ version }}', DSH_DESKTOP_ELECTRON_DOWNLOAD_TIMEOUT_MS: '90000' })
+      expect(() => { validateDesktopPackageEnvironment(environment, platform === 'win32' ? WINDOWS : MACOS, { unsigned: true }) }).not.toThrow()
+    })
+  })
+
+  it.each(['win32', 'darwin'] as const)('rejects invalid Electron download deadlines before %s preparation', (platform) => {
+    expect(() => { validateDesktopPackageEnvironment({ DSH_DESKTOP_ELECTRON_DOWNLOAD_TIMEOUT_MS: '0' },
+      platform === 'win32' ? WINDOWS : MACOS, { unsigned: true }) }).toThrow('ELECTRON_DOWNLOAD_TIMEOUT_MS')
+  })
+
   it('takes cache concurrency from the Windows file and defaults to four without ambient overrides', async () => {
     await withDirectory(async (directory) => {
       const parent = { DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_CONCURRENCY: '8' }

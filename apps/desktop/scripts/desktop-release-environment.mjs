@@ -14,6 +14,18 @@ export const NPM_REGISTRY_ENV = 'DSH_DESKTOP_NPM_REGISTRY'
 
 const DEFAULT_NPM_REGISTRY = 'https://registry.npmjs.org/'
 
+/**
+ * @param {NodeJS.ProcessEnv} environment Packaging environment containing the optional inactivity deadline.
+ * @returns {number} Milliseconds allowed without downloaded bytes; rejects invalid configuration.
+ */
+export function resolveElectronDownloadTimeout(environment) {
+  const value = environment.DSH_DESKTOP_ELECTRON_DOWNLOAD_TIMEOUT_MS ?? '60000'
+  if (!/^[1-9]\d*$/u.test(value) || Number(value) < 1000 || Number(value) > 2147483647) {
+    throw new Error('desktop runtime: DSH_DESKTOP_ELECTRON_DOWNLOAD_TIMEOUT_MS must be an integer from 1000 through 2147483647')
+  }
+  return Number(value)
+}
+
 const APPLE_API_KEY_ENV = 'APPLE_API_KEY'
 const APPLE_API_KEY_ID_ENV = 'APPLE_API_KEY_ID'
 const APPLE_API_ISSUER_ENV = 'APPLE_API_ISSUER'

@@ -10,6 +10,12 @@ export const MACOS_TEAM_ID_ENV: 'DSH_DESKTOP_MACOS_TEAM_ID'
 /** Environment variable that selects the npm registry used for the bundled runtime install. */
 export const NPM_REGISTRY_ENV: 'DSH_DESKTOP_NPM_REGISTRY'
 
+/**
+ * @param environment Packaging environment containing the optional inactivity deadline.
+ * @returns Milliseconds allowed without downloaded bytes; rejects invalid configuration.
+ */
+export function resolveElectronDownloadTimeout(environment: NodeJS.ProcessEnv): number
+
 /** Public identity expected on a macOS release. */
 export interface MacOSSigningEnvironment {
   readonly signingIdentity: string

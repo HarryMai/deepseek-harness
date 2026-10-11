@@ -263,6 +263,8 @@ macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS �
 
 每个目标都在 `apps/desktop/.desktop-build/targets/<target>/` 下持有自己的打包输入、已准备运行时、包集合、dsh 依赖树和 pnpm 准备状态。未打包应用、更新元数据和最终产物位于 `apps/desktop/out/targets/<target>/artifacts/`（签名发布）或 `unsigned-artifacts/`（本地包）。Electron 归档缓存继续由 `.desktop-build/downloads` 共享，因为每个归档文件名都包含版本、平台和架构，并且在解包前经过验证。目标构建绝不读取其他目标的可变准备状态。
 
+Electron 二进制下载独立于 `DSH_DESKTOP_NPM_REGISTRY`。使用 Electron 镜像时，在目标 dotenv 文件中设置 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 和 `ELECTRON_CUSTOM_DIR={{ version }}`。运行时准备会打印锁定的 Electron 版本、目标、下载进度和校验结果。下载连续 `60000` ms 未收到数据时会中止；`DSH_DESKTOP_ELECTRON_DOWNLOAD_TIMEOUT_MS` 接受 `1000` 到 `2147483647` 的整数，用于调整这一空闲期限。归档和校验文件请求共用该期限；持续传输数据时不限制总时长。
+
 ### 运行时文件筛选
 
 Desktop 在本地打包工作区包，并通过目标捆绑的 Node 和 pnpm 安装外部依赖。[Desktop 文件策略](scripts/runtime-file-policy.ts)随后在签名和完整性封装前过滤不可变的 `resources/app.asar/dsh/node_modules` 副本。它排除 TypeScript 声明、已识别的 JavaScript/CSS/TypeScript source map、TypeScript 构建缓存、Domino 测试目录、选定的原生编译器输出和其他平台的 node-pty 预构建文件。它保留运行时 JavaScript、原生模块及其 DLL/EXE 辅助文件、WASM、未知资源、许可证和 notices。依赖清单在完整性封装前经过 electron-builder 的元数据清理，确保归档保持已记录的字节。该策略不修改 npm tarball、捆绑的包管理器或用户安装的插件文件。
