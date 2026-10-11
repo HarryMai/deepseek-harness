@@ -141,8 +141,8 @@ describe('desktop macOS release signature', () => {
     expect(config.dmg).toMatchObject({ sign: false, writeUpdateInfo: false })
     expect(config.publish).toBeNull()
     expect(config.extraMetadata).not.toHaveProperty('dshMandatoryUpdatePolicy')
-    await expect(config.afterSign({ electronPlatformName: 'darwin' } as Parameters<typeof config.afterSign>[0])).resolves.toBeUndefined()
-    expect(config.artifactBuildCompleted({ file: '/tmp/local-unsigned.dmg' })).toBeUndefined()
+    await expect(config.afterSign!({ electronPlatformName: 'darwin' } as Parameters<NonNullable<typeof config.afterSign>>[0])).resolves.toBeUndefined()
+    expect(config.artifactBuildCompleted!({ file: '/tmp/local-unsigned.dmg' } as Parameters<NonNullable<typeof config.artifactBuildCompleted>>[0])).toBeUndefined()
   })
 
   it('omits mandatory-update policy from local macOS builds even when release settings are supplied', async () => {
