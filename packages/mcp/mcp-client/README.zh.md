@@ -70,7 +70,7 @@ kind: "package-reference"
 
 启动后，服务器的工具会以 `mcp__<serverName>__<tool>` 形式出现——试着用一条提示词调用其中一个。如果初始连接失败，harness 仍会启动，但该服务器的工具不会出现，并会记录一条错误。设置 `failOnStartupError: true` 会拒绝插件激活；[app-boot 的启动策略](../../boot/app-boot/README.zh.md)仍允许可选 MCP 配置项失败，而不中止 harness。
 
-`./settings` 插件在 `mcp-client` profile 配置项上提供可编辑的 `enabled` 和 `servers` 字段。profile 值变化时，它将已启用的记录同步为子客户端；自定义 Settings 页面负责表单。上游 Settings 导入器可将 `settings.yaml` 中旧的 `mcp-client` 节迁移到此配置项。
+`./settings` 插件在 `mcp-client` profile 配置项上提供可编辑的 `enabled` 和 `servers` 字段。profile 值变化或新会话启动时，它将已启用的记录同步为每个会话的子客户端；自定义 Settings 页面负责表单。对于 stdio 服务，工作目录优先使用当前会话的项目目录（`session.header.cwd`），为空时回退到配置的 `cwd`，若两者皆为空则保持未加载并记录 `missing-cwd`。每个会话获得独立的子进程而非共享全局单例。上游 Settings 导入器可将 `settings.yaml` 中旧的 `mcp-client` 节迁移到此配置项。
 
 ### 工具命名与共存
 

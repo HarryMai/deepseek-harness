@@ -49,6 +49,7 @@ export type McpConnectionTestResult =
 /** Stable result categories safe to send to the browser without server details. */
 export type McpConnectionTestFailure =
   | 'invalid-configuration'
+  | 'missing-cwd'
   | 'connection-failed'
   | 'timed-out'
   | 'cancelled'
@@ -97,6 +98,12 @@ export async function probeMcpConnection(
   upstream: AbortSignal | undefined,
   timeoutMs = DEFAULT_MCP_CONNECTION_TEST_TIMEOUT_MS,
 ): Promise<McpConnectionTestResult> {
+  if (isPlainObject(payload) && isPlainObject(payload.server)) {
+    const candidate = parseServer(payload.server)
+    if (candidate?.transport === 'stdio' && candidate.cwd.length === 0) {
+      return { ok: false, reason: 'missing-cwd' }
+    }
+  }
   const config = testConfigFromPayload(payload, timeoutMs)
   if (config === undefined) return { ok: false, reason: 'invalid-configuration' }
 

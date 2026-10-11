@@ -96,6 +96,8 @@ describe('McpSettingsSection', () => {
     fireEvent.click(serviceEnabled)
     fireEvent.change(screen.getByLabelText('服务名称'), { target: { value: 'codegraph' } })
     fireEvent.change(screen.getByLabelText('命令或可执行程序'), { target: { value: '/usr/local/bin/codegraph' } })
+    expect(screen.getByText('不可用：未配置工作目录，需要会话提供项目目录。')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('工作目录'), { target: { value: '/work' } })
     expect(screen.getByText('此服务已启用；打开 MCP 总开关后会加载。')).toBeTruthy()
 
     fireEvent.change(screen.getByLabelText('连接类型'), { target: { value: 'streamable-http' } })
@@ -113,7 +115,7 @@ describe('McpSettingsSection', () => {
     controller.addServer()
     controller.editServer('server-1', { serverName: 'codegraph' })
     controller.addServer()
-    controller.editServer('server-2', { enabled: true, serverName: 'codegraph', command: 'codegraph' })
+    controller.editServer('server-2', { enabled: true, serverName: 'codegraph', command: 'codegraph', cwd: '/work' })
 
     await waitFor(() => {
       expect(screen.getByText('此服务已启用；打开 MCP 总开关后会加载。')).toBeTruthy()
@@ -127,7 +129,7 @@ describe('McpSettingsSection', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '导入 JSON' }))
     fireEvent.change(screen.getByLabelText('MCP JSON 配置'), {
-      target: { value: JSON.stringify({ mcpServers: { codegraph: { command: 'codegraph', args: ['serve'] } } }) },
+      target: { value: JSON.stringify({ mcpServers: { codegraph: { command: 'codegraph', args: ['serve'], cwd: '/work' } } }) },
     })
     fireEvent.click(screen.getByRole('button', { name: '导入' }))
     await waitFor(() => { expect(screen.getByText('已导入 1 个 MCP 服务，全部保持关闭。')).toBeTruthy() })

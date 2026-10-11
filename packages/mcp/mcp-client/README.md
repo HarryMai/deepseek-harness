@@ -70,7 +70,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 After startup, the server's tools appear as `mcp__<serverName>__<tool>` — try a prompt that uses one. If the initial connection fails, the harness still starts but no tools from that server appear, and an error is logged. Setting `failOnStartupError: true` rejects plugin activation; [app-boot's startup policy](../../boot/app-boot/README.md) still permits an optional MCP entry to fail without aborting the harness.
 
-The `./settings` plugin exposes editable `enabled` and `servers` fields on the `mcp-client` profile entry. It reconciles enabled records into child clients when profile values change; the custom Settings page owns its form. The upstream Settings importer can migrate the legacy `mcp-client` section from `settings.yaml` into this entry.
+The `./settings` plugin exposes editable `enabled` and `servers` fields on the `mcp-client` profile entry. It reconciles enabled records into per-session child clients when profile values change or new sessions start; the custom Settings page owns its form. For stdio servers, the working directory prioritizes the active session project directory (`session.header.cwd`), falling back to the configured `cwd`, and leaves the server unloaded (`missing-cwd`) if both are blank. Each session receives an isolated child process rather than sharing a global singleton. The upstream Settings importer can migrate the legacy `mcp-client` section from `settings.yaml` into this entry.
 
 ### Tool naming and coexistence
 

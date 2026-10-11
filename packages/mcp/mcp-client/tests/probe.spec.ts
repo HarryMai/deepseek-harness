@@ -6,7 +6,7 @@ import { probeMcpConnection } from '@deepseek-ai/dsh-mcp-client/src/probe.ts'
 
 const fixtureServerPath = fileURLToPath(new URL('./fixture-server.ts', import.meta.url))
 
-function fixturePayload(): unknown {
+function fixturePayload(cwd = process.cwd()): unknown {
   return {
     server: {
       enabled: false,
@@ -14,13 +14,17 @@ function fixturePayload(): unknown {
       serverName: 'probe_fixture',
       command: process.execPath,
       args: [fixtureServerPath],
-      cwd: '',
+      cwd,
       url: '',
     },
   }
 }
 
 describe('mcp-client one-shot settings probe', () => {
+  it('reports missing-cwd when a stdio server record has no working directory', async () => {
+    await expect(probeMcpConnection(fixturePayload(''), undefined, 15_000)).resolves.toEqual({ ok: false, reason: 'missing-cwd' })
+  })
+
   it('initializes a temporary stdio client, lists tools, and reports only the count', async () => {
     await expect(probeMcpConnection(fixturePayload(), undefined, 15_000)).resolves.toEqual({ ok: true, toolCount: 6 })
   }, 30_000)

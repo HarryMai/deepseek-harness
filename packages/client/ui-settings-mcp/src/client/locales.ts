@@ -10,9 +10,9 @@ export type McpSettingsKey =
   | 'command' | 'commandHint' | 'arguments' | 'argument' | 'argumentsHint' | 'addArgument' | 'removeArgument'
   | 'environment' | 'environmentKey' | 'environmentValue' | 'environmentHint' | 'addEnvironment' | 'removeEnvironment'
   | 'cwd' | 'cwdHint'
-  | 'url' | 'removeServer' | 'recordEnabled' | 'recordReady' | 'recordDisabled' | 'recordIncomplete' | 'invalidServerName'
+  | 'url' | 'removeServer' | 'recordEnabled' | 'recordReady' | 'recordDisabled' | 'recordIncomplete' | 'recordMissingCwd' | 'invalidServerName'
   | 'invalidUrl' | 'invalidEnvironment' | 'duplicateServerName' | 'testConnection' | 'testingConnection' | 'testSuccess'
-  | 'testInvalidConfiguration' | 'testConnectionFailed' | 'testTimedOut' | 'testCancelled' | 'testUnavailable'
+  | 'testInvalidConfiguration' | 'testMissingCwd' | 'testConnectionFailed' | 'testTimedOut' | 'testCancelled' | 'testUnavailable'
   | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed'
 
 /** English copy. */
@@ -58,13 +58,14 @@ export const en: Record<McpSettingsKey, string> = {
   addEnvironment: 'Add environment variable',
   removeEnvironment: 'Remove environment variable',
   cwd: 'Working directory',
-  cwdHint: 'Optional. Leave blank to use the application working directory.',
+  cwdHint: 'Optional fallback. Uses the current session project directory first; if blank, uses this configured directory. If both are blank, this service is unavailable.',
   url: 'MCP endpoint URL',
   removeServer: 'Remove',
   recordEnabled: 'Enable this MCP server',
   recordReady: 'This service is enabled and loads when the master switch is on.',
   recordDisabled: 'This service is off and will not load after saving.',
   recordIncomplete: 'Complete the required fields before this server can load.',
+  recordMissingCwd: 'Unavailable: working directory is not configured and requires a session project directory.',
   invalidServerName: 'Use 1–32 letters, numbers, hyphens, or underscores for the server name.',
   invalidUrl: 'Enter an HTTP or HTTPS endpoint URL.',
   invalidEnvironment: 'Environment variable keys cannot contain = or line breaks, and values cannot contain NUL characters.',
@@ -73,6 +74,7 @@ export const en: Record<McpSettingsKey, string> = {
   testingConnection: 'Testing…',
   testSuccess: 'Connection succeeded. Found {count} tools.',
   testInvalidConfiguration: 'Complete this MCP configuration before testing.',
+  testMissingCwd: 'Configure a working directory before testing a local program.',
   testConnectionFailed: 'Could not connect to this MCP server. Check its command or endpoint.',
   testTimedOut: 'Connection test timed out.',
   testCancelled: 'Connection test was cancelled.',
@@ -127,13 +129,14 @@ export const zh: Record<McpSettingsKey, string> = {
   addEnvironment: '添加环境变量',
   removeEnvironment: '删除环境变量',
   cwd: '工作目录',
-  cwdHint: '可选；留空则使用应用当前工作目录。',
+  cwdHint: '可选后备目录。优先使用当前会话的项目目录；若会话无目录则使用此处配置的目录；两者皆为空时该服务不可用。',
   url: 'MCP 服务地址',
   removeServer: '删除',
   recordEnabled: '启用此 MCP 服务',
   recordReady: '此服务已启用；打开 MCP 总开关后会加载。',
   recordDisabled: '此服务已关闭；保存后不会加载。',
   recordIncomplete: '请补齐必填项后再加载此服务。',
+  recordMissingCwd: '不可用：未配置工作目录，需要会话提供项目目录。',
   invalidServerName: '服务名称只能包含 1–32 个字母、数字、连字符或下划线。',
   invalidUrl: '请输入 HTTP 或 HTTPS 服务地址。',
   invalidEnvironment: '环境变量键不能包含等号或换行，值不能包含 NUL 字符。',
@@ -142,6 +145,7 @@ export const zh: Record<McpSettingsKey, string> = {
   testingConnection: '测试中…',
   testSuccess: '连接成功，发现 {count} 个工具。',
   testInvalidConfiguration: '请补齐此 MCP 配置后再测试。',
+  testMissingCwd: '测试本地程序前请先填写工作目录。',
   testConnectionFailed: '无法连接此 MCP 服务，请检查命令或服务地址。',
   testTimedOut: '连接测试超时。',
   testCancelled: '连接测试已取消。',

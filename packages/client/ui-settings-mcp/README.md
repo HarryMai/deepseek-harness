@@ -29,11 +29,11 @@ Open **Custom Configuration** from Settings, add a server record, complete its f
 
 ### Configure servers
 
-Choose **Local program (stdio)** for a command run on the Host or **Streamable HTTP** for an `http:` or `https:` endpoint. The local form has a server name, command, repeatable arguments, repeatable key-value environment variables, and an optional working directory; it starts with one blank argument row and one blank environment-variable row. The HTTP form has a server name and endpoint. The page preserves unfinished records, but marks incomplete fields, malformed commands or URLs, invalid environment entries, and duplicate enabled server names before Save.
+Choose **Local program (stdio)** for a command run on the Host or **Streamable HTTP** for an `http:` or `https:` endpoint. The local form has a server name, command, repeatable arguments, repeatable key-value environment variables, and an optional fallback working directory; it starts with one blank argument row and one blank environment-variable row. Live stdio servers prioritize the active session project directory and fall back to the configured directory; if both are blank, the server is marked unavailable (`missing-cwd`). The HTTP form has a server name and endpoint. The page preserves unfinished records, but marks incomplete fields, malformed commands or URLs, missing working directory (for stdio without configured fallback), invalid environment entries, and duplicate enabled server names before Save.
 
 ### Import and test a draft
 
-Paste an `mcpServers`, `mcp_servers`, or `servers` JSON map, a bare map, or one record to append disabled records to the current draft. Imports never enable the collection, retain stdio `env` maps, and reject HTTP `headers` because the page cannot edit them. **Test connection** sends a complete staged record to a loopback-only Host endpoint, which creates a temporary client, lists its tools, and closes it without saving, enabling, registering tools, or starting reconnect work.
+Paste an `mcpServers`, `mcp_servers`, or `servers` JSON map, a bare map, or one record to append disabled records to the current draft. Imports never enable the collection, retain stdio `env` maps, and reject HTTP `headers` because the page cannot edit them. **Test connection** sends a complete staged record to a loopback-only Host endpoint. Because testing lacks a session context, stdio records require a configured working directory to run; testing creates a temporary client, lists its tools, and closes it without saving, enabling, registering tools, or starting reconnect work.
 
 -----
 
@@ -43,7 +43,7 @@ Paste an `mcpServers`, `mcp_servers`, or `servers` JSON map, a bare map, or one 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The browser controller derives its draft from the Host `mcp-client` profile entry and serializes changes through its shared configuration form. The Host settings group validates saved records, resolves only enabled valid records into dynamic `mcp-client` Loader children, and leaves invalid or disabled records stored but unloaded. The page owns local validation and transient connection-test state, while the Host remains authoritative for persistence and live loading.
+The browser controller derives its draft from the Host `mcp-client` profile entry and serializes changes through its shared configuration form. The Host settings group validates saved records, mounts enabled valid records as isolated `mcp-client` instances per session with session-resolved working directories, and leaves invalid or disabled records stored but unloaded. The page owns local validation and transient connection-test state, while the Host remains authoritative for persistence and live loading.
 
 </details>
 

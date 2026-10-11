@@ -131,12 +131,15 @@ describe('McpSettingsController', () => {
     })).toBe('invalid-url')
     expect(serverIssue({
       enabled: true, transport: 'stdio', serverName: 'local', command: '/usr/bin/local', args: [], cwd: '', url: '',
+    })).toBe('missing-cwd')
+    expect(serverIssue({
+      enabled: true, transport: 'stdio', serverName: 'local', command: '/usr/bin/local', args: [], cwd: '/work', url: '',
     })).toBeUndefined()
     expect(serverIssue({
-      enabled: true, transport: 'stdio', serverName: 'local', command: '/usr/bin/local', args: [], cwd: '', url: '',
+      enabled: true, transport: 'stdio', serverName: 'local', command: '/usr/bin/local', args: [], cwd: '/work', url: '',
     }, true)).toBe('duplicate-server-name')
     expect(serverIssue({
-      enabled: true, transport: 'stdio', serverName: 'local', command: '/usr/bin/local', args: [], env: { 'BAD=NAME': 'value' }, cwd: '', url: '',
+      enabled: true, transport: 'stdio', serverName: 'local', command: '/usr/bin/local', args: [], env: { 'BAD=NAME': 'value' }, cwd: '/work', url: '',
     })).toBe('invalid-environment')
   })
 
@@ -207,14 +210,14 @@ describe('McpSettingsController', () => {
     const form = new MemoryConfigForm()
     const controller = new McpSettingsController(form, tester)
     controller.addServer()
-    controller.editServer('server-1', { serverName: 'codegraph', command: 'codegraph', args: ['serve'] })
+    controller.editServer('server-1', { serverName: 'codegraph', command: 'codegraph', args: ['serve'], cwd: '/work' })
 
     controller.inject().testServer('server-1')
     await vi.waitFor(() => {
       expect(controller.store.getSnapshot().tests).toEqual({ 'server-1': { status: 'testing' } })
     })
     expect(test).toHaveBeenCalledWith({
-      enabled: false, transport: 'stdio', serverName: 'codegraph', command: 'codegraph', args: ['serve'], env: {}, cwd: '', url: '',
+      enabled: false, transport: 'stdio', serverName: 'codegraph', command: 'codegraph', args: ['serve'], env: {}, cwd: '/work', url: '',
     }, expect.any(AbortSignal))
     expect(form.writes).toEqual([])
 
@@ -232,7 +235,7 @@ describe('McpSettingsController', () => {
     const form = new MemoryConfigForm()
     const controller = new McpSettingsController(form, tester)
     controller.addServer()
-    controller.editServer('server-1', { serverName: 'computer-use', command: 'computer-use' })
+    controller.editServer('server-1', { serverName: 'computer-use', command: 'computer-use', cwd: '/work' })
 
     controller.inject().testServer('server-1')
     await vi.waitFor(() => {
@@ -240,6 +243,21 @@ describe('McpSettingsController', () => {
     })
     expect(form.writes).toEqual([])
     expect(controller.store.getSnapshot().settings.enabled).toBe(false)
+    controller.dispose()
+  })
+
+  it('reports missing-cwd failure when testing a stdio server record without cwd', async () => {
+    const test = vi.fn()
+    const form = new MemoryConfigForm()
+    const controller = new McpSettingsController(form, { test })
+    controller.addServer()
+    controller.editServer('server-1', { serverName: 'computer-use', command: 'computer-use', cwd: '' })
+
+    controller.inject().testServer('server-1')
+    await vi.waitFor(() => {
+      expect(controller.store.getSnapshot().tests).toEqual({ 'server-1': { status: 'failure', reason: 'missing-cwd' } })
+    })
+    expect(test).not.toHaveBeenCalled()
     controller.dispose()
   })
 })

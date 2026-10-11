@@ -5,15 +5,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { EntryGroup } from '@deepseek-ai/cordis-plugin-loader'
 import { boot, initProfile, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import ConfigEditor from '@deepseek-ai/dsh-config-editor'
 import Settings from '@deepseek-ai/dsh-settings'
+import { createScope } from '@deepseek-ai/dsh-scope'
+import type { Agent, Inbox } from '@deepseek-ai/dsh-agent'
+import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
 import * as settingsPlugin from '@deepseek-ai/dsh-mcp-client/src/settings.ts'
 import {
-  DEFAULT_MCP_SETTINGS, MCP_SETTINGS_NAMESPACE, McpClientSettingsGroup,
+  DEFAULT_MCP_SETTINGS, MCP_SETTINGS_NAMESPACE,
   McpSettingsConfig, inject, name, resolveMcpClientEntries,
 } from '@deepseek-ai/dsh-mcp-client/src/settings.ts'
+import type { McpSettings } from '@deepseek-ai/dsh-mcp-client/src/settings.ts'
 
 const contexts: Context[] = []
 const directories: string[] = []
@@ -23,13 +26,58 @@ afterEach(async () => {
   while (directories.length > 0) await rm(directories.pop()!, { recursive: true, force: true })
 })
 
+interface DynamicEventRecord {
+  serverName: string
+  cwd: string
+}
+
 interface DynamicEvents {
-  started: string[]
-  stopped: string[]
+  started: DynamicEventRecord[]
+  stopped: DynamicEventRecord[]
+}
+
+const emptyInbox: Inbox = {
+  nextTurn: [],
+  nextStep: [],
+  clear: () => {},
+  append: () => {},
+  prepend: () => {},
+  replace: () => false,
+  remove: () => false,
+  splice: () => [],
+}
+
+function createMockAgent(ctx: Context, id: string, sessionCwd?: string): Agent {
+  let agentCtx!: Context
+  const sessionId = SessionId(id)
+  const agent: Agent = {
+    id: sessionId,
+    options: {},
+    session: Session.create(sessionId, undefined, {
+      version: SESSION_FORMAT_VERSION,
+      id: sessionId,
+      createdAt: 0,
+      isSeeded: false,
+      ...sessionCwd !== undefined ? { cwd: sessionCwd } : {},
+    }),
+    inbox: emptyInbox,
+    status: 'idle',
+    get ctx() { return agentCtx },
+    cancel: () => {},
+    whenIdle: async () => {},
+    runMaintenance: async task => task(new AbortController().signal),
+    send: () => {},
+    followup: () => {},
+    steer: () => {},
+    inject: () => {},
+  }
+  const scope = createScope(ctx.extend(), agent)
+  agentCtx = scope.ctx
+  return agent
 }
 
 /** Boot the real settings manager while substituting its external child module with a lifecycle recorder. */
-async function bootManager(directory: string, events: DynamicEvents): Promise<{ ctx: Context; group: EntryGroup; patchPath: string }> {
+async function bootManager(directory: string, events: DynamicEvents): Promise<{ ctx: Context; patchPath: string }> {
   const home = directory
   const profileDir = join(home, 'profiles', 'test')
   initProfile(profileDir, ['test-bundle'])
@@ -64,9 +112,9 @@ async function bootManager(directory: string, events: DynamicEvents): Promise<{ 
         if (specifier === '@deepseek-ai/dsh-mcp-client') {
           return {
             name: 'test-mcp-client',
-            apply: (child: Context, config: { serverName: string }) => {
-              events.started.push(config.serverName)
-              child.effect(() => () => { events.stopped.push(config.serverName) })
+            apply: (child: Context, config: { serverName: string; cwd: string }) => {
+              events.started.push({ serverName: config.serverName, cwd: config.cwd })
+              child.effect(() => () => { events.stopped.push({ serverName: config.serverName, cwd: config.cwd }) })
             },
           }
         }
@@ -76,10 +124,7 @@ async function bootManager(directory: string, events: DynamicEvents): Promise<{ 
     Object.assign(root.loader.builtins, { editor: ConfigEditor, settings: Settings })
   })
   contexts.push(ctx)
-  const entry = [...ctx.loader.entries()].find(candidate => candidate.options.id === MCP_SETTINGS_NAMESPACE)
-  const group = entry?.subgroup
-  if (group === undefined) throw new Error('MCP settings entry did not create a Loader group')
-  return { ctx, group, patchPath: profile.patchPath }
+  return { ctx, patchPath: profile.patchPath }
 }
 
 describe('mcp-client settings configuration', () => {
@@ -179,10 +224,10 @@ describe('mcp-client settings configuration', () => {
       enabled: true,
       servers: {
         good: {
-          enabled: true, transport: 'stdio', serverName: 'good', command: 'node', args: ['server.mjs'], cwd: '', url: '',
+          enabled: true, transport: 'stdio', serverName: 'good', command: 'node', args: ['server.mjs'], cwd: '/work', url: '',
         },
         incomplete: {
-          enabled: true, transport: 'stdio', serverName: 'incomplete', command: '', args: [], cwd: '', url: '',
+          enabled: true, transport: 'stdio', serverName: 'incomplete', command: '', args: [], cwd: '/work', url: '',
         },
         invalidName: {
           enabled: true, transport: 'streamable-http', serverName: 'not valid', command: '', args: [], cwd: '', url: 'https://mcp.example.test',
@@ -201,74 +246,132 @@ describe('mcp-client settings configuration', () => {
     ])
   })
 
+  it('prefers session project directory over configured cwd, falls back to configured cwd, and reports missing-cwd when both are blank', () => {
+    const settings: McpSettings = {
+      enabled: true,
+      servers: {
+        prefersSession: {
+          enabled: true, transport: 'stdio', serverName: 'prefers_session', command: 'node', args: [], env: {}, cwd: '/fallback', url: '',
+        },
+        fallbackConfig: {
+          enabled: true, transport: 'stdio', serverName: 'fallback_config', command: 'node', args: [], env: {}, cwd: '/fallback', url: '',
+        },
+        missingCwd: {
+          enabled: true, transport: 'stdio', serverName: 'missing_cwd', command: 'node', args: [], env: {}, cwd: '', url: '',
+        },
+      },
+    }
+
+    const withSession = resolveMcpClientEntries(settings, '/session/project')
+    expect(withSession.issues).toEqual([])
+    expect(withSession.entries.map(e => (e.config as { cwd: string }).cwd)).toEqual([
+      '/session/project',
+      '/session/project',
+      '/session/project',
+    ])
+
+    const withoutSession = resolveMcpClientEntries(settings, '')
+    expect(withoutSession.issues).toEqual([
+      { id: 'missingCwd', reason: 'missing-cwd' },
+    ])
+    expect(withoutSession.entries.map(e => (e.config as { cwd: string }).cwd)).toEqual([
+      '/fallback',
+      '/fallback',
+    ])
+  })
+
   it('skips stdio records with invalid environment names or values', () => {
     const resolved = resolveMcpClientEntries({
       enabled: true,
       servers: {
         invalid: {
           enabled: true, transport: 'stdio', serverName: 'invalid', command: 'node', args: [],
-          env: { 'BAD=NAME': 'value' }, cwd: '', url: '',
+          env: { 'BAD=NAME': 'value' }, cwd: '/work', url: '',
         },
       },
     })
     expect(resolved).toEqual({ entries: [], issues: [{ id: 'invalid', reason: 'invalid-environment' }] })
   })
 
-  it('keeps the settings manager as a Loader group and does not bake a server into its entry config', () => {
+  it('registers under the mcp-client namespace and does not bake a server into its entry config', () => {
     expect(MCP_SETTINGS_NAMESPACE).toBe('mcp-client')
     expect(name).toBe('mcp-client-settings')
     expect(inject).toEqual([])
-    expect(McpClientSettingsGroup.prototype).toBeInstanceOf(EntryGroup)
   })
 
-  it('persists master and per-server switches, restores them on the next boot, and unloads only the switched record', async () => {
+  it('persists master and per-server switches, mounts independent clients per agent session with session cwds, and unloads on agent disposal', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'dsh-mcp-settings-'))
     directories.push(directory)
     const firstEvents: DynamicEvents = { started: [], stopped: [] }
     const first = await bootManager(directory, firstEvents)
 
-    expect(first.group.data).toEqual([])
     await first.ctx.settings.update(MCP_SETTINGS_NAMESPACE, {
       enabled: true,
       servers: {
         codegraph: {
-          enabled: true, transport: 'stdio', serverName: 'codegraph', command: 'codegraph', args: ['serve', '--mcp'], cwd: '', url: '',
+          enabled: true, transport: 'stdio', serverName: 'codegraph', command: 'codegraph', args: ['serve', '--mcp'], cwd: '/fallback-dir', url: '',
         },
         node_repl: {
-          enabled: false, transport: 'stdio', serverName: 'node_repl', command: '/fixture/node_repl', args: [], cwd: '', url: '',
+          enabled: false, transport: 'stdio', serverName: 'node_repl', command: '/fixture/node_repl', args: [], cwd: '/work', url: '',
         },
         'computer-use': {
           enabled: false, transport: 'stdio', serverName: 'computer-use', command: './Codex Computer Use.app/Contents/MacOS/SkyComputerUseClient', args: ['mcp'], cwd: '.', url: '',
         },
       },
     })
+
+    const agent1 = createMockAgent(first.ctx, 'agent-1', '/project-a')
+    const agent2 = createMockAgent(first.ctx, 'agent-2', undefined)
+
+    await first.ctx.parallel('agent/created', { agent: agent1, source: 'startup' })
+    await first.ctx.parallel('agent/created', { agent: agent2, source: 'startup' })
+
     await vi.waitFor(() => {
-      expect(first.group.data.map(entry => entry.id)).toEqual(['mcp-codegraph'])
-      expect(firstEvents.started).toEqual(['codegraph'])
+      expect(firstEvents.started).toEqual([
+        { serverName: 'codegraph', cwd: '/project-a' },
+        { serverName: 'codegraph', cwd: '/fallback-dir' },
+      ])
     })
     const persisted = await readFile(first.patchPath, 'utf8')
     expect(persisted).toMatch(/codegraph:\n\s+enabled: true/u)
     expect(persisted).toMatch(/node_repl:\n\s+enabled: false/u)
     expect(persisted).toMatch(/computer-use:\n\s+enabled: false/u)
 
+    await first.ctx.parallel('agent/disposed', { agent: agent1 })
+    await vi.waitFor(() => {
+      expect(firstEvents.stopped).toEqual([
+        { serverName: 'codegraph', cwd: '/project-a' },
+      ])
+    })
+
     await first.ctx.fiber.dispose()
     contexts.splice(contexts.indexOf(first.ctx), 1)
-    expect(firstEvents.stopped).toEqual(['codegraph'])
+    await vi.waitFor(() => {
+      expect(firstEvents.stopped).toEqual([
+        { serverName: 'codegraph', cwd: '/project-a' },
+        { serverName: 'codegraph', cwd: '/fallback-dir' },
+      ])
+    })
 
     const secondEvents: DynamicEvents = { started: [], stopped: [] }
     const second = await bootManager(directory, secondEvents)
+
+    const agentSecond = createMockAgent(second.ctx, 'agent-second', '/project-b')
+    await second.ctx.parallel('agent/created', { agent: agentSecond, source: 'startup' })
+
     await vi.waitFor(() => {
-      expect(second.group.data.map(entry => entry.id)).toEqual(['mcp-codegraph'])
-      expect(secondEvents.started).toEqual(['codegraph'])
+      expect(secondEvents.started).toEqual([
+        { serverName: 'codegraph', cwd: '/project-b' },
+      ])
     })
 
     await second.ctx.settings.update(MCP_SETTINGS_NAMESPACE, {
       servers: {
         codegraph: {
-          enabled: false, transport: 'stdio', serverName: 'codegraph', command: 'codegraph', args: ['serve', '--mcp'], cwd: '', url: '',
+          enabled: false, transport: 'stdio', serverName: 'codegraph', command: 'codegraph', args: ['serve', '--mcp'], cwd: '/fallback-dir', url: '',
         },
         node_repl: {
-          enabled: true, transport: 'stdio', serverName: 'node_repl', command: '/fixture/node_repl', args: [], cwd: '', url: '',
+          enabled: true, transport: 'stdio', serverName: 'node_repl', command: '/fixture/node_repl', args: [], cwd: '/work', url: '',
         },
         'computer-use': {
           enabled: false, transport: 'stdio', serverName: 'computer-use', command: './Codex Computer Use.app/Contents/MacOS/SkyComputerUseClient', args: ['mcp'], cwd: '.', url: '',
@@ -276,15 +379,21 @@ describe('mcp-client settings configuration', () => {
       },
     })
     await vi.waitFor(() => {
-      expect(second.group.data.map(entry => entry.id)).toEqual(['mcp-node_repl'])
-      expect(secondEvents.started).toEqual(['codegraph', 'node_repl'])
-      expect(secondEvents.stopped).toEqual(['codegraph'])
+      expect(secondEvents.started).toEqual([
+        { serverName: 'codegraph', cwd: '/project-b' },
+        { serverName: 'node_repl', cwd: '/project-b' },
+      ])
+      expect(secondEvents.stopped).toEqual([
+        { serverName: 'codegraph', cwd: '/project-b' },
+      ])
     })
 
     await second.ctx.settings.update(MCP_SETTINGS_NAMESPACE, { enabled: false })
     await vi.waitFor(() => {
-      expect(second.group.data).toEqual([])
-      expect(secondEvents.stopped).toEqual(['codegraph', 'node_repl'])
+      expect(secondEvents.stopped).toEqual([
+        { serverName: 'codegraph', cwd: '/project-b' },
+        { serverName: 'node_repl', cwd: '/project-b' },
+      ])
     })
   })
 })

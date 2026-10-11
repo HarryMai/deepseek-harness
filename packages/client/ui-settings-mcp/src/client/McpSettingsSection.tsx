@@ -25,6 +25,7 @@ function issueText(issue: McpServerIssue | undefined, t: McpSettingsSectionProps
     case 'invalid-url': return t('invalidUrl')
     case 'invalid-environment': return t('invalidEnvironment')
     case 'duplicate-server-name': return t('duplicateServerName')
+    case 'missing-cwd': return t('recordMissingCwd')
   }
 }
 
@@ -36,6 +37,7 @@ function testText(test: McpConnectionTestState, t: McpSettingsSectionProps['t'])
     case 'failure':
       switch (test.reason) {
         case 'invalid-configuration': return t('testInvalidConfiguration')
+        case 'missing-cwd': return t('testMissingCwd')
         case 'connection-failed': return t('testConnectionFailed')
         case 'timed-out': return t('testTimedOut')
         case 'cancelled': return t('testCancelled')

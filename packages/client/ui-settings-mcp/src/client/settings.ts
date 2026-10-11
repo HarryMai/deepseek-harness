@@ -33,6 +33,7 @@ export interface McpServerSettings {
 /** Browser-safe result category for a temporary MCP connection test. */
 export type McpConnectionTestFailure =
   | 'invalid-configuration'
+  | 'missing-cwd'
   | 'connection-failed'
   | 'timed-out'
   | 'cancelled'
@@ -88,7 +89,7 @@ export interface McpSettings {
 export const DEFAULT_MCP_SETTINGS: McpSettings = { enabled: false, servers: {} }
 
 /** Why a record will not be loaded when the master switch is enabled. */
-export type McpServerIssue = 'disabled' | 'incomplete' | 'invalid-server-name' | 'invalid-url' | 'invalid-environment' | 'duplicate-server-name'
+export type McpServerIssue = 'disabled' | 'incomplete' | 'invalid-server-name' | 'invalid-url' | 'invalid-environment' | 'duplicate-server-name' | 'missing-cwd'
 
 /** Browser state rendered by the Custom Configuration settings section. */
 export interface McpSettingsState {
@@ -199,8 +200,10 @@ export function serverIssue(server: McpServerSettings, duplicateServerName = fal
   if (!SERVER_NAME_PATTERN.test(serverName)) return 'invalid-server-name'
   if (duplicateServerName) return 'duplicate-server-name'
   if (server.transport === 'stdio') {
+    if (server.command.trim().length === 0) return 'incomplete'
     if (!isValidEnvironment(server.env)) return 'invalid-environment'
-    return server.command.trim().length === 0 ? 'incomplete' : undefined
+    if (server.cwd.trim().length === 0) return 'missing-cwd'
+    return undefined
   }
   const url = server.url.trim()
   if (url.length === 0) return 'incomplete'
@@ -554,6 +557,11 @@ export class McpSettingsController {
   private async testServer(id: string): Promise<void> {
     const server = this.draft.servers[id]
     if (server === undefined || this.testControllers.has(id)) return
+    if (server.transport === 'stdio' && server.cwd.trim().length === 0) {
+      this.tests.set(id, { status: 'failure', reason: 'missing-cwd' })
+      this.publish()
+      return
+    }
     if (serverIssue({ ...server, enabled: true }) !== undefined) {
       this.tests.set(id, { status: 'failure', reason: 'invalid-configuration' })
       this.publish()
