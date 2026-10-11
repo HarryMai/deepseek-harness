@@ -54,7 +54,7 @@ it('rejects login origins in production', () => {
 it('accepts an empty unsigned configuration for both platforms', () => {
   for (const platform of ['win32', 'darwin'] as const) {
     expect(() => {
-      validateDesktopPackageEnvironment({}, { platform, arch: 'x64' })
+      validateDesktopPackageEnvironment({}, { platform, arch: 'x64' }, { unsigned: true })
     }).not.toThrow()
   }
 })

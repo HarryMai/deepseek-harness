@@ -54,6 +54,7 @@ export function createElectronBuilderConfig(
   preparedRuntime = undefined,
   preparedRuntimeVersion = undefined,
 ) {
+
   const targetPlatform = env.DSH_DESKTOP_TARGET_PLATFORM
   const resolvedPlatform = targetPlatform ?? hostPlatform
   const resolvedArch = env.DSH_DESKTOP_TARGET_ARCH ?? hostArch
@@ -67,12 +68,12 @@ export function createElectronBuilderConfig(
   const signed = !explicitUnsigned && (explicitSigned || (packagesMacOS
     ? hasMacOSSigningIdentity(env) : hasWindowsSigningCertificate(env)))
   const appId = signed ? resolveDesktopAppId(env) : resolveOptionalDesktopAppId(env)
-  const policy = signed ? resolveDesktopPolicyEnvironment(env) : undefined
+  const policy = packagesMacOS && !signed ? undefined : signed ? resolveDesktopPolicyEnvironment(env) : undefined
   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
   const macOSSigning = packagesMacOS && !explicitUnsigned
     ? explicitSigned ? resolveMacOSSigningEnvironment(env) : resolveOptionalMacOSSigningEnvironment(env)
     : undefined
-  if (macOSSigning !== undefined) resolveMacOSNotarizationEnvironment(env)
+  if (packagesMacOS && !explicitUnsigned && macOSSigning !== undefined) resolveMacOSNotarizationEnvironment(env)
   const buildPaths = desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch))
   let primaryRuntimeDestination
   let dshDestination
@@ -159,23 +160,24 @@ export function createElectronBuilderConfig(
     mac: {
       icon: fileURLToPath(new URL('../resources/icon-macos.png', import.meta.url)),
       category: 'public.app-category.developer-tools',
-      identity: macOSSigning?.signingIdentity ?? '-',
-      forceCodeSigning: macOSSigning !== undefined,
-      hardenedRuntime: true,
       // macOS matches the application locale against this bundle, not Electron Framework resources.
       extendInfo: {
         CFBundleLocalizations: ['en', 'zh_CN'],
         NSMicrophoneUsageDescription: 'DeepSeek Harness uses your microphone to transcribe speech into message drafts.',
       },
+      // Ad-hoc signing keeps the modified Electron executable runnable without a Developer ID.
+      identity: unsigned ? '-' : macOSSigning?.signingIdentity,
+      forceCodeSigning: !unsigned,
+      hardenedRuntime: true,
       entitlements: fileURLToPath(new URL('./macos-entitlements.plist', import.meta.url)),
       entitlementsInherit: fileURLToPath(new URL('./macos-entitlements.plist', import.meta.url)),
-      // ASAR-unpacked native runtime files are pre-signed; PAK resources are sealed by their enclosing bundle.
+      // Prepared runtime files retain their signatures; PAK resources are sealed by their enclosing bundle.
       signIgnore: ['/Contents/Resources/app\\.asar\\.unpacked/dsh(?:/|$)', '/Contents/Resources/runtime/primary-runtime(?:/|$)', '\\.pak$'],
-      notarize: macOSSigning !== undefined,
-      target: ['dmg', 'zip'],
+      notarize: !unsigned,
+      target: unsigned ? ['dmg'] : ['dmg', 'zip'],
     },
     dmg: {
-      sign: macOSSigning !== undefined,
+      sign: !unsigned,
       writeUpdateInfo: false,
     },
     beforePack: async context => {
@@ -206,31 +208,31 @@ export function createElectronBuilderConfig(
       // Unsigned Windows builds verify unpacked bytes here; afterSign has no signing work for them.
       if (packagesWindows && unsigned) await verifyWindowsAsarUnpack(buildPaths.dsh, resourcesDir, windowsCode)
     },
-    ...(packagesWindows || macOSSigning !== undefined ? {
-      afterSign: async context => {
-        if (windowsSigner !== undefined) {
-          await signWindowsCode(context.appOutDir, {
-            thumbprint: new X509Certificate(await readFile(env.DSH_DESKTOP_WINDOWS_CER_FILE)).fingerprint.replaceAll(':', ''),
-            sign: windowsSigner,
-            record: event => recordPackagingEvent(env.DSH_DESKTOP_PACKAGING_RUN_DIR, event),
-          })
-          await verifyWindowsAsarUnpack(buildPaths.dsh, context.packager.getResourcesDir(context.appOutDir), windowsCode)
-        }
-        if (context.electronPlatformName !== 'darwin' || macOSSigning === undefined) return
-        const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
-        if (update !== undefined) {
-          await verifyMacOSAppUpdateConfig(appPath, resolveMacOSAppUpdateFeed(context.packager.config.publish),
-            context.packager.appInfo.updaterCacheDirName)
-        }
-        verifyMacOSSignatureAfterSign(context, macOSSigning)
-      },
-    } : {}),
-    ...(macOSSigning === undefined ? {} : {
-      artifactBuildCompleted: artifact => {
-        if (!artifact.file.endsWith('.dmg')) return
-        return notarizeMacOSDiskImageArtifact(artifact, env, macOSSigning)
-      },
-    }),
+    afterSign: async context => {
+      if (windowsSigner !== undefined) {
+        await signWindowsCode(context.appOutDir, {
+          thumbprint: new X509Certificate(await readFile(env.DSH_DESKTOP_WINDOWS_CER_FILE)).fingerprint.replaceAll(':', ''),
+          sign: windowsSigner,
+          record: event => recordPackagingEvent(env.DSH_DESKTOP_PACKAGING_RUN_DIR, event),
+        })
+        await verifyWindowsAsarUnpack(buildPaths.dsh, context.packager.getResourcesDir(context.appOutDir), windowsCode)
+      }
+      if (context.electronPlatformName !== 'darwin' || unsigned) return
+      const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
+      if (update !== undefined) {
+        await verifyMacOSAppUpdateConfig(appPath, resolveMacOSAppUpdateFeed(context.packager.config.publish),
+          context.packager.appInfo.updaterCacheDirName)
+      }
+      verifyMacOSSignatureAfterSign(context, macOSSigning ?? resolveMacOSSigningEnvironment(env))
+    },
+    artifactBuildCompleted: artifact => {
+      if (unsigned || !artifact.file.endsWith('.dmg')) return
+      return notarizeMacOSDiskImageArtifact(
+        artifact,
+        env,
+        macOSSigning ?? resolveMacOSSigningEnvironment(env),
+      )
+    },
     win: {
       icon: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)),
       forceCodeSigning: windowsSigner !== undefined,

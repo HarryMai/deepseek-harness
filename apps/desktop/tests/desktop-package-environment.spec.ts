@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { loadDesktopPackageEnvironment, validateDesktopPackageEnvironment } from '../scripts/desktop-package-environment.mjs'
+import { loadDesktopPackageEnvironment, localMacOSPackageEnvironment, validateDesktopPackageEnvironment } from '../scripts/desktop-package-environment.mjs'
 import { resolveWindowsPackageSettings } from '../scripts/windows-package-settings.mjs'
 
 const WINDOWS = { platform: 'win32', arch: 'x64' } as const
@@ -38,6 +38,25 @@ describe('Desktop local packaging configuration', () => {
   it.each(['win32', 'darwin'] as const)('rejects invalid Electron download deadlines before %s preparation', (platform) => {
     expect(() => { validateDesktopPackageEnvironment({ DSH_DESKTOP_ELECTRON_DOWNLOAD_TIMEOUT_MS: '0' },
       platform === 'win32' ? WINDOWS : MACOS, { unsigned: true }) }).toThrow('ELECTRON_DOWNLOAD_TIMEOUT_MS')
+  })
+
+  it('selects macOS local defaults while excluding inherited release settings and retaining build networking', () => {
+    const parent = {
+      PATH: 'build-tools', HTTPS_PROXY: 'http://proxy.example:8080', DSH_DESKTOP_NPM_REGISTRY: 'https://registry.npmmirror.com',
+      DSH_DESKTOP_APP_ID: 'com.example.release', DSH_DESKTOP_UNSIGNED: '0',
+      DSH_DESKTOP_AUTO_UPDATE_ENV: 'production', DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: 'invalid-json',
+      DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN: 'https://policy.example.com',
+      DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Release identity', CSC_LINK: 'missing.p12',
+      APPLE_API_KEY: 'missing.p8', DOWNLOAD_PROD_COS_SECRET_KEY: 'unused-secret',
+    }
+    const local = localMacOSPackageEnvironment(parent)
+    expect(local).toEqual({
+      PATH: parent.PATH, HTTPS_PROXY: parent.HTTPS_PROXY, DSH_DESKTOP_NPM_REGISTRY: parent.DSH_DESKTOP_NPM_REGISTRY,
+      DSH_DESKTOP_APP_ID: 'com.deepseek.harness', DSH_DESKTOP_UNSIGNED: '1',
+    })
+    expect(() => { validateDesktopPackageEnvironment(local, MACOS, { unsigned: true }) }).not.toThrow()
+    expect(parent.DSH_DESKTOP_UNSIGNED).toBe('0')
+    expect(parent.DSH_DESKTOP_APP_ID).toBe('com.example.release')
   })
 
   it('takes cache concurrency from the Windows file and defaults to four without ambient overrides', async () => {
@@ -138,10 +157,10 @@ describe('Desktop local packaging configuration', () => {
 
   it('checks application and update configuration before Windows credentials while preserving unsigned and preparation modes', () => {
     expect(() => {
-      validateDesktopPackageEnvironment({}, WINDOWS)
+      validateDesktopPackageEnvironment({}, WINDOWS, { unsigned: true })
     }).not.toThrow()
     expect(() => {
-      validateDesktopPackageEnvironment({}, MACOS)
+      validateDesktopPackageEnvironment({}, MACOS, { unsigned: true })
     }).not.toThrow()
     expect(() => {
       validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'invalid' }, WINDOWS)
@@ -166,6 +185,14 @@ describe('Desktop local packaging configuration', () => {
     }).not.toThrow()
   })
 
+  it('accepts unsigned macOS configuration without Apple or update policy settings while keeping release validation', () => {
+    const local = localMacOSPackageEnvironment({})
+    expect(() => { validateDesktopPackageEnvironment(local, MACOS, { unsigned: true }) }).not.toThrow()
+    expect(() => { validateDesktopPackageEnvironment(local, MACOS) })
+      .toThrow('DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN')
+    expect(() => { validateDesktopPackageEnvironment(RELEASE, MACOS) }).toThrow('DSH_DESKTOP_MACOS_SIGNING_IDENTITY')
+  })
+
   it('accepts one local npm registry mirror and rejects other registry forms', () => {
     const release = { ...POLICY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }
     expect(() => {
@@ -181,7 +208,7 @@ describe('Desktop local packaging configuration', () => {
   it('rejects incomplete macOS identity and credentials and checks referenced files without contacting Apple', async () => {
     expect(() => {
       validateDesktopPackageEnvironment(RELEASE, MACOS)
-    }).not.toThrow()
+    }).toThrow(/DSH_DESKTOP_MACOS_SIGNING_IDENTITY/u)
     expect(() => {
       validateDesktopPackageEnvironment({ ...RELEASE, ...MAC_IDENTITY }, MACOS)
     }).toThrow(/macOS packaging requires/u)
