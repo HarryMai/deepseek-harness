@@ -46,14 +46,14 @@ describe('dsh-base bundle', () => {
     expect(rows.find(row => row.id === 'tool-web')?.config).toMatchObject({ fetch: true })
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-codex')
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
-    const mcpSettings = rows.find(row => row.id === 'mcp-settings')
+    const mcpSettings = rows.find(row => row.id === 'mcp-client')
     expect(mcpSettings).toMatchObject({
       name: '@deepseek-ai/dsh-mcp-client/settings',
-      group: true,
+      config: {
+        enabled: false,
+        servers: {},
+      },
     })
-    // The shared profile carries only the settings-backed group. No server
-    // entry exists until a user enables and completes one in settings.yaml.
-    expect(mcpSettings?.config).toEqual([])
     expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-web-fetch-http')
   })
 

@@ -28,7 +28,6 @@ class MemoryConfigForm implements ConfigForm<McpSettings> {
     user: {},
     revision: 0,
     writable: true,
-    mode: 'host',
   }
 
   getSnapshot(): ConfigFormSnapshot<McpSettings> {
@@ -62,11 +61,14 @@ function renderSection(form = new MemoryConfigForm(), tester?: McpConnectionTest
   const props: McpSettingsSectionProps = {
     ...controller.inject(),
     useMcpSettings: bindSnapshotSelector(controller.store),
+    useRemoteAccess: unusedHook,
+    useSessionAccess: unusedHook,
     useSessions: unusedHook,
     useSessionStatus: unusedHook,
     useSessionRetainInfo: unusedHook,
     usePanelInfo,
     useResource,
+    useWorkspaceAccess: unusedHook,
     useWorkspaces: unusedHook,
     t: (key, values) => (zh[key as McpSettingsKey] ?? '').replace(/\{(\w+)\}/gu, (_match, name: string) => {
       const value = values?.[name]

@@ -199,35 +199,26 @@ it('does not write a release completion record when Apple proxy cleanup fails', 
   expect(writeFileSync).not.toHaveBeenCalled()
 })
 
-it.each([
-  ['win-x64', 'win32', 'x64'], ['mac-x64', 'darwin', 'x64'], ['mac-arm64', 'darwin', 'arm64'],
-] as const)('builds local %s artifacts without certificates or update services', async (name, platform, arch) => {
+it.each([false, true])('keeps signing and runtime verification when notarization is skipped (directory=%s)', async (directory) => {
   const { run, stages } = supervisor()
-  await packageTarget(parseDesktopPackageInvocation([name], platform, arch), {}, run)
-  expect(stages[0]).toBe('run build:official')
-  expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')
-  for (const call of run.run.mock.calls) expect(call[3].env).toHaveProperty('DSH_DESKTOP_UNSIGNED', '1')
-  expect(withWindowsSigningStage).not.toHaveBeenCalled()
+  await packageTarget(parseDesktopPackageInvocation(['mac-arm64', '--skip-notarization', ...(directory ? ['--dir'] : [])], 'darwin', 'arm64'), {
+    ...environment, CSC_LINK: 'signing.p12', CSC_KEY_PASSWORD: 'fixture-password',
+  }, run)
+  expect(stages.at(-2)).toBe(`exec electron-builder --config electron-builder.config.mjs --mac --arm64 --publish never${directory ? ' --dir' : ''}`)
+  expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts --skip-notarization')
+  expect(run.run.mock.calls.at(-2)![3].env).toMatchObject({
+    DSH_DESKTOP_UNSIGNED: '0', DSH_DESKTOP_MACOS_SKIP_NOTARIZATION: '1', CSC_LINK: 'signing.p12',
+  })
   expect(withMacOSNotarizationProxy).not.toHaveBeenCalled()
   expect(packageMacOSArtifacts).not.toHaveBeenCalled()
   expect(writeFileSync).not.toHaveBeenCalled()
 })
 
-it.each([false, true])('keeps explicitly unsigned macOS builds certificate-free (directory=%s)', async (directory) => {
-  const { run, stages } = supervisor()
-  await packageTarget(parseDesktopPackageInvocation(['mac-x64', '--unsigned', ...(directory ? ['--dir'] : [])], 'darwin', 'x64'), {
-    ...environment, CSC_LINK: 'private.p12', CSC_KEY_PASSWORD: 'secret', APPLE_API_KEY: 'private.p8',
-  }, run)
-  const builder = run.run.mock.calls.find(call => call[0].startsWith('exec electron-builder'))
-  expect(builder?.[2].includes('--dir')).toBe(directory)
-  for (const call of run.run.mock.calls) {
-    expect(call[3].env).toHaveProperty('DSH_DESKTOP_UNSIGNED', '1')
-    for (const credential of ['CSC_LINK', 'CSC_KEY_PASSWORD', 'APPLE_API_KEY', 'DSH_DESKTOP_MACOS_SIGNING_IDENTITY']) {
-      expect(call[3].env).not.toHaveProperty(credential)
-    }
-  }
-  expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')
-  expect(withMacOSNotarizationProxy).not.toHaveBeenCalled()
-  expect(packageMacOSArtifacts).not.toHaveBeenCalled()
+it('fails debugging packages when runtime verification fails', async () => {
+  const failure = 'exec tsx scripts/smoke-packaged-runtime.ts --skip-notarization'
+  const { run, stages } = supervisor(failure)
+  await expect(packageTarget(parseDesktopPackageInvocation(['mac-arm64', '--skip-notarization'], 'darwin', 'arm64'), environment, run))
+    .rejects.toThrow('stage refused')
+  expect(stages.at(-1)).toBe(failure)
   expect(writeFileSync).not.toHaveBeenCalled()
 })

@@ -27,20 +27,20 @@ id: 2026-10-07-cordis-message-attribution
 baseline: false
 changes:
   - root: "event:agent/inbox/spliced"
-    previous: "2026-09-21-user-question-reply"
-    after: "57b5640cd67def99ca3051fccf6bf7e81aeb5e85525116885b770be8d2da67e4"
+    previous: "2026-10-13-user-rpc-principal"
+    after: "25f6407d8af1cb41716b67a97ed83ac72bfd5dee90140b28a5e968cc9da2f104"
     decision: same-version
   - root: "event:developer/message"
-    previous: "2026-09-21-user-question-reply"
-    after: "d131da52df515c639ce0f6ef11d0f88418ddd32815426f211e5fd2dc0fab559e"
+    previous: "2026-10-13-user-rpc-principal"
+    after: "c8d2384b841a9d20882f3e66be1c190a45c07efbe63789d6cdea9559e74d7424"
     decision: same-version
   - root: "event:session/title-llm-request"
-    previous: "2026-09-21-user-question-reply"
-    after: "161028cb171200c50014d3330c921f2970f359285640e93333c4eb62d3393314"
+    previous: "2026-10-13-user-rpc-principal"
+    after: "cd1b4dcefb42e445d16ce3124b0ccd5fb6b5376a9c939b234b658b2e5ca38a5f"
     decision: same-version
   - root: "event:user/message"
-    previous: "2026-09-21-user-question-reply"
-    after: "2365aab775beda0152ffc25f0b971f6cf2f0bd89bde3ac3e6270fbbf51f67a6f"
+    previous: "2026-10-13-user-rpc-principal"
+    after: "02e259b61aae75ab3190f4fd45310282b45d87c3f3e928a401cdc022212ae1d0"
     decision: same-version
 ```
 

@@ -20,7 +20,6 @@ class MemoryConfigForm implements ConfigForm<McpSettings> {
       user: {},
       revision: 0,
       writable,
-      mode: 'host',
     }
   }
 
