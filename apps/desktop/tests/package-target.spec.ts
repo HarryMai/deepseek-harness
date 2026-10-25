@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   desktopElectronBuilderArguments,
   desktopElectronBuilderEnvironment,
+  isDesktopPackageSigned,
   parseDesktopPackageInvocation,
   resolveDesktopPackageTarget,
   withoutDesktopUploadCredentials,
@@ -157,4 +158,15 @@ it('allows skipping notarization only for signed macOS packages', () => {
     expect(() => parseDesktopPackageInvocation(['mac-arm64', '--skip-notarization', flag], 'darwin', 'arm64')).toThrow(/requires a signed macOS build/u)
   }
   expect(() => parseDesktopPackageInvocation(['win-x64', '--skip-notarization'], 'win32', 'x64')).toThrow(/requires a signed macOS build/u)
+})
+
+it.each([
+  ['win-x64', 'win32', 'x64', 'DSH_DESKTOP_WINDOWS_CER_FILE'],
+  ['mac-arm64', 'darwin', 'arm64', 'DSH_DESKTOP_MACOS_SIGNING_IDENTITY'],
+  ['mac-x64', 'darwin', 'x64', 'DSH_DESKTOP_MACOS_SIGNING_IDENTITY'],
+] as const)('selects signing for %s only when its certificate selector is present', (name, platform, arch, selector) => {
+  const target = resolveDesktopPackageTarget(name, platform, arch)
+  expect(isDesktopPackageSigned(target, {})).toBe(false)
+  expect(isDesktopPackageSigned(target, { [selector]: '  ' })).toBe(false)
+  expect(isDesktopPackageSigned(target, { [selector]: 'configured' })).toBe(true)
 })

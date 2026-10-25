@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
-import { parseDesktopPackageInvocation } from '../scripts/package-target.ts'
+import { isDesktopPackageSigned, parseDesktopPackageInvocation } from '../scripts/package-target.ts'
 import { validateDesktopPackageEnvironment } from '../scripts/desktop-package-environment.mjs'
 import { createElectronBuilderConfig } from '../scripts/electron-builder-config.mjs'
 import { releaseFamily } from '../../../scripts/release/families.ts'
@@ -21,15 +21,22 @@ it.each([
   ['mac-x64', 'darwin', 'x64', 'mac:x64'],
   ['win-x64', 'win32', 'x64', 'win:x64'],
 ] as const)('retains the certificate-free %s package command and isolated artifacts', (name, platform, arch, script) => {
+  expect(root.scripts[`package:desktop:${script}`]).toBe(`pnpm --filter @deepseek-ai/dsh-desktop run package:${script}`)
+  expect(desktop.scripts[`package:${script}`]).toBe(`tsx scripts/package-target.ts ${name}`)
   expect(root.scripts[`package:desktop:${script}:unsigned`]).toBe(`pnpm --filter @deepseek-ai/dsh-desktop run package:${script}:unsigned`)
   expect(desktop.scripts[`package:${script}:unsigned`]).toBe(`tsx scripts/package-target.ts ${name} --unsigned`)
-  const invocation = parseDesktopPackageInvocation([name, '--unsigned'], platform, arch)
-  expect(() => {
-    validateDesktopPackageEnvironment({}, invocation.target, invocation)
-  }).not.toThrow()
-  const config = createElectronBuilderConfig({ DSH_DESKTOP_UNSIGNED: '1' }, platform, arch)
-  expect(config.directories.output.replaceAll('\\', '/')).toContain(`/out/targets/${name}/unsigned-artifacts`)
-  expect(config.artifactName).toContain('-unsigned')
-  expect(config.publish).toBeNull()
-  expect(config.extraMetadata).not.toHaveProperty('dshMandatoryUpdatePolicy')
+  for (const args of [[name], [name, '--unsigned']]) {
+    const invocation = parseDesktopPackageInvocation(args, platform, arch)
+    expect(isDesktopPackageSigned(invocation.target, {})).toBe(false)
+    expect(() => {
+      validateDesktopPackageEnvironment({}, invocation.target, invocation)
+    }).not.toThrow()
+  }
+  for (const env of [{}, { DSH_DESKTOP_UNSIGNED: '1' }]) {
+    const config = createElectronBuilderConfig(env, platform, arch)
+    expect(config.directories.output.replaceAll('\\', '/')).toContain(`/out/targets/${name}/unsigned-artifacts`)
+    expect(config.artifactName).toContain('-unsigned')
+    expect(config.publish).toBeNull()
+    expect(config.extraMetadata).not.toHaveProperty('dshMandatoryUpdatePolicy')
+  }
 })

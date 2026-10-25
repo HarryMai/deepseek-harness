@@ -222,3 +222,17 @@ it('fails debugging packages when runtime verification fails', async () => {
   expect(stages.at(-1)).toBe(failure)
   expect(writeFileSync).not.toHaveBeenCalled()
 })
+
+it.each([
+  ['win-x64', 'win32', 'x64'], ['mac-x64', 'darwin', 'x64'], ['mac-arm64', 'darwin', 'arm64'],
+] as const)('builds local %s artifacts without certificates or update services', async (name, platform, arch) => {
+  const { run, stages } = supervisor()
+  await packageTarget(parseDesktopPackageInvocation([name], platform, arch), {}, run)
+  expect(stages[0]).toBe('run build:official')
+  expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')
+  for (const call of run.run.mock.calls) expect(call[3].env).toHaveProperty('DSH_DESKTOP_UNSIGNED', '1')
+  expect(withWindowsSigningStage).not.toHaveBeenCalled()
+  expect(withMacOSNotarizationProxy).not.toHaveBeenCalled()
+  expect(packageMacOSArtifacts).not.toHaveBeenCalled()
+  expect(writeFileSync).not.toHaveBeenCalled()
+})

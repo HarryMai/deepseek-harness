@@ -9,7 +9,6 @@ import {
   resolveOptionalDesktopAppId,
   resolveMacOSNotarizationEnvironment,
   resolveMacOSSigningEnvironment,
-  resolveOptionalMacOSSigningEnvironment,
   hasMacOSSigningIdentity,
   resolveNpmRegistry,
   resolveElectronDownloadTimeout,
@@ -143,19 +142,22 @@ function requireReadableFile(environment, name) {
  * @returns {void}
  */
 export function validateDesktopPackageEnvironment(environment, target, options = {}) {
-  if (options.unsigned) {
-    resolveOptionalDesktopAppId(environment)
-  } else {
+  const signed = !options.unsigned && (Boolean(options.skipNotarization) || (target.platform === 'win32'
+    ? hasWindowsSigningCertificate(environment)
+    : hasMacOSSigningIdentity(environment)))
+  if (signed) {
     resolveDesktopAppId(environment)
+  } else {
+    resolveOptionalDesktopAppId(environment)
   }
   resolveNpmRegistry(environment)
   resolveElectronDownloadTimeout(environment)
-  if (!options.unsigned) {
+  if (signed) {
     resolveDesktopPolicyEnvironment(environment)
   }
   if (target.platform === 'darwin') resolveMacOSPackageSettings(environment)
   else resolveWindowsPackageSettings(environment)
-  if (options.unsigned) return
+  if (!signed) return
   if (!options.prepareOnly) resolveDesktopAutoUpdateConfig(environment, target.platform, target.arch)
   if (target.platform === 'win32') {
     if (!options.prepareOnly) createWindowsTokenSigner({

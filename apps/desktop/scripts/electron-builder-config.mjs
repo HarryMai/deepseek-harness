@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import {
+  hasMacOSSigningIdentity,
   resolveDesktopAppId,
   resolveOptionalDesktopAppId,
   resolveMacOSNotarizationEnvironment,
@@ -16,6 +17,7 @@ import { notarizeMacOSDiskImageArtifact } from './notarize-macos-disk-images.mjs
 import { verifyMacOSDiskImageSignature, verifyMacOSSignatureAfterSign } from './verify-macos-signature.mjs'
 import {
   createWindowsTokenSigner,
+  hasWindowsSigningCertificate,
   installWindowsNsisBootstrapSigner,
   resolveWindowsUpdatePublisher,
   scrubWindowsSigningEnvironment,
@@ -58,14 +60,18 @@ export function createElectronBuilderConfig(
   if (env.DSH_DESKTOP_UNSIGNED !== undefined && !['0', '1'].includes(env.DSH_DESKTOP_UNSIGNED)) {
     throw new Error('desktop package: DSH_DESKTOP_UNSIGNED must be 0 or 1')
   }
-  const unsigned = env.DSH_DESKTOP_UNSIGNED === '1'
+  const explicitUnsigned = env.DSH_DESKTOP_UNSIGNED === '1'
+  const explicitSigned = env.DSH_DESKTOP_UNSIGNED === '0'
   const skipNotarization = env.DSH_DESKTOP_MACOS_SKIP_NOTARIZATION === '1'
   if (env.DSH_DESKTOP_MACOS_SKIP_NOTARIZATION !== undefined && !['0', '1'].includes(env.DSH_DESKTOP_MACOS_SKIP_NOTARIZATION)) {
     throw new Error('desktop package: DSH_DESKTOP_MACOS_SKIP_NOTARIZATION must be 0 or 1')
   }
-  if (skipNotarization && (unsigned || resolvedPlatform !== 'darwin')) throw new Error('Skipping notarization requires a signed macOS build')
   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
   const packagesWindows = resolvedPlatform === 'win32'
+  const signed = !explicitUnsigned && (explicitSigned || (packagesMacOS
+    ? hasMacOSSigningIdentity(env) : hasWindowsSigningCertificate(env)))
+  const unsigned = explicitUnsigned || ((packagesMacOS || packagesWindows) && !signed)
+  if (skipNotarization && (unsigned || resolvedPlatform !== 'darwin')) throw new Error('Skipping notarization requires a signed macOS build')
   const appId = unsigned ? resolveOptionalDesktopAppId(env) : resolveDesktopAppId(env)
   const policy = unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()

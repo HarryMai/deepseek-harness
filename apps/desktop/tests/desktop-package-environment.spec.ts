@@ -157,10 +157,10 @@ describe('Desktop local packaging configuration', () => {
 
   it('checks application and update configuration before Windows credentials while preserving unsigned and preparation modes', () => {
     expect(() => {
-      validateDesktopPackageEnvironment({}, WINDOWS, { unsigned: true })
+      validateDesktopPackageEnvironment({}, WINDOWS)
     }).not.toThrow()
     expect(() => {
-      validateDesktopPackageEnvironment({}, MACOS, { unsigned: true })
+      validateDesktopPackageEnvironment({}, MACOS)
     }).not.toThrow()
     expect(() => {
       validateDesktopPackageEnvironment({ DSH_DESKTOP_APP_ID: 'invalid' }, WINDOWS)
@@ -188,9 +188,10 @@ describe('Desktop local packaging configuration', () => {
   it('accepts unsigned macOS configuration without Apple or update policy settings while keeping release validation', () => {
     const local = localMacOSPackageEnvironment({})
     expect(() => { validateDesktopPackageEnvironment(local, MACOS, { unsigned: true }) }).not.toThrow()
-    expect(() => { validateDesktopPackageEnvironment(local, MACOS) })
+    expect(() => { validateDesktopPackageEnvironment(local, MACOS) }).not.toThrow()
+    expect(() => { validateDesktopPackageEnvironment({ ...local, ...MAC_IDENTITY }, MACOS) })
       .toThrow('DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN')
-    expect(() => { validateDesktopPackageEnvironment(RELEASE, MACOS) }).toThrow('DSH_DESKTOP_MACOS_SIGNING_IDENTITY')
+    expect(() => { validateDesktopPackageEnvironment(RELEASE, MACOS) }).not.toThrow()
   })
 
   it('accepts one local npm registry mirror and rejects other registry forms', () => {
@@ -208,7 +209,7 @@ describe('Desktop local packaging configuration', () => {
   it('rejects incomplete macOS identity and credentials and checks referenced files without contacting Apple', async () => {
     expect(() => {
       validateDesktopPackageEnvironment(RELEASE, MACOS)
-    }).toThrow(/DSH_DESKTOP_MACOS_SIGNING_IDENTITY/u)
+    }).not.toThrow()
     expect(() => {
       validateDesktopPackageEnvironment({ ...RELEASE, ...MAC_IDENTITY }, MACOS)
     }).toThrow(/macOS packaging requires/u)
@@ -258,11 +259,12 @@ it('owns macOS tuning in the local file and validates it before signing credenti
 })
 
 it('rejects an explicit invalid macOS cache before signing while leaving unsigned builds independent', () => {
-  const environment = { ...RELEASE, DSH_DESKTOP_MACOS_SIGNATURE_CACHE_DIR: '' }
+  const environment = { ...RELEASE, ...MAC_IDENTITY, DSH_DESKTOP_MACOS_SIGNATURE_CACHE_DIR: '' }
   for (const options of [{}, { prepareOnly: true }]) {
     expect(() => { validateDesktopPackageEnvironment(environment, MACOS, options) }).toThrow('SIGNATURE_CACHE_DIR')
   }
   expect(() => { validateDesktopPackageEnvironment(environment, MACOS, { unsigned: true }) }).not.toThrow()
+  expect(() => { validateDesktopPackageEnvironment({ ...RELEASE, DSH_DESKTOP_MACOS_SIGNATURE_CACHE_DIR: '' }, MACOS) }).not.toThrow()
 })
 
 it('skips Apple credentials but still requires signing credentials for unnotarized packages', async () => {
