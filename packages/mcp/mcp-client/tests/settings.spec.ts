@@ -48,7 +48,7 @@ const emptyInbox: Inbox = {
 }
 
 function createMockAgent(ctx: Context, id: string, sessionCwd?: string): Agent {
-  let agentCtx!: Context
+  const holder: { ctx?: Context } = {}
   const sessionId = SessionId(id)
   const agent: Agent = {
     id: sessionId,
@@ -60,9 +60,13 @@ function createMockAgent(ctx: Context, id: string, sessionCwd?: string): Agent {
       isSeeded: false,
       ...sessionCwd !== undefined ? { cwd: sessionCwd } : {},
     }),
+    model: {
+      current: () => undefined,
+      select: () => {},
+    },
     inbox: emptyInbox,
     status: 'idle',
-    get ctx() { return agentCtx },
+    get ctx() { return holder.ctx! },
     cancel: () => {},
     whenIdle: async () => {},
     runMaintenance: async task => task(new AbortController().signal),
@@ -72,7 +76,7 @@ function createMockAgent(ctx: Context, id: string, sessionCwd?: string): Agent {
     inject: () => {},
   }
   const scope = createScope(ctx.extend(), agent)
-  agentCtx = scope.ctx
+  holder.ctx = scope.ctx
   return agent
 }
 

@@ -9,14 +9,14 @@
   en: f62d87b7623a9904
   zh: 48bbb7c35298f96c
 /agent-note-windows-sandbox-rung-raw-acl-restricted-tokens-over-mxc-and-appcontainer/decision:
-  en: 5fa84cb9e6c4454c
-  zh: eb4d1e7870eab9d9
+  en: 10e9cfb7972cff03
+  zh: 8406ba64d72a1fcc
 /agent-note-windows-sandbox-rung-raw-acl-restricted-tokens-over-mxc-and-appcontainer/acl-diagnosis-and-recovery:
   en: a5bcdf2a6133abfe
   zh: 477d4915d61945e3
 /agent-note-windows-sandbox-rung-raw-acl-restricted-tokens-over-mxc-and-appcontainer/how-the-restriction-works-why-no-new-identity:
-  en: e95fb2a3f408436b
-  zh: b4d5f603f40d999c
+  en: 1ba89a61a733b371
+  zh: 4fa134ad1b2059a1
 /agent-note-windows-sandbox-rung-raw-acl-restricted-tokens-over-mxc-and-appcontainer/alternatives-considered:
   en: 6119e2aff3b6be5a
   zh: 4237c596c10e1ee9
@@ -38,3 +38,6 @@
 /agent-note-windows-sandbox-rung-raw-acl-restricted-tokens-over-mxc-and-appcontainer/related:
   en: dd16f0c5815df991
   zh: df3c1cf511ee52bf
+/agent-note-windows-sandbox-rung-raw-acl-restricted-tokens-over-mxc-and-appcontainer/follow-up-2026-10-26-lua-token-is-dropped:
+  en: 5262178f0035b215
+  zh: 10505c394ea33ee3

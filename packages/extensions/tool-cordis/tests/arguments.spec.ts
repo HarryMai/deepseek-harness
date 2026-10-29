@@ -1,3 +1,4 @@
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { Context } from '@deepseek-ai/cordis'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -16,6 +17,7 @@ async function setup(): Promise<Context> {
   await ctx.plugin(Timer)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRegistry)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(DynamicCordisRunnerService)
   await ctx.plugin({ name, inject, apply })
   return ctx
@@ -26,13 +28,17 @@ function text(result: ToolExecutionResult): string {
 }
 
 async function define(ctx: Context, arguments_: unknown): Promise<ToolExecutionResult> {
-  return await ctx.tools.execute({
-    callId: ToolCallId('define'),
-    name: 'cordis_define',
-    arguments: arguments_,
+  const batch = await ctx.tools.execute({
+    calls: [{
+      type: 'tool-call',
+      id: ToolCallId('define'),
+      name: 'cordis_define',
+      arguments: JSON.stringify(arguments_),
+    }],
     agent: AGENT,
     signal: new AbortController().signal,
   })
+  return batch.results[0]!.result
 }
 
 describe('cordis_define nested JSON recovery', () => {
