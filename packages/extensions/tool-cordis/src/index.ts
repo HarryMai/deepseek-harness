@@ -604,16 +604,16 @@ function withinFiber(fiber: Fiber, root: Fiber): boolean {
   }
 }
 
-function liveImpls(ctx: Context): Array<{ name: string; fiber: Fiber }> {
+function liveImpls(ctx: Context): Array<{ name: string; ctx: Context }> {
   const store = ctx.reflect.store
   return Object.getOwnPropertySymbols(store)
     .map(key => store[key])
-    .filter((impl): impl is { name: string; fiber: Fiber } => impl !== undefined)
+    .filter((impl): impl is NonNullable<typeof impl> => impl !== undefined)
 }
 
 function providedServices(ctx: Context, fiber: Fiber): string[] {
   return liveImpls(ctx)
-    .filter(impl => withinFiber(impl.fiber, fiber))
+    .filter(impl => withinFiber(impl.ctx.fiber, fiber))
     .map(impl => impl.name)
     .sort()
 }

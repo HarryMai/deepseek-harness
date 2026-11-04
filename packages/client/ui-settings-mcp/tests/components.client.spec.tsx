@@ -61,6 +61,7 @@ function renderSection(form = new MemoryConfigForm(), tester?: McpConnectionTest
   const props: McpSettingsSectionProps = {
     ...controller.inject(),
     useMcpSettings: bindSnapshotSelector(controller.store),
+    useContextMenu: unusedHook,
     useRemoteAccess: unusedHook,
     useSessionAccess: unusedHook,
     useSessions: unusedHook,
