@@ -10,7 +10,7 @@
  * both families, DeepSeek's id/name/context-window model catalog, and the
  * display name and wire protocol of a pi-ai route the adapter does not ship —
  * the two fields the create card asked that route for, editable here for the
- * same reason).
+ * same reason), plus protocol-specific request compatibility for custom routes.
  * Reasoning effort is deliberately absent: it is a per-MODEL capability, and
  * the models under one provider disagree about it, so a provider-scoped
  * control can only be set to a value some of them reject. The composer's
@@ -33,6 +33,7 @@ import type { DeepSeekModelsValidationFailure } from './DeepSeekModelsEditor.tsx
 import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
+import { RequestCompatibility, requestCompatibilityFor } from './RequestCompatibility.tsx'
 import { validateReasoningEfforts } from './ModelReasoningEfforts.tsx'
 import type { ReasoningEffortsFailure } from './ModelReasoningEfforts.tsx'
 import { deriveKeyRef, protocolChoices, reasoningLevelChoices } from './store.ts'
@@ -125,7 +126,8 @@ function draftAt(
  * The minimal path ops carrying `after` over `before`, both as the card sees
  * them. Only keys the card observed are named; fields absent from both sides
  * produce no op, which is why edits are path-addressed rather than a rebuilt
- * section.
+ * section. Compatibility fields are addressed individually so omitted fields
+ * in the redacted descriptor remain untouched.
  * @param base - path of the edited subtree inside the user section.
  * @param before - the subtree as loaded, or undefined when it is new.
  * @param after - the subtree as edited.
@@ -142,10 +144,18 @@ export function pathOps(
   const ops: SettingsPathOpView[] = []
   for (const [key, value] of Object.entries(after)) {
     if (JSON.stringify(previous[key]) === JSON.stringify(value)) continue
+    if (key === 'compat' && typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      ops.push(...pathOps([...base, key], previous[key], value as Record<string, unknown>))
+      continue
+    }
     ops.push({ op: 'set', path: [...base, key], value: value as JsonValue })
   }
   for (const key of Object.keys(previous)) {
-    if (!(key in after)) ops.push({ op: 'unset', path: [...base, key] })
+    if (key in after) continue
+    const value = previous[key]
+    if (key === 'compat' && typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      ops.push(...pathOps([...base, key], value, {}))
+    } else ops.push({ op: 'unset', path: [...base, key] })
   }
   return ops
 }
@@ -497,7 +507,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                     value={probeApi ?? ''}
                     aria-label={t('customApi')}
                     disabled={disabled}
-                    onChange={(event) => { setField('api', event.target.value) }}
+                    onChange={(event) => {
+                      const api = event.target.value
+                      setDraft(current => schema.setPath(schema.setPath(current, ['api'], api), ['compat'],
+                        requestCompatibilityFor(api, schema.getPath(current, ['compat']))))
+                    }}
                   >
                     {/* A profile naming no protocol — hand-written into
                         cordis.patch.yml with no model to need one — selects
@@ -510,6 +524,15 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                   </select>
                 </div>
               )
+              : null}
+            {ownsIdentity
+              ? <RequestCompatibility
+                api={probeApi}
+                value={schema.getPath(draft, ['compat'])}
+                disabled={disabled}
+                t={t}
+                onChange={(value) => { setDraft(current => schema.setPath(current, ['compat'], value)) }}
+              />
               : null}
             {/* Both families edit the same rows through the same contract; only
                 the extras differ — DeepSeek's inherited capacities, pi-ai's

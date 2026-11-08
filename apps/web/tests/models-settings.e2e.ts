@@ -34,6 +34,7 @@ const NATIVE_KEYLESS_EXPECTED = join(SNAPSHOT_DIR, 'native-keyless.expected.md')
 const CONFIGURED_EXPECTED = join(SNAPSHOT_DIR, 'configured.expected.md')
 const DECLARED_EXPECTED = join(SNAPSHOT_DIR, 'declared.expected.md')
 const DECLARED_EDIT_EXPECTED = join(SNAPSHOT_DIR, 'declared-edit.expected.md')
+const COMPATIBILITY_EXPECTED = join(SNAPSHOT_DIR, 'request-compatibility.expected.md')
 const MODEL_PICKER_EXPECTED = join(SNAPSHOT_DIR, 'model-picker.expected.md')
 const NATIVE_DELETE_EXPECTED = join(SNAPSHOT_DIR, 'native-delete.expected.md')
 const DELETE_EXPECTED = join(SNAPSHOT_DIR, 'delete.expected.md')
@@ -536,6 +537,78 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('saves request compatibility and restores automatic settings without dropping other overrides', async () => {
+    const provider = 'compatibility-gateway'
+    const profile = {
+      api: 'openai-completions', baseURL: 'https://compatibility.example/v1',
+      compat: { supportsDeveloperRole: false, maxTokensField: 'max_tokens', supportsStore: false },
+      models: [{ id: 'reasoner', reasoningEfforts: { high: 'high' }, compat: { requiresToolResultName: true } }],
+    }
+    let compatibilityPage: Page | undefined
+    try {
+      await scaffold.ctx.settings.mutate('llm-pi-ai', [{ op: 'set', path: ['providers', provider], value: profile }])
+      compatibilityPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
+      const errors = watchConsole(compatibilityPage)
+      const currentPage = compatibilityPage
+      onTestFailed(() => saveFailureShot(currentPage, 'web-e2e-models-compatibility'))
+      await compatibilityPage.goto(scaffold.authenticatedUrl)
+      await openSettings(compatibilityPage, 'zh')
+      const dialog = compatibilityPage.getByRole('dialog', { name: '设置' })
+      await dialog.getByRole('button', { name: '模型', exact: true }).click()
+      const edit = dialog.getByRole('button', { name: `编辑 ${provider}`, exact: true })
+      const openEditor = async (): Promise<void> => {
+        await edit.click()
+        await dialog.getByText('自定义设置', { exact: true }).click()
+        await dialog.getByText('请求兼容性', { exact: true }).click()
+      }
+      const role = dialog.getByRole('combobox', { name: 'developer 角色支持', exact: true })
+      const tokenField = dialog.getByRole('combobox', { name: '输出 token 参数', exact: true })
+      const path = join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml')
+      await openEditor()
+      expect(await role.inputValue()).toBe('false')
+      expect(await tokenField.inputValue()).toBe('max_tokens')
+      await compareOrRefreshGolden(COMPATIBILITY_EXPECTED,
+        await captureStableAria(compatibilityPage, 'details:has(> summary:text-is("请求兼容性"))', scaffold.workspaceCwd), MODE)
+      const before = await readFile(path, 'utf8')
+      await role.selectOption('true')
+      await tokenField.selectOption('max_completion_tokens')
+      await dialog.getByRole('button', { name: '取消', exact: true }).click()
+      expect(await readFile(path, 'utf8')).toBe(before)
+
+      await openEditor()
+      expect(await role.inputValue()).toBe('false')
+      await role.selectOption('true')
+      await tokenField.selectOption('max_completion_tokens')
+      await dialog.getByRole('button', { name: '保存', exact: true }).click()
+      await dialog.getByText(`已保存 ${provider}。`, { exact: true }).waitFor()
+      expect(scaffold.ctx.settings.describe().find(row => row.ns === 'llm-pi-ai')?.user).toHaveProperty(`providers.${provider}`, {
+        ...profile, compat: { ...profile.compat, supportsDeveloperRole: true, maxTokensField: 'max_completion_tokens' },
+      })
+
+      await openEditor()
+      expect(await role.inputValue()).toBe('true')
+      expect(await tokenField.inputValue()).toBe('max_completion_tokens')
+      await role.focus()
+      await compatibilityPage.setViewportSize({ width: 390, height: 844 })
+      expect(await role.evaluate(element => element.ownerDocument.activeElement === element)).toBe(true)
+      expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+      await role.selectOption('')
+      await tokenField.selectOption('')
+      await dialog.getByRole('button', { name: '保存', exact: true }).click()
+      await dialog.getByText(`已保存 ${provider}。`, { exact: true }).waitFor()
+      expect(scaffold.ctx.settings.describe().find(row => row.ns === 'llm-pi-ai')?.user).toHaveProperty(`providers.${provider}`, {
+        ...profile, compat: { supportsStore: false },
+      })
+      await openEditor()
+      expect(await role.inputValue()).toBe('')
+      expect(await tokenField.inputValue()).toBe('')
+      expect(errors.pageErrors).toEqual([])
+    } finally {
+      await compatibilityPage?.close()
+      await scaffold.ctx.settings.mutate('llm-pi-ai', [{ op: 'unset', path: ['providers', provider] }])
+    }
+  })
+
   it('saves model drag order, discards canceled moves, and preserves the other provider', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-order'))
     const dialog = page.getByRole('dialog', { name: '设置' })
@@ -850,7 +923,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
       'delete.expected.md', 'empty.expected.md', 'model-picker.expected.md',
       'native-delete.expected.md', 'native-keyless.expected.md', 'catalog-inputs.expected.md',
       'mobile-collapsed.expected.md', 'mobile-expanded.expected.md',
-      'refreshing.expected.md', 'image-only.expected.md',
+      'refreshing.expected.md', 'image-only.expected.md', 'request-compatibility.expected.md',
     ])
   })
 })

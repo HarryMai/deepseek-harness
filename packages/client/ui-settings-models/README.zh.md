@@ -55,6 +55,8 @@ API 密钥输入框初始为空，并通过 `autocomplete="new-password"` 请求
 
 收起的「自定义设置」折叠区承载精选的额外字段：两个家族都有 `baseURL`（占位符显示 profile 解析出的端点，deepseek 即公共端点；没有时显示可配置提供商目录为 pi-ai 内置路由报告的 `defaultBaseURL`）、各适配器自己的模型目录，以及适配器未提供的 pi-ai 路由的**显示名称**与 **API 协议**。Profile `headers` 仍是 `cordis.patch.yml` 或 Cordis 配置中的部署配置，Models 页面不提供编辑器。Provider ID 保持固定：它是 settings 的键、其他每个 namespace 与每一条已记录会话引用的名字，也是页面读不回、因而搬不走的凭据引用词干。这里没有提供商级的推理等级字段：它是按模型的能力，提供商级的控件只可能被设成某些模型会拒绝的值。每个模型行可编辑 `id`、可选显示 `name`、可选 `contextWindow`/`maxTokens`、输入类型，以及手工声明的 pi-ai 路由上的推理等级；无关的模型字段在编辑后仍会保留。
 
+自定义 pi-ai 提供商在新建时提供**请求兼容性**折叠区，编辑时则位于**自定义设置**内。OpenAI Chat Completions 显示 **developer 角色支持**和**输出 token 参数**；OpenAI Responses 只显示角色支持；Anthropic Messages 隐藏该折叠区。**自动**会删除该字段的用户覆盖值，恢复继承设置或适配器检测。模型自身的 `compat` 优先。保存会保留其他兼容选项和模型覆盖；取消会放弃未保存的修改。
+
 `llm-deepseek` 的 DeepSeek 卡片编辑端点、凭据和模型目录。它使用 Messages，默认端点占位符为 `https://api.deepseek.com/anthropic`。
 
 拖动模型的排序手柄可调整它在当前提供商内的位置，也可以聚焦手柄后使用上下方向键。保存会保留顺序，取消会放弃修改。移动时，每个模型的参数、已展开选项和未完成的容量输入都会随模型保留。整行拖拽预览及遵循减少动态效果设置的行动画，与工作区排序共用基础组件；前后插入标记沿用相同样式。

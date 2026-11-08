@@ -1,0 +1,13 @@
+- group:
+  - text: 请求兼容性
+  - paragraph: 自动沿用继承设置或适配器检测；模型单独设置的兼容选项优先。
+  - text: developer 角色支持
+  - combobox "developer 角色支持":
+    - option "自动"
+    - option "支持"
+    - option "不支持" [selected]
+  - text: 网关拒绝 developer 角色时，请选择不支持 输出 token 参数
+  - combobox "输出 token 参数":
+    - option "自动"
+    - option "max_completion_tokens"
+    - option "max_tokens" [selected]

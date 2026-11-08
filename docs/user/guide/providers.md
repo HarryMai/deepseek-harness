@@ -51,7 +51,7 @@ If a saved default names a provider that was deleted, the composer displays **Se
 The generated [plugin configuration catalog](../../config-catalog.md) lists every supported field and default for every plugin; [`dsh-llm-pi-ai`](../../config-catalog.md#deepseek-aidsh-llm-pi-ai) is the provider section this page configures. The [`dsh-llm-pi-ai`](../../../packages/llm/llm-pi-ai/README.md) and [`dsh-llm-deepseek`](../../../packages/llm/llm-deepseek/README.md) references own direct `cordis.patch.yml` configuration, catalog resolution, reasoning controls, credentials, and adapter errors.
 
 ::: tip Additional settings
-The Models page exposes the API key, display name, base URL, API protocol, and each model's id, display name, context window, max output tokens, and input types, plus the reasoning levels of a model on a custom model API provider. Configure the reasoning levels of a built-in provider's models, request-compatibility switches, headers, timeouts, and retry policy in `$DSH_HOME/profiles/<profile>/cordis.patch.yml`, the same document the page writes. Edit it directly, or, when the browser runs on the same machine as the server, open it with **Open configuration file** in the Settings header; the adapters re-read it on the next request, so nothing needs a restart. The subsections below cover the fields most gateways need.
+The Models page exposes the API key, display name, base URL, API protocol, and each model's id, display name, context window, max output tokens, and input types. Custom model API providers also offer reasoning levels and request compatibility controls. Configure built-in providers' reasoning levels, compatibility options beyond these controls, headers, timeouts, and retry policy in `$DSH_HOME/profiles/<profile>/cordis.patch.yml`, the same document the page writes. Edit it directly, or, when the browser runs on the same machine as the server, open it with **Open configuration file** in the Settings header; the adapters re-read it on the next request, so nothing needs a restart. The subsections below cover the fields most gateways need.
 
 For the standard Web UI launch with `dsh web`, `<profile>` is `web`, so the path is `$DSH_HOME/profiles/web/cordis.patch.yml`. If you launch a custom profile, use the name selected at startup instead.
 :::
@@ -179,11 +179,19 @@ A built-in provider's model whose gateway does not reason loses its levels with 
     reasoningEffort: max
 ```
 
+<a id="request-compatibility"></a>
+
 ### Request compatibility
 
 A gateway can hold a working key at a reachable address and still refuse every request. pi-ai decides the shape of a request — which role carries the system prompt, which field caps the output, how a thinking level travels — from the endpoint's URL, and an address it does not recognize is addressed as though it were OpenAI itself. Most OpenAI-compatible gateways refuse at least one thing OpenAI accepts.
 
-Two account for most of it. A model that declares reasoning has its system prompt sent as `role: "developer"`, which many gateways reject outright, and the output cap is sent as `max_completion_tokens`, which a server that only knows `max_tokens` refuses. The form has no field for either; correct them on the route in `$DSH_HOME/profiles/<profile>/cordis.patch.yml`:
+Some gateways reject `role: "developer"` or accept `max_tokens` instead of `max_completion_tokens`. In **Settings → Models**, edit your custom provider and expand **Customized settings → Request compatibility**. When creating a provider, expand **Request compatibility** in the **Custom model API** form.
+
+For **OpenAI Chat Completions**, choose **Not supported** under **Developer role** if the gateway rejects that role, and select the field it accepts under **Output token parameter**. **OpenAI Responses** offers only **Developer role**; **Anthropic Messages** hides these controls.
+
+**Automatic** removes the user override for that field and restores inherited settings or adapter detection. Saving preserves other compatibility options and model overrides; **Cancel** discards unsaved changes.
+
+To configure provider defaults directly, edit `$DSH_HOME/profiles/<profile>/cordis.patch.yml`:
 
 ```yaml
 - id: llm-pi-ai
@@ -200,13 +208,14 @@ Two account for most of it. A model that declares reasoning has its system promp
           - id: my-model
 ```
 
-A route's `compat` is the default for its models, and a model's own wins field by field, so one model can be corrected without restating the route:
+The provider's `compat` supplies model defaults. A model's own `compat` takes priority field by field, so you can override one model without repeating the provider settings:
 
 ```yaml
         models:
           - id: my-model
           - id: my-reasoner
             compat:
+              supportsDeveloperRole: true
               thinkingFormat: deepseek
 ```
 
@@ -222,8 +231,8 @@ Every switch, its accepted values, and the protocols that take it are listed und
 - **`UNKNOWN_MODEL`** — Select a configured model or add the missing model to the custom provider.
 - **Fetching available models returns 401** — Check the key. Model discovery calls the OpenAI-compatible `GET /models` endpoint; enter models manually for endpoints that do not provide it.
 - **Fetching available models reports neither a `data` array nor a `models` object** — The endpoint's listing is in a format discovery does not read. Enter the models by hand.
-- **The gateway refuses every request although the key and URL are right** — Its request shape differs from OpenAI's. Start with `compat.supportsDeveloperRole: false` and `compat.maxTokensField: max_tokens` on the route.
-- **Only reasoning models fail** — pi-ai sends their system prompt as the `developer` role, which the gateway rejects. Set `compat.supportsDeveloperRole: false`.
+- **The gateway refuses every request although the key and URL are right** — Check which roles and output token parameters the gateway accepts, then adjust [Request compatibility](#request-compatibility).
+- **Only reasoning models fail** — pi-ai sends their system prompt as the `developer` role, which the gateway rejects. Choose **Not supported** under **Customized settings → Request compatibility → Developer role** for a custom provider, or set `compat.supportsDeveloperRole: false` in `cordis.patch.yml`.
 - **The Effort menu does not appear for a model you entered by hand** — It declares no levels. On a custom model API provider, turn on **Reasoning levels** in the model's **Model options**; elsewhere, add `reasoningEfforts` to the model in `cordis.patch.yml`.
 - **`off` does not stop a DeepSeek model from thinking** — An empty `off` sends no reasoning field at all, and an endpoint that thinks by default keeps thinking. Set `compat.thinkingFormat: deepseek` on the model or the route.
 - **A compat switch is refused as having no value** — A key written with nothing after the colon. Give it a value, or remove the key to keep the installed catalog's.

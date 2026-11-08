@@ -26,7 +26,7 @@ import { createModelsOperations } from '../src/client/operations.ts'
 import type { ModelsOperations } from '../src/client/operations.ts'
 import type { ProviderRow } from '../src/client/store.ts'
 import { en } from '../src/client/locales.ts'
-import { settingsSchema } from './settings-schema.client.ts'
+import { requestCompatibilitySchema, settingsSchema } from './settings-schema.client.ts'
 
 afterEach(cleanup)
 
@@ -53,6 +53,7 @@ const PiAiConfig = Schema.object({
     baseURL: Schema.string(),
     reasoning: Schema.union(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
     headers: Schema.dict(Schema.string()),
+    compat: requestCompatibilitySchema,
   })),
 })
 
@@ -825,6 +826,34 @@ describe('ModelsSection', () => {
       .toEqual([{ op: 'set', path: ['b'], value: 2 }, { op: 'set', path: ['d'], value: 3 }])
     expect(pathOps([], undefined, {})).toEqual([])
     expect(pathOps([], { a: 1 }, { a: 1 })).toEqual([])
+  })
+
+  it('addresses compatibility leaves without replacing sibling options or model overrides', () => {
+    const before = {
+      headers: { 'X-Team': 'a' },
+      models: [{ id: 'chat', compat: { supportsDeveloperRole: false } }],
+      compat: { supportsDeveloperRole: false, maxTokensField: 'max_tokens', supportsStore: false },
+    }
+    expect(pathOps(['providers', 'acme'], before, {
+      ...before,
+      compat: { ...before.compat, supportsDeveloperRole: true, maxTokensField: 'max_completion_tokens' },
+    })).toEqual([
+      { op: 'set', path: ['providers', 'acme', 'compat', 'supportsDeveloperRole'], value: true },
+      { op: 'set', path: ['providers', 'acme', 'compat', 'maxTokensField'], value: 'max_completion_tokens' },
+    ])
+    expect(pathOps(['providers', 'acme'], before, { ...before, compat: { supportsStore: false } })).toEqual([
+      { op: 'unset', path: ['providers', 'acme', 'compat', 'supportsDeveloperRole'] },
+      { op: 'unset', path: ['providers', 'acme', 'compat', 'maxTokensField'] },
+    ])
+  })
+
+  it('creates and clears the last compatibility field through its leaf path', () => {
+    expect(pathOps(['providers', 'acme'], {}, { compat: { supportsDeveloperRole: false } })).toEqual([
+      { op: 'set', path: ['providers', 'acme', 'compat', 'supportsDeveloperRole'], value: false },
+    ])
+    expect(pathOps(['providers', 'acme'], { compat: { supportsDeveloperRole: false } }, {})).toEqual([
+      { op: 'unset', path: ['providers', 'acme', 'compat', 'supportsDeveloperRole'] },
+    ])
   })
 
   it('stores a typed key write-only from the setup card without touching settings', async () => {
@@ -1923,18 +1952,36 @@ describe('ModelsSection', () => {
     expect(screen.queryAllByLabelText(en.keyInput)).toHaveLength(0)
   })
 
-  it('locks the mode switch while the catalog form has a write in flight', async () => {
+  it.each(['catalog', 'custom'] as const)('locks the mode switch while the %s form has a write in flight', async (mode) => {
     let settle: (() => void) | undefined
     const pending = new Promise<void>((resolve) => { settle = resolve })
     const providerNamespace = wireNamespaces().find(view => view.ns === 'llm-pi-ai')!
     const mutate = vi.fn(() => pending.then(() => remoteOk(providerNamespace)))
     await mountSection({ mutate })
     fireEvent.click(screen.getByRole('button', { name: en.add }))
-    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-slow' } })
-    fireEvent.click(screen.getByText(en.apply))
-    await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('tab', { name: en.addCustom }).disabled).toBe(true) })
-    expect(screen.getByRole<HTMLButtonElement>('tab', { name: en.addCatalog }).disabled).toBe(true)
-    await act(async () => { settle!(); await pending })
+    if (mode === 'custom') fireEvent.click(screen.getByRole('tab', { name: en.addCustom }))
+    const form = within(screen.getByRole('tabpanel', { name: mode === 'custom' ? en.addCustom : en.addCatalog }))
+    if (mode === 'custom') {
+      fireEvent.change(form.getByLabelText(en.customRoute), { target: { value: 'acme' } })
+      fireEvent.change(form.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+      fireEvent.click(form.getByRole('button', { name: en.addModel }))
+      fireEvent.change(form.getByLabelText(`${en.modelId} 1`), { target: { value: 'chat' } })
+      fireEvent.click(form.getByText(en.requestCompatibility))
+      fireEvent.change(form.getByLabelText(en.developerRole), { target: { value: 'false' } })
+      fireEvent.change(form.getByLabelText(en.maxTokensField), { target: { value: 'max_tokens' } })
+    }
+    fireEvent.change(form.getByLabelText(en.keyInput), { target: { value: 'sk-slow' } })
+    try {
+      fireEvent.click(form.getByText(mode === 'custom' ? en.create : en.apply))
+      await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('tab', { name: en.addCustom }).disabled).toBe(true) })
+      expect(screen.getByRole<HTMLButtonElement>('tab', { name: en.addCatalog }).disabled).toBe(true)
+      if (mode === 'custom') {
+        expect(form.getByLabelText<HTMLSelectElement>(en.developerRole).disabled).toBe(true)
+        expect(form.getByLabelText<HTMLSelectElement>(en.maxTokensField).disabled).toBe(true)
+      }
+    } finally {
+      await act(async () => { settle!(); await pending })
+    }
     // The apply closes the card once it lands; nothing was switched underneath it.
     await waitFor(() => { expect(screen.queryByRole('tablist')).toBeNull() })
     expect(mutate).toHaveBeenCalledOnce()

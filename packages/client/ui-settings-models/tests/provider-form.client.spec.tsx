@@ -16,7 +16,7 @@ import { ModelsSettingsStore, deriveKeyRef, protocolChoices, reasoningLevelChoic
 import { createModelsOperations } from '../src/client/operations.ts'
 import type { ModelsOperations } from '../src/client/operations.ts'
 import { en } from '../src/client/locales.ts'
-import { settingsSchema } from './settings-schema.client.ts'
+import { requestCompatibilitySchema, settingsSchema } from './settings-schema.client.ts'
 
 afterEach(cleanup)
 
@@ -33,11 +33,13 @@ const PiAiConfig = Schema.object({
     displayName: Schema.string(),
     api: Schema.union(PROTOCOLS),
     baseURL: Schema.string(),
+    compat: requestCompatibilitySchema,
     models: Schema.array(Schema.object({
       id: Schema.string().required(),
       name: Schema.string(),
       contextWindow: Schema.number(),
       maxTokens: Schema.number(),
+      compat: requestCompatibilitySchema,
       reasoningEfforts: Schema.union([
         Schema.const(false),
         Schema.dict(Schema.union([Schema.string(), Schema.const(null)]), Schema.union(LEVELS)),
@@ -952,6 +954,179 @@ describe('provider rows', () => {
   })
 })
 
+describe('request compatibility', () => {
+  it('echoes false and writes both compatibility leaves without changing other options or model overrides', async () => {
+    const { mutate, namespace } = await mountSection({
+      providers: {
+        acme: {
+          api: 'openai-completions',
+          baseURL: 'https://acme.test/v1',
+          compat: { supportsDeveloperRole: false, maxTokensField: 'max_tokens', supportsStore: false },
+          models: [{ id: 'chat', compat: { supportsDeveloperRole: false, maxTokensField: 'max_tokens' } }],
+        },
+      },
+      declaredRoutes: ['acme'],
+    })
+    const original = structuredClone(namespace.user)
+    openEditor('acme')
+    const summary = screen.getByText(en.requestCompatibility)
+    expect(summary.closest('details')?.open).toBe(false)
+    fireEvent.click(summary)
+    const developer = screen.getByRole<HTMLSelectElement>('combobox', { name: en.developerRole })
+    const maxTokens = screen.getByRole<HTMLSelectElement>('combobox', { name: en.maxTokensField })
+    expect(developer.value).toBe('false')
+    expect([...developer.options].map(option => [option.value, option.textContent])).toEqual([
+      ['', en.compatibilityAutomatic],
+      ['true', en.compatibilitySupported],
+      ['false', en.compatibilityUnsupported],
+    ])
+    expect(maxTokens.value).toBe('max_tokens')
+    expect([...maxTokens.options].map(option => option.value)).toEqual(['', 'max_completion_tokens', 'max_tokens'])
+
+    fireEvent.change(developer, { target: { value: 'true' } })
+    fireEvent.change(maxTokens, { target: { value: 'max_completion_tokens' } })
+    expect(namespace.user).toEqual(original)
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate)).toEqual({
+      ns: 'llm-pi-ai',
+      ops: [
+        { op: 'set', path: ['providers', 'acme', 'compat', 'supportsDeveloperRole'], value: true },
+        { op: 'set', path: ['providers', 'acme', 'compat', 'maxTokensField'], value: 'max_completion_tokens' },
+      ],
+      expectedRevision: 3,
+    })
+  })
+
+  it.each([true, false])('clears compatibility through leaf unsets (other options: %s)', async (keepsOtherOptions) => {
+    const { mutate } = await mountSection({
+      providers: {
+        acme: {
+          api: 'openai-completions',
+          compat: {
+            supportsDeveloperRole: false,
+            maxTokensField: 'max_tokens',
+            ...keepsOtherOptions ? { supportsStore: false } : {},
+          },
+          models: [{ id: 'chat', compat: { supportsDeveloperRole: true } }],
+        },
+      },
+      declaredRoutes: ['acme'],
+    })
+    openEditor('acme')
+    fireEvent.click(screen.getByText(en.requestCompatibility))
+    fireEvent.change(screen.getByLabelText(en.developerRole), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText(en.maxTokensField), { target: { value: '' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ops).toEqual([
+      { op: 'unset', path: ['providers', 'acme', 'compat', 'supportsDeveloperRole'] },
+      { op: 'unset', path: ['providers', 'acme', 'compat', 'maxTokensField'] },
+    ])
+  })
+
+  it('leaves inherited compatibility automatic when another field is saved', async () => {
+    const { mutate } = await mountSection({
+      providers: {
+        acme: {
+          api: 'openai-completions',
+          baseURL: 'https://acme.test/v1',
+          compat: { supportsDeveloperRole: false, maxTokensField: 'max_tokens' },
+        },
+      },
+      userProviders: { acme: { baseURL: 'https://acme.test/v1' } },
+      baseProviders: {
+        acme: { api: 'openai-completions', compat: { supportsDeveloperRole: false, maxTokensField: 'max_tokens' } },
+      },
+      declaredRoutes: ['acme'],
+    })
+    openEditor('acme')
+    fireEvent.click(screen.getByText(en.requestCompatibility))
+    expect(screen.getByLabelText<HTMLSelectElement>(en.developerRole).value).toBe('')
+    expect(screen.getByLabelText<HTMLSelectElement>(en.maxTokensField).value).toBe('')
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v2' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ops).toEqual([
+      { op: 'set', path: ['providers', 'acme', 'baseURL'], value: 'https://acme.test/v2' },
+    ])
+  })
+
+  it('discards compatibility edits on cancel without writing settings or credentials', async () => {
+    const { mutate, set } = await mountSection({
+      providers: { acme: { api: 'openai-completions' } },
+      declaredRoutes: ['acme'],
+    })
+    openEditor('acme')
+    fireEvent.click(screen.getByText(en.requestCompatibility))
+    fireEvent.change(screen.getByLabelText(en.developerRole), { target: { value: 'false' } })
+    fireEvent.change(screen.getByLabelText(en.maxTokensField), { target: { value: 'max_tokens' } })
+    fireEvent.click(screen.getByText(en.cancel))
+    expect(mutate).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+
+    openEditor('acme')
+    fireEvent.click(screen.getByText(en.requestCompatibility))
+    expect(screen.getByLabelText<HTMLSelectElement>(en.developerRole).value).toBe('')
+    expect(screen.getByLabelText<HTMLSelectElement>(en.maxTokensField).value).toBe('')
+  })
+
+  it.each(['openai-responses', 'anthropic-messages'] as const)(
+    'removes unsupported overrides when editing the protocol to %s and preserves other compatibility options',
+    async (api) => {
+      const { mutate } = await mountSection({
+        providers: {
+          acme: {
+            api: 'openai-completions',
+            compat: { supportsDeveloperRole: false, maxTokensField: 'max_tokens', supportsStore: false },
+            models: [{ id: 'chat', compat: { supportsDeveloperRole: true, maxTokensField: 'max_tokens' } }],
+          },
+        },
+        declaredRoutes: ['acme'],
+      })
+      openEditor('acme')
+      fireEvent.click(screen.getByText(en.requestCompatibility))
+      fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: api } })
+      expect(screen.queryByLabelText(en.maxTokensField)).toBeNull()
+      if (api === 'openai-responses') {
+        expect(screen.getByLabelText<HTMLSelectElement>(en.developerRole).value).toBe('false')
+      } else {
+        expect(screen.queryByLabelText(en.developerRole)).toBeNull()
+      }
+      fireEvent.click(screen.getByText(en.apply))
+
+      await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+      expect(firstMutate(mutate).ops).toEqual([
+        { op: 'set', path: ['providers', 'acme', 'api'], value: api },
+        ...api === 'anthropic-messages'
+          ? [{ op: 'unset', path: ['providers', 'acme', 'compat', 'supportsDeveloperRole'] }]
+          : [],
+        { op: 'unset', path: ['providers', 'acme', 'compat', 'maxTokensField'] },
+      ])
+    },
+  )
+
+  it.each([
+    ['openai-completions', true, true, true],
+    ['openai-responses', true, true, false],
+    ['anthropic-messages', true, false, false],
+    ['openai-completions', false, false, false],
+  ] as const)('shows supported compatibility fields for %s (declared: %s)', async (api, declared, developer, maxTokens) => {
+    await mountSection({
+      providers: { acme: { api } },
+      declaredRoutes: declared ? ['acme'] : [],
+    })
+    openEditor('acme')
+    if (developer) fireEvent.click(screen.getByText(en.requestCompatibility))
+    else expect(screen.queryByText(en.requestCompatibility)).toBeNull()
+    expect(screen.queryByLabelText(en.developerRole) !== null).toBe(developer)
+    expect(screen.queryByLabelText(en.maxTokensField) !== null).toBe(maxTokens)
+  })
+})
+
 describe('hand-declared providers', () => {
   function mountCard(
     overrides: Partial<Parameters<typeof CustomProviderCard>[0]> = {},
@@ -981,12 +1156,18 @@ describe('hand-declared providers', () => {
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme-gateway' } })
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://gateway.example/v1' } })
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'test-key' } })
+    fireEvent.click(screen.getByText(en.requestCompatibility))
+    fireEvent.change(screen.getByLabelText(en.developerRole), { target: { value: 'false' } })
+    fireEvent.change(screen.getByLabelText(en.maxTokensField), { target: { value: 'max_tokens' } })
+    fireEvent.change(screen.getByLabelText(en.developerRole), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText(en.maxTokensField), { target: { value: '' } })
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'model' } })
     fireEvent.click(screen.getByText(en.create))
     await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
     expect(mutate).toHaveBeenCalledOnce()
     expect(set).toHaveBeenCalledOnce()
+    expect(firstMutate(mutate).ops[0]?.value).not.toHaveProperty('compat')
     expect(initialize).not.toHaveBeenCalled()
   })
 
@@ -997,6 +1178,9 @@ describe('hand-declared providers', () => {
     fireEvent.change(screen.getByLabelText(en.customDisplayName), { target: { value: 'Acme Gateway' } })
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://gateway.acme.example/v1' } })
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'gw-key' } })
+    fireEvent.click(screen.getByText(en.requestCompatibility))
+    fireEvent.change(screen.getByLabelText(en.developerRole), { target: { value: 'false' } })
+    fireEvent.change(screen.getByLabelText(en.maxTokensField), { target: { value: 'max_completion_tokens' } })
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-large' } })
     expandModel(1)
@@ -1014,6 +1198,7 @@ describe('hand-declared providers', () => {
           apiKeyEnv: 'ACME_GATEWAY_API_KEY',
           api: 'openai-completions',
           baseURL: 'https://gateway.acme.example/v1',
+          compat: { supportsDeveloperRole: false, maxTokensField: 'max_completion_tokens' },
           models: [{ id: 'acme-large', contextWindow: 65_536 }],
         },
       }],
@@ -1035,7 +1220,10 @@ describe('hand-declared providers', () => {
 
     mountCard()
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    expect(fields()).toEqual([en.customRoute, en.customDisplayName, en.baseUrl, en.customApi, en.keyInput])
+    expect(fields()).toEqual(expect.arrayContaining([
+      en.customRoute, en.customDisplayName, en.baseUrl, en.customApi, en.keyInput, en.developerRole, en.maxTokensField,
+    ]))
+    expect(fields()).toHaveLength(7)
     cleanup()
 
     // A shipped route's models each carry their own protocol, so its editor
@@ -1053,8 +1241,54 @@ describe('hand-declared providers', () => {
       declaredRoutes: ['acme-gateway'],
     })
     openEditor('acme-gateway')
-    expect(fields()).toEqual([en.keyInput, en.customDisplayName, en.baseUrl, en.customApi])
+    expect(fields()).toEqual(expect.arrayContaining([
+      en.keyInput, en.customDisplayName, en.baseUrl, en.customApi, en.developerRole, en.maxTokensField,
+    ]))
+    expect(fields()).toHaveLength(6)
   })
+
+  it.each([
+    ['openai-completions', true, true],
+    ['openai-responses', true, false],
+    ['anthropic-messages', false, false],
+  ] as const)('shows supported compatibility fields when creating with %s', (api, developer, maxTokens) => {
+    mountCard()
+    fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: api } })
+    if (developer) fireEvent.click(screen.getByText(en.requestCompatibility))
+    else expect(screen.queryByText(en.requestCompatibility)).toBeNull()
+    expect(screen.queryByLabelText(en.developerRole) !== null).toBe(developer)
+    expect(screen.queryByLabelText(en.maxTokensField) !== null).toBe(maxTokens)
+  })
+
+  it.each(['openai-responses', 'anthropic-messages'] as const)(
+    'omits unsupported overrides after switching the create protocol to %s',
+    async (api) => {
+      const { mutate, onClose } = mountCard()
+      fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
+      fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+      fireEvent.click(screen.getByText(en.requestCompatibility))
+      fireEvent.change(screen.getByLabelText(en.developerRole), { target: { value: 'false' } })
+      fireEvent.change(screen.getByLabelText(en.maxTokensField), { target: { value: 'max_tokens' } })
+      fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: api } })
+      expect(screen.queryByLabelText(en.maxTokensField)).toBeNull()
+      if (api === 'openai-responses') {
+        expect(screen.getByLabelText<HTMLSelectElement>(en.developerRole).value).toBe('false')
+      } else {
+        expect(screen.queryByLabelText(en.developerRole)).toBeNull()
+      }
+      fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+      fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'chat' } })
+      fireEvent.click(screen.getByText(en.create))
+
+      await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+      expect(firstMutate(mutate).ops[0]?.value).toEqual({
+        api,
+        baseURL: 'https://acme.test/v1',
+        models: [{ id: 'chat' }],
+        ...api === 'openai-responses' ? { compat: { supportsDeveloperRole: false } } : {},
+      })
+    },
+  )
 
   it('renames a declared route and falls back to its id when the name is cleared', async () => {
     const { mutate } = await mountSection({
@@ -1214,6 +1448,9 @@ describe('hand-declared providers', () => {
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: '  gw-key  ' } })
+    fireEvent.click(screen.getByText(en.requestCompatibility))
+    fireEvent.change(screen.getByLabelText(en.developerRole), { target: { value: 'false' } })
+    fireEvent.change(screen.getByLabelText(en.maxTokensField), { target: { value: 'max_tokens' } })
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
     fireEvent.click(screen.getByText(en.create))
@@ -1229,6 +1466,11 @@ describe('hand-declared providers', () => {
     // only the key can still be corrected.
     expect(screen.getByLabelText<HTMLInputElement>(en.customRoute).disabled).toBe(true)
     expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).disabled).toBe(true)
+    expect(screen.getByLabelText<HTMLSelectElement>(en.developerRole).disabled).toBe(true)
+    expect(screen.getByLabelText<HTMLSelectElement>(en.maxTokensField).disabled).toBe(true)
+    expect(firstMutate(mutate).ops[0]?.value).toMatchObject({
+      compat: { supportsDeveloperRole: false, maxTokensField: 'max_tokens' },
+    })
     expect(screen.getByLabelText<HTMLInputElement>(en.keyInput).disabled).toBe(false)
 
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'gw-key-2' } })
@@ -1574,13 +1816,19 @@ describe('hand-declared providers', () => {
 
   it('closes without writing on cancel, and honors a read-only deployment', () => {
     const { onClose, mutate } = mountCard()
+    fireEvent.click(screen.getByText(en.requestCompatibility))
+    fireEvent.change(screen.getByLabelText(en.developerRole), { target: { value: 'false' } })
+    fireEvent.change(screen.getByLabelText(en.maxTokensField), { target: { value: 'max_tokens' } })
     fireEvent.click(screen.getByText(en.cancel))
     expect(onClose).toHaveBeenCalledWith(false)
     expect(mutate).not.toHaveBeenCalled()
     cleanup()
 
     mountCard({ readOnly: true })
+    fireEvent.click(screen.getByText(en.requestCompatibility))
     expect(screen.getByLabelText<HTMLInputElement>(en.customRoute).disabled).toBe(true)
+    expect(screen.getByLabelText<HTMLSelectElement>(en.developerRole).disabled).toBe(true)
+    expect(screen.getByLabelText<HTMLSelectElement>(en.maxTokensField).disabled).toBe(true)
     expect(buttonNamed(en.create).disabled).toBe(true)
   })
 
