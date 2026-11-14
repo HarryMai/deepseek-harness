@@ -37,9 +37,9 @@ python/**/__pycache__/
 python/**/.pytest_cache/
 packages/**/__pycache__/
 apps/web/dist/
-apps/desktop/.desktop-build/
 apps/desktop/.desktop-cache/
 apps/desktop/out/
+apps/cli/docs/
 .artifacts/
 .dsh-build/
 .dsh-report/

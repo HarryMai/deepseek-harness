@@ -56,7 +56,7 @@ import { createRestrictedToken, findLogonSid, makeWellKnownSid, openCurrentProce
 import * as abi from './win32-abi.ts'
 
 export { AclWriteGrant } from './grant.ts'
-export { assertTempRootOutsideWorkspace } from './path-boundary.ts'
+export { assertTempRootOutsideWorkspace, isTempRootInsideWorkspace } from './path-boundary.ts'
 export { tempWriteSid, workspaceWriteSid } from './workspace-sid.ts'
 /**
  * Host-environment opt-in for the runner's forensic log. The sandbox seam

@@ -31,7 +31,7 @@ kind: "package-reference"
 
 结构化参数仍应保持结构化：调用方将 `cordis_inspect_query.input`、`cordis_define.plugin` 和 `cordis_define.code` 作为 JSON 对象传入，而不是 JSON 文本。运行时不会改写本来就合法的普通字符串。若模型误把 Cordis 方法或 Define 字段所需的对象写成 JSON 文本，Cordis 边界只有在解码结果通过该字段精确声明的 schema 时才接受它；格式错误或不匹配的文本会报告原有校验失败，或报告该 Define 字段专属的错误。
 
-Host 的 `Config` provider 分页列出运行中的 Loader entry（`offset`、最多 100 的 `limit`、可选的精确插件 `name`；`total` 与 `nextOffset` 界定遍历），每个 entry 带 Loader id、patch 所寻址的树内 id 及其 Config 状态（`schema`、`absent`、`unsupported`、group 与 include 载体为 `tree`、禁用、未导入或已销毁的 entry 为 `inactive`）。它把单个 entry 的原生 Config 投影为自包含的 JSON Schema 文档，并在 profile 包查找找到包目录时给出其 `packageDir`。
+Host 的 `Config` provider 分页列出运行中的 Loader entry（`offset`、最多 100 的 `limit`、可选的精确插件 `name`；`total` 与 `nextOffset` 界定遍历），每个 entry 带 Loader id、patch 所寻址的树内 id 及其 Config 状态（`schema`、`absent`、`unsupported`、group 与 include 载体为 `tree`、禁用、未导入或已销毁的 entry 为 `inactive`）。它把单个 entry 的原生 Config 投影为自包含的 JSON Schema 文档，同时在 profile 包查找能解析时给出该 entry 的 `packageDir`，即包 README 与构建产物 `lib/` 所在目录。没有 Agent 的调用，或在没有 Loader 的 Host 上的 `Config` 查询，以 `ToolContextUnavailableError` 失败；`Config` 分页字段格式错误时以 `ToolArgsError` 失败；未知 entry id 以 `InspectError` `INSPECT_TARGET_NOT_FOUND` 失败。
 
 ### 最小组合
 
@@ -94,7 +94,7 @@ Host provider 结合生成的 Service/Event 目录、经 app-boot Config 投影�
 
 #### 模型所见
 
-[工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-cordis) 描述检查工具和生命周期工具。prompt 段落指导模型先检查再编写，并保留 Define 字段的 JSON 文本兼容规则。在 `cordis` preset 中，首轮 skill catalog 携带随附技能的描述，把插件、MCP、组合编辑和未指定去向的视觉请求路由到对应的开发指南。查询结果包含所请求的 API 声明、当前工具 schema、带 Config 状态的运行中 entry 目录，或单个 entry 投影后的 Config JSON Schema。
+[工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-cordis) 描述检查工具和生命周期工具。prompt 段落指导模型先检查再编写，并保留 Define 字段的 JSON 文本兼容规则。在 `cordis` preset 中，首轮 skill catalog 携带随附的 `dsh-doc` 技能的描述，该技能覆盖关于 DSH 的问题，以及构建或修改 DSH 插件、MCP 连接和 agent preset 的请求；其参考资料覆盖 Plugin Manager、MCP 设置、Client 打包和 slot 注册。查询结果包含所请求的 API 声明、当前工具 schema、带 Config 状态的运行中 entry 目录，或单个 entry 投影后的 Config JSON Schema。
 
 #### Token 影响
 
