@@ -10,6 +10,8 @@ import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-session-projection'
+import type {} from '@deepseek-ai/dsh-working-directory'
 import * as McpClient from './index.ts'
 
 /** Profile entry id exposed to the MCP configuration form. */
@@ -54,10 +56,13 @@ export interface McpSettingsIssue {
   reason: McpSettingsIssueReason
 }
 
+/** One resolved client entry with its schema input instead of Loader's untyped config. */
+type McpSettingsClientEntry = Omit<EntryOptions, 'config'> & { config: McpClient.ConfigInput }
+
 /** Result of resolving one saved settings section into child entries. */
 export interface McpClientEntries {
   /** Entries that the owning {@link McpClientSettingsGroup} should activate. */
-  entries: EntryOptions[]
+  entries: McpSettingsClientEntry[]
   /** Records intentionally omitted while preserving any valid peers. */
   issues: McpSettingsIssue[]
 }
@@ -116,7 +121,7 @@ export const DEFAULT_MCP_SETTINGS: McpSettings = { enabled: false, servers: {} }
 export function resolveMcpClientEntries(settings: McpSettings, sessionCwd?: string): McpClientEntries {
   if (!settings.enabled) return { entries: [], issues: [] }
 
-  const entries: EntryOptions[] = []
+  const entries: McpSettingsClientEntry[] = []
   const issues: McpSettingsIssue[] = []
   const names = new Set<string>()
   // Object property order is the user-record order. Keeping it lets the
@@ -258,19 +263,21 @@ export class McpClientSettingsGroup {
   /** Resolve the client plugin implementation, preferring loader interception when present. */
   private async resolveClientPlugin(): Promise<unknown> {
     if (this.clientPlugin !== undefined) return this.clientPlugin
-    if (this.ctx.loader?.internal?.import) {
+    const loader = this.ctx.get('loader')?.internal
+    if (loader !== undefined) {
+      let resolved: unknown
       try {
-        const resolved = await this.ctx.loader.internal.import(
+        resolved = await loader.import(
           '@deepseek-ai/dsh-mcp-client',
           this.ctx.baseUrl ?? '',
           {},
         )
-        if (resolved) {
-          this.clientPlugin = resolved
-          return resolved
-        }
-      } catch {
-        // Fall back to direct module when loader cannot resolve the specifier.
+      } catch (_importFailed) {
+        // The bundled plugin remains available when the Loader import fails.
+      }
+      if (resolved) {
+        this.clientPlugin = resolved
+        return resolved
       }
     }
     this.clientPlugin = McpClient
@@ -292,7 +299,12 @@ export class McpClientSettingsGroup {
       enabled: this.config.enabled.get(),
       servers: this.config.servers.get(),
     }
-    const sessionCwd = agent.session.header.cwd
+    const directory = this.ctx.get('sessionProjections')?.snapshot(agent.session, ['workingDirectory']).values.workingDirectory
+    const sessionCwd = directory === null
+      ? undefined
+      : directory === undefined
+        ? agent.session.header.cwd
+        : this.ctx.get('workingDirectory')?.get(agent.session) ?? directory
     const resolved = resolveMcpClientEntries(settings, sessionCwd)
     if (resolved.issues.length > 0) {
       this.ctx.logger.warn(`mcp-client settings: ignored ${String(resolved.issues.length)} unusable saved MCP server(s) for session ${agent.id}`)
@@ -304,27 +316,32 @@ export class McpClientSettingsGroup {
       this.liveAgents.set(agent, serverInstances)
     }
 
-    const nextEntries = new Map<string, EntryOptions>()
+    const records = new Map(Object.entries(settings.servers).map(([id, server]) => [`mcp-${encodeURIComponent(id)}`, server]))
+    const nextEntries = new Map<string, { entry: McpSettingsClientEntry; signature: string }>()
     for (const entry of resolved.entries) {
-      nextEntries.set(entry.id!, entry)
+      const server = records.get(entry.id)
+      if (server === undefined) throw new Error(`mcp-client settings: missing record for ${entry.id}`)
+      const clientConfig = entry.config
+      // A workspace move affects newly started processes, not running ones.
+      const signature = JSON.stringify(clientConfig.transport === 'stdio'
+        ? { ...clientConfig, cwd: server.cwd.trim() }
+        : clientConfig)
+      nextEntries.set(entry.id, { entry, signature })
     }
 
     for (const [id, instance] of [...serverInstances.entries()]) {
-      const nextEntry = nextEntries.get(id)
-      const nextSignature = nextEntry ? JSON.stringify(nextEntry.config) : undefined
-      if (nextSignature !== instance.signature) {
+      if (nextEntries.get(id)?.signature !== instance.signature) {
         await Promise.resolve(instance.fiber.dispose())
         serverInstances.delete(id)
       }
     }
 
     const plugin = await this.resolveClientPlugin()
-    for (const [id, nextEntry] of nextEntries.entries()) {
+    for (const [id, { entry, signature }] of nextEntries.entries()) {
       if (serverInstances.has(id)) continue
-      const nextSignature = JSON.stringify(nextEntry.config)
       try {
-        const fiber = await agent.ctx.plugin(plugin as never, nextEntry.config as never)
-        serverInstances.set(id, { signature: nextSignature, fiber })
+        const fiber = await agent.ctx.plugin(plugin as never, entry.config as never)
+        serverInstances.set(id, { signature, fiber })
       } catch (error: unknown) {
         this.ctx.logger.warn(`mcp-client settings: could not mount ${id} on session ${agent.id}`)
         this.ctx.logger.warn(error)

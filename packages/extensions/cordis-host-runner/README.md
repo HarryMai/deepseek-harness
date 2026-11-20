@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-cordis-host-runner` exposes runtime inspection and keeps process-local dynamic definitions available to programmatic callers and browser controls. Host halves run in a `node:vm` realm; browser halves use the Client runner and approval UI. Definitions disappear on restart. Agents discover APIs through `tool-cordis` and install persistent bundles through Plugin Manager; no model tool creates dynamic definitions.
+`dsh-cordis-host-runner` exposes runtime inspection and keeps process-local dynamic definitions available to agents, programmatic callers, and browser controls. Host halves run in a `node:vm` realm; browser halves use the Client runner and approval UI. Definitions disappear on restart. Creator exposes temporary dynamic tools; Plugin Manager installs persistent bundles.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin for the inspection registry or programmatic dynamic-package lifecycle. Browser lifecycle consumers also require the Client runner and UI package. The shipped Creator workflow uses installed bundles instead of this definition registry.
+Mount this plugin for the inspection registry or dynamic-package lifecycle. Browser lifecycle consumers also require the Client runner and UI package. Shipped Standard mode exposes inspection; Creator also provides model tools for temporary dynamic packages.
 
 ### Inspect input routing
 
@@ -57,7 +57,7 @@ Query failures throw `InspectError`: `INSPECT_PROVIDER_NOT_FOUND`, `INSPECT_METH
 
 ### What a run does
 
-Programmatic callers use `define`, `run`, `stop`, and `undefine`; the browser panel operates existing definitions. Host-only packages activate in this process. A package with a browser half waits for approval or cancellation, then loads Host before Client. `mode: "run"` starts the current version; `mode: "update"` replaces it. Stop disposes the live effects and retains the definition; undefine also forgets it.
+Programmatic callers use `define`, `run`, `stop`, and `undefine`; Creator offers corresponding model tools, and the browser panel operates existing definitions. Host-only packages activate in this process. A package with a browser half waits for approval or cancellation, then loads Host before Client. `mode: "run"` starts the current version; `mode: "update"` replaces it. Stop disposes the live effects and retains the definition; undefine also forgets it.
 
 ### What happens to definitions
 
@@ -108,7 +108,7 @@ The runner is built on two separations. **Registry and sandbox are one service.*
 
 Read these pages when the package-level contract is not enough. They move from the runner to the tools that call it, the browser half that answers it, and the generated surface.
 
-- [Tool package](../tool-cordis/README.md) — the read-only tools that use its inspection registry.
+- [Tool package](../tool-cordis/README.md) — inspection and temporary dynamic lifecycle tools.
 - [Client runner](../cordis-client-runner/README.md) — the browser half that answers run requests and loads browser-half code.
 - [UI package](../ui-cordis/README.md) — the panel users approve and operate runs with.
 - [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-cordis-host-runner) — every accepted config field.
@@ -124,7 +124,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-This package registers no tool or prompt. Programmatic `run` calls and browser controls can steer the owning session with outcomes and diagnostics; stop and remove gestures inject a user message. Shipped model tools cannot create or update dynamic definitions.
+This package registers no tool or prompt. Programmatic `run` calls and browser controls can steer the owning session with outcomes and diagnostics; stop and remove gestures inject a user message. Creator exposes dynamic definition and lifecycle tools through `tool-cordis`.
 
 #### Token effect
 

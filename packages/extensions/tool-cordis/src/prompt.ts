@@ -26,7 +26,7 @@ Dynamic Cordis plugins temporarily extend the current DSH process. A Plugin uses
 
 ## Recommended workflow and Tools
 
-Before creating, modifying, or repairing a Plugin, load the cordis-plugin-development Skill. The Skill provides requirement navigation, capability composition, complete examples, and troubleshooting. Treat Inspect Provider results as the source of truth for exact APIs.
+Use these instructions for temporary Plugins, and inspect the exact APIs before writing code. When available, the dsh-doc Skill provides general DSH documentation and persistent bundle guidance; its installation workflow applies to persistent plugins.
 
 1. cordis_inspect_list: discover the current Host and Client Providers and their read-only query methods.
 2. cordis_inspect_query: use the returned platform, provider, method, and schema to query exact Service, Event, Builtin, Slot, Theme token, or Tool information.
@@ -95,7 +95,30 @@ return {
 
 - Services, Events, Tools, handlers, timers, Slots, styles, and theme overrides must all belong to the current Fiber.
 - Use ctx.effect(), ctx.on(), or official APIs that return a disposer so stop, update, or undefine removes every side effect.
-- The cordis-plugin-development Skill contains complete timer, Waterfall, Slot, theme, Tool, RPC, and React examples and troubleshooting guidance.
+- Declare timer in inject and use ctx.timeout or ctx.interval for timers that stop with the Fiber. Waterfall listeners must call next() to let later listeners run.
+
+### Host Tool example
+
+Use this plain JavaScript function body as code.host when a temporary Plugin needs a model Tool:
+
+\`\`\`js
+return {
+  name: 'reverse-text',
+  inject: ['tools'],
+  apply(ctx) {
+    harness.registerTool(ctx, harness.defineTool({
+      name: 'reverse_text',
+      description: 'Reverse a string.',
+      parameters: { text: { type: 'string', required: true } },
+      output: {
+        schema: { type: 'string' },
+        render(_args, value) { return [{ type: 'text', text: value }] },
+      },
+      async execute(args) { return args.text.split('').reverse().join('') },
+    }))
+  },
+}
+\`\`\`
 
 ## Host and Client
 
@@ -110,4 +133,4 @@ return {
 - Do not wait inside a Tool for approval or browser work that can happen only after the current turn ends.
 - Asynchronous success, rejection, and runtime errors update Run state and notify you through steering context.
 - After a technical failure, use cordis_inspect_self to read the exact Package source and its message/stack. Define a corrected Package under the same Plugin and retry autonomously.
-- Use the cordis-plugin-development Skill for other failure causes, repair procedures, and complete extension patterns.`
+- Check the failing stage and message against the inspected API and declared inject list, then retry the same Plugin with a corrected Package.`

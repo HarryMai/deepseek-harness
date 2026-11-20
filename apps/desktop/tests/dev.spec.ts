@@ -1,11 +1,17 @@
-import { rmSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 import {
   createDevelopmentProjectDirectory,
   resolveDevelopmentLaunch,
 } from '../scripts/dev.ts'
+
+function fixture(): string {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-launch-'))
+  onTestFinished(() => { rmSync(root, { recursive: true, force: true }) })
+  return root
+}
 
 describe('desktop development launcher modes', () => {
   it('uses the shared DSH_HOME and Electron defaults for the compatibility launcher', () => {
@@ -43,13 +49,33 @@ describe('desktop development launcher modes', () => {
     expect(launch.environment.DSH_DESKTOP_DSH_DIR).toBe('/tmp/explicit-runtime')
   })
 
-  it('keeps isolated development directories in the regular launcher mode', () => {
-    const launch = resolveDevelopmentLaunch('isolated', '/tmp/desktop-project', {})
+  it('migrates isolated development state and uses its new locations', () => {
+    const root = fixture()
+    const legacy = join(root, '.desktop-build', 'development')
+    mkdirSync(join(legacy, 'home'), { recursive: true })
+    mkdirSync(join(legacy, 'electron-user-data'))
+    writeFileSync(join(legacy, 'home', 'session.jsonl'), 'session')
 
-    expect(launch.home).toMatch(/[\\/]apps[\\/]desktop[\\/]\.desktop-build[\\/]development[\\/]home$/u)
-    expect(launch.userData).toMatch(/[\\/]apps[\\/]desktop[\\/]\.desktop-build[\\/]development[\\/]electron-user-data$/u)
+    const launch = resolveDevelopmentLaunch('isolated', '/tmp/desktop-project', {}, root)
+
+    expect(launch.home).toBe(join(root, '.desktop-dev', 'home'))
+    expect(launch.userData).toBe(join(root, '.desktop-dev', 'electron-user-data'))
+    expect(readFileSync(join(launch.home, 'session.jsonl'), 'utf8')).toBe('session')
+    expect(existsSync(join(legacy, 'home'))).toBe(false)
     expect(launch.environment.DSH_DESKTOP_OPEN_DEVTOOLS).toBe('1')
     expect(launch.arguments).toContain(`--user-data-dir=${launch.userData}`)
+  })
+
+  it('leaves isolated development state untouched in compatibility mode', () => {
+    const root = fixture()
+    const legacyHome = join(root, '.desktop-build', 'development', 'home')
+    mkdirSync(legacyHome, { recursive: true })
+    writeFileSync(join(legacyHome, 'session.jsonl'), 'session')
+
+    resolveDevelopmentLaunch('compatibility', '/tmp/desktop-project', { DSH_HOME: '/tmp/shared-dsh-home' }, root)
+
+    expect(readFileSync(join(legacyHome, 'session.jsonl'), 'utf8')).toBe('session')
+    expect(existsSync(join(root, '.desktop-dev'))).toBe(false)
   })
 
   it('forces DevTools closed in compatibility mode', () => {

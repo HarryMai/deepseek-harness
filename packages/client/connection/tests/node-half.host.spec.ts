@@ -12,6 +12,7 @@ import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { IndexInjection, WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
 import {
   API_PATH,
+  Config,
   type RpcId,
   apply,
   inject,
@@ -80,9 +81,9 @@ function fakeRequest(headers: Record<string, string>, url = `${API_PATH}/session
 }
 
 /** JSON POST carrying a complete client-request envelope. */
-function fakePost(headers: Record<string, string>, url: string, body: unknown): IncomingMessage {
+function fakePost(headers: Record<string, string>, url: string, body: unknown, remoteAddress?: string): IncomingMessage {
   const request = Readable.from([Buffer.from(JSON.stringify(body))]) as IncomingMessage
-  Object.assign(request, { url, method: 'POST', headers: { 'content-type': 'application/json', ...headers }, socket: { destroyed: false } })
+  Object.assign(request, { url, method: 'POST', headers: { 'content-type': 'application/json', ...headers }, socket: { destroyed: false, remoteAddress } })
   return request
 }
 
@@ -360,21 +361,16 @@ describe('connection node half', () => {
     }
   })
 
-  it('injects validated browser recovery timing and withdraws it on disposal', async () => {
-    const { ctx, dispose } = await mounted({ recovery: { generationReadyTimeoutMs: 25_000 } })
+  it('declares browser recovery timing as a synced field and injects nothing into served pages', async () => {
+    expect(Config({ recovery: { generationReadyTimeoutMs: 25_000 } }).recovery?.get()).toEqual({
+      backoffBaseMs: 500, backoffFactor: 2, backoffMaxMs: 10_000,
+      generationReadyWarnMs: 3_000, generationReadyTimeoutMs: 25_000,
+    })
+    const { ctx, dispose } = await mounted(Config({ recovery: { generationReadyTimeoutMs: 25_000 } }))
     try {
       const rows: IndexInjection[] = []
       ctx.emit('webserver/index-inject', rows, PAGE_PEER)
-      expect(rows).toEqual([{
-        kind: 'global', name: '__DSH_CONNECTION_RECOVERY__', value: {
-          backoffBaseMs: 500, backoffFactor: 2, backoffMaxMs: 10_000,
-          generationReadyWarnMs: 3_000, generationReadyTimeoutMs: 25_000,
-        },
-      }])
-      await dispose()
-      const after: IndexInjection[] = []
-      ctx.emit('webserver/index-inject', after, PAGE_PEER)
-      expect(after).toEqual([])
+      expect(rows).toEqual([])
     } finally {
       await dispose()
     }
@@ -385,7 +381,7 @@ describe('connection node half', () => {
     { recovery: { backoffFactor: NaN }, error: /backoffFactor.*finite/ },
   ])('rejects invalid recovery timing before acquiring Host resources: $recovery', ({ recovery, error }) => {
     const ctx = new Context()
-    expect(() => { apply(ctx, { recovery }) }).toThrow(error)
+    expect(() => { apply(ctx, Config({ recovery })) }).toThrow(error)
     expect(ctx.get('connection')).toBeUndefined()
   })
 
@@ -571,6 +567,48 @@ describe('connection node half', () => {
     expect(routes.map(candidate => candidate.path)).toEqual([API_PATH, '/connect'])
     await fiber.dispose()
     expect(routes).toHaveLength(0)
+  })
+
+  it('limits a local-only RPC channel to owner Peers on loopback sockets and authorities', async () => {
+    const { ctx, routes, connection, dispose } = await mounted({ trustedHosts: ['remote.example'] })
+    const handler = vi.fn(async () => ({ ok: true as const, value: 'ok' }))
+    const remove = connection.rpc.handle('/local-only', handler, { access: 'owner-loopback' })
+    try {
+      const route = routes.find(candidate => candidate.path === '/local-only')!
+      const localCookie = await browserCookie(ctx, '127.0.0.1:3080')
+      const ipv6Cookie = await browserCookie(ctx, '[::1]:3080')
+      const localhostCookie = await browserCookie(ctx, 'localhost:3080')
+      const remoteCookie = await browserCookie(ctx, 'remote.example')
+      const message: ClientRequest = {
+        type: 'client-request', rpcId: brandString<RpcId>('local-only'), method: 'test', payload: {},
+      }
+      const call = async (host: string, cookie: string, remoteAddress?: string, peer?: PeerScope, headers: Record<string, string> = {}) => {
+        const result = fakeResponse()
+        await route.handler(fakePost({ host, cookie, ...headers }, '/local-only/test', message, remoteAddress), result.response, peer)
+        return result.state.status
+      }
+
+      expect(await call('remote.example', remoteCookie, '203.0.113.9')).toBe(403)
+      expect(await call('127.0.0.1:3080', localCookie, '203.0.113.9')).toBe(403)
+      expect(await call('127.0.0.1:3080', localCookie, '::ffff:203.0.113.9')).toBe(403)
+      expect(await call('remote.example', remoteCookie, '127.0.0.1')).toBe(403)
+      expect(await call('127.0.0.1:3080', localCookie)).toBe(403)
+      expect(await call('127.0.0.1:3080', localCookie, '127.0.0.1', { principal: { kind: 'viewer' } } as never)).toBe(403)
+      expect(await call('127.0.0.1:3080', localCookie, '127.0.0.1', undefined, { 'x-forwarded-for': '203.0.113.9' })).toBe(403)
+      expect(await call('127.0.0.1:3080', localCookie, '127.0.0.1', undefined, { 'x-forwarded-host': 'remote.example' })).toBe(403)
+      expect(await call('127.0.0.1:3080', localCookie, '127.0.0.1', undefined, { forwarded: 'for=203.0.113.9' })).toBe(403)
+      expect(handler).not.toHaveBeenCalled()
+
+      for (const address of ['127.0.0.1', '127.10.2.3', '::1', '::ffff:127.0.0.1', '::ffff:7f00:1']) {
+        expect(await call('127.0.0.1:3080', localCookie, address)).toBe(200)
+      }
+      expect(await call('[::1]:3080', ipv6Cookie, '::1')).toBe(200)
+      expect(await call('localhost:3080', localhostCookie, '127.0.0.1')).toBe(200)
+      expect(handler).toHaveBeenCalledTimes(7)
+    } finally {
+      await remove()
+      await dispose()
+    }
   })
 
   it('attaches pending dedicated RPC channels when WebServer becomes available', async () => {
@@ -1109,6 +1147,35 @@ describe('connection node half over a real HTTP server', () => {
       )).toBe(404)
     } finally {
       await close()
+      await dispose()
+    }
+  })
+
+  it('accepts authenticated loopback RPC over a real socket and refuses remote authorities', async () => {
+    const { ctx, routes, connection, dispose } = await mounted({ trustedHosts: ['remote.example'] })
+    const handler = vi.fn(async () => ({ ok: true as const, value: 'ok' }))
+    const remove = connection.rpc.handle('/local-only', handler, { access: 'owner-loopback' })
+    const route = routes.find(candidate => candidate.path === '/local-only')!
+    const { port, close } = await serve([route])
+    const post = (host: string, cookie?: string): Promise<number> => new Promise((resolve, reject) => {
+      const body = JSON.stringify({ type: 'client-request', rpcId: 'real-local', method: 'test', payload: {} })
+      const request = httpRequest({ host: '127.0.0.1', port, path: '/local-only/test', method: 'POST',
+        headers: { host, 'content-type': 'application/json', ...cookie === undefined ? {} : { cookie } } }, (response) => {
+        response.resume()
+        response.on('end', () => { resolve(response.statusCode ?? 0) })
+      })
+      request.on('error', reject)
+      request.end(body)
+    })
+    try {
+      const local = `127.0.0.1:${String(port)}`
+      expect(await post(local)).toBe(401)
+      expect(await post('remote.example', await browserCookie(ctx, 'remote.example'))).toBe(403)
+      expect(await post(local, await browserCookie(ctx, local))).toBe(200)
+      expect(handler).toHaveBeenCalledOnce()
+    } finally {
+      await close()
+      await remove()
       await dispose()
     }
   })

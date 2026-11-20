@@ -3,26 +3,26 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/extensions/tool-cordis/README.md
 /:
-  en: 784a82be07311e99
-  zh: 85d917ecc6386ec9
+  en: f40a744d9a8095e3
+  zh: 8747109af05abcf7
 /deepseek-ai-dsh-tool-cordis:
   en: ea2c0ac7e7932a08
   zh: 5562e6f26d700b64
 /deepseek-ai-dsh-tool-cordis/summary:
-  en: 7c1c5507642b70af
-  zh: b3a7ae89b4dec86c
+  en: 092e200a69859bf3
+  zh: f60259f7360fe03c
 /deepseek-ai-dsh-tool-cordis/table-of-contents:
   en: d152484eb41ac6b4
   zh: 3a2f21ff0dc3420d
 /deepseek-ai-dsh-tool-cordis/use-this-package:
-  en: 2232239e16315194
-  zh: 8bf8a55c7c997b85
+  en: 3e8b339ef30da8b6
+  zh: 8ebbfba3706312c8
 /deepseek-ai-dsh-tool-cordis/use-this-package/minimal-composition:
   en: ed1429a7f19571f1
   zh: 0b81def468b7ce29
 /deepseek-ai-dsh-tool-cordis/use-this-package/what-the-tools-do:
-  en: 8fa449baa7a0e105
-  zh: ff01e23c732eda21
+  en: 2dd3a7972492dbd5
+  zh: 87984f395f72028d
 /deepseek-ai-dsh-tool-cordis/use-this-package/a-typical-workflow:
   en: 4586415c43bc1220
   zh: 592b869f97f1c376
@@ -30,8 +30,8 @@
   en: b6eb6133f0d068f0
   zh: 7c159da1e6bf7a61
 /deepseek-ai-dsh-tool-cordis/understand-the-implementation:
-  en: 4adf0848e8c47e2b
-  zh: b75a94c21b42e93b
+  en: 4e13c52dab6829f9
+  zh: 51037e19f494b30b
 /deepseek-ai-dsh-tool-cordis/further-exploration:
   en: 1863373f02bcc196
   zh: 3efdbf5569411562
@@ -42,11 +42,11 @@
   en: 72ffb7cae674c31a
   zh: 85674f298a78592a
 /deepseek-ai-dsh-tool-cordis/model-experience/runtime-inspection/what-the-model-sees:
-  en: d67adfd40fa0185e
-  zh: e04e55b1addd450f
+  en: ec7eb1413447fe71
+  zh: bf14d4c6b145a6ae
 /deepseek-ai-dsh-tool-cordis/model-experience/runtime-inspection/token-effect:
-  en: d112669c8e681403
-  zh: 9d5bdc96582a9973
+  en: 9eee29589fea642b
+  zh: 80b50d030614cab3
 /deepseek-ai-dsh-tool-cordis/model-experience/runtime-inspection/kv-cache-effect:
   en: 51d1c28aae0283a2
   zh: 2263e3e95cadfb2f

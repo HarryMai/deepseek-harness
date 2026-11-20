@@ -1,6 +1,8 @@
 /** Host registry and HTTP adapter for generic Connection RPC channels. */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import { BlockList, isIP } from 'node:net'
+import type { IncomingMessage } from 'node:http'
 import type { WebRoute, WebServer } from '@deepseek-ai/dsh-host-webserver'
 import type { PeerScope, Principal } from '@deepseek-ai/dsh-typert-protocol'
 import type { ConnectionInteractions } from './connect-protocol.ts'
@@ -9,6 +11,7 @@ import type { ClientRequest, RpcId as RpcIdType } from './rpc.ts'
 import { clientRequestSchema } from './rpc-schema.ts'
 import { bridge } from './http-bridge.ts'
 import { isRemoteAuthority, isTrustedApiRequest } from './api-request-trust.ts'
+import { isLoopbackHostname } from './loopback-hostname.ts'
 import { API_PATH } from './api-path.ts'
 import { Peer } from './peer.ts'
 import type { ConnectionAuthentication } from './authentication.ts'
@@ -29,6 +32,25 @@ import type {
 const INVALID_REQUEST_RPC_ID = brandString<RpcIdType>('invalid-request')
 const CHANNEL_PATTERN = /^\/[A-Za-z0-9._~-]+$/
 const ENDPOINT_SEGMENT_PATTERN = /^[A-Za-z0-9_$.-]+$/
+const LOOPBACK_ADDRESSES = new BlockList()
+LOOPBACK_ADDRESSES.addSubnet('127.0.0.0', 8, 'ipv4')
+LOOPBACK_ADDRESSES.addAddress('::1', 'ipv6')
+
+/** Trust only the direct socket and local authority; proxy-supplied source addresses grant no access. */
+function isLoopbackRequest(request: IncomingMessage): boolean {
+  const address = request.socket.remoteAddress
+  if (address === undefined) return false
+  const family = isIP(address)
+  if (family === 0 || !LOOPBACK_ADDRESSES.check(address, family === 4 ? 'ipv4' : 'ipv6')) return false
+  if (Object.keys(request.headers).some(name => name === 'forwarded' || name === 'x-real-ip' || name.startsWith('x-forwarded-'))) return false
+  const host = request.headers.host
+  if (host === undefined) return false
+  try {
+    return isLoopbackHostname(new URL(`http://${host}`).hostname)
+  } catch {
+    return false
+  }
+}
 
 interface ConnectionRpcInterceptor {
   readonly matches: ConnectionRpcEndpointMatcher
@@ -106,7 +128,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
   get rpc(): HostConnectionRpc {
     const owner = this.ctx
     return {
-      handle: (channel, handler) => this.register(owner, channel, handler),
+      handle: (channel, handler, options) => this.register(owner, channel, handler, options),
       intercept: (channel, matches, handler) =>
         this.registerInterceptor(owner, channel, matches, handler),
     }
@@ -218,6 +240,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
     owner: Context,
     channel: string,
     handler: ConnectionRpcHandler,
+    options?: { readonly access?: 'owner-loopback' },
   ): () => Promise<void> {
     assertChannel(channel)
     const fetchHandler = rpcFetchHandler(channel, handler)
@@ -227,6 +250,12 @@ export class HostConnectionService extends Service implements HostConnectionHand
       auth: 'required',
       handler: async (req, res, peer) => {
         if (peer === undefined || res.destroyed) return
+        // oxlint-disable-next-line typescript/no-unnecessary-condition -- other packages merge non-owner kinds into PrincipalMap.
+        if (options?.access === 'owner-loopback' && (peer.principal.kind !== 'owner' || !isLoopbackRequest(req))) {
+          res.writeHead(403)
+          res.end('forbidden')
+          return
+        }
         await bridge(req, res, fetchHandler, peer)
       },
     }

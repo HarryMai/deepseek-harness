@@ -2,7 +2,7 @@
 
 DeepSeek Harness is an all-plugin Cordis agent harness. Read [docs/architecture.md](docs/architecture.md) before changing `packages/`; follow [docs/AGENTS.md](docs/AGENTS.md) for documentation.
 
-**Upstream merges:** Preserve [certificate-free Desktop packaging](apps/desktop/README.md#unsigned-local-packages), final outputs under `apps/desktop/out/`, and signed-release checks. Align branch-only DSH package versions with root `package.json`. Run `pnpm run test:desktop:unsigned` after conflict resolution; retain its regression tests.
+**Upstream merges:** Preserve [certificate-free Desktop packaging](apps/desktop/README.md#unsigned-local-packages), `apps/desktop/out/` outputs, and signed-release checks. Align branch-only DSH versions with root `package.json`; retain regression tests and run `pnpm run test:desktop:unsigned` after conflict resolution.
 
 ## Pre-stable APIs and released Session data
 
@@ -60,6 +60,7 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   identity/             anonymous identity
   settings/             user settings
   credentials/          credentials/authorization
+  account/              DeepSeek
   acp/                  automation-only ACP
   interaction/          human interaction
   boot/                 application boot
@@ -117,8 +118,8 @@ If a required `gh`, `pnpm`, build, test, or generator command fails because the 
 
 Before pushing, follow [dsh-pre-push-checks](.agents/skills/dsh-pre-push-checks/SKILL.md); report only commands run. After `gh stack sync`, validate immediately; do not merge before checks pass.
 
-- Match evidence to the surface: focused behavior tests, model/user-output snapshots, `doc-sync` for docs, built smokes for published paths, and real-API e2e for providers.
-- Never default to the full suite or repeat a passing check for commit or push. CI owns exhaustive coverage and the platform matrix; rehearse all locally only by explicit request, for CI diagnosis, or for an irreducibly repository-wide change.
+- Match evidence: focused behavior tests, model/user-output snapshots, `doc-sync` for docs, built smokes for published paths, and provider real-API e2e.
+- Never default to the full suite or repeat passing checks for commit or push. CI owns exhaustive coverage and the platform matrix; run them locally only by request, for CI diagnosis, or for irreducibly repository-wide changes.
 - `test:coverage`, not `test`, is the CI coverage gate ([why](docs/testing.md)).
 - Develop with `build:artifacts`; before claiming completion, run `build:check` after the latest `build:artifacts`, or `build` ([layout](docs/development.md#typescript-project-layout)).
 - **Web browser automation and GIF recording:** launch with `pnpm dsh web --patch apps/web/tests/pin-browse-picker.overlay.yml` to use the [in-page directory picker](apps/web/tests/pin-browse-picker.overlay.yml); omit this override only when testing native picker behavior explicitly.
@@ -178,13 +179,13 @@ Read [docs/defensive-patterns/README.md](docs/defensive-patterns/README.md) befo
 
 Everything compiles under `strict: true` with `noImplicitAny`; every remaining `any` explains why narrowing is infeasible. Every module and export has concise JSDoc for its non-obvious contract; function-like exports include `@param`/`@returns`, as enforced by `verify-export-jsdoc`. Heritage-declared members, plugin-protocol slots, and constructors keep their docs at the declaring Service Definition, protocol, or class.
 
-Comments and docs state complete contracts and context, not reasoning transcripts. Use direct, concrete terms. Do not use metaphors. Before writing `contract`, `boundary`, or `shape`, ask whether a more exact term names the subject: write `response fields`, `JSON validation`, or `ESM exports` instead of `response shape`, `validation boundary`, or `module shape`. Keep `contract` for preconditions, postconditions, invariants, compatibility promises, and other obligations that callers, callees, implementers, providers, producers, or consumers rely on. Keep a literal process, wire, security, transaction, or lifecycle boundary. Do not narrate control flow or tests, preserve review history, or restate code. Keep behavior, failure, timing, ownership, and safe-use facts; link the rationale. Use [dsh-prose-standard](.agents/skills/dsh-prose-standard/SKILL.md) for decisions. Wire mechanically checkable invariants into an executed top-level gate and prove each changed acceptance path rejects an invalid case. Use narrow, justified exceptions instead of disabling a rule globally.
+Comments and docs state complete contracts and context in direct, concrete terms, without metaphors or reasoning transcripts. Before writing `contract`, `boundary`, or `shape`, prefer exact terms such as `response fields`, `JSON validation`, or `ESM exports`. Reserve `contract` for preconditions, postconditions, invariants, compatibility promises, and other obligations among callers, callees, implementers, providers, producers, or consumers. Keep a literal process, wire, security, transaction, or lifecycle boundary. Do not narrate control flow or tests, preserve review history, or restate code. Keep behavior, failure, timing, ownership, and safe-use facts; link the rationale. Use [dsh-prose-standard](.agents/skills/dsh-prose-standard/SKILL.md) for decisions. Put mechanically checkable invariants in an executed top-level gate; verify each changed acceptance path rejects an invalid case. Use narrow, justified exceptions, not global rule disabling.
 
-Docs accompany every code change: update affected README and JSDoc contracts together. Routine bilingual work follows [docs/AGENTS.md](docs/AGENTS.md); only explicit user invocation may run `dsh-translate-docs`. Current-state prose, one physical line per paragraph, one home per fact, and word budgets live there.
+Every code change updates affected README and JSDoc contracts. Routine bilingual work follows [docs/AGENTS.md](docs/AGENTS.md); only explicit user invocation may run `dsh-translate-docs`. Current-state prose, one line per paragraph, one home per fact, and word budgets live there.
 
 ## Editing these instructions
 
-`CLAUDE.md` symlinks `AGENTS.md` at root and `packages/`; edit the real file. Keep each rule self-contained while linking high-level docs. Condense when clarity survives; raise a `verify-doc-budgets` ceiling when the required content genuinely needs more space.
+`CLAUDE.md` symlinks `AGENTS.md` at root and `packages/`; edit the real file. Keep rules self-contained with links to high-level docs. Condense when clear; raise a `verify-doc-budgets` ceiling when required content needs more space.
 
 ## Vendoring policy
 

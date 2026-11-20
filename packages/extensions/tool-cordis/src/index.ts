@@ -1,5 +1,6 @@
 /** Model-facing Cordis inspection and temporary dynamic lifecycle tools. */
 import type { Context, Fiber } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import {
   CordisDynamicPackageId, CordisDynamicPluginId,
@@ -11,7 +12,7 @@ import type { UserMessage } from '@deepseek-ai/dsh-session'
 import { defineTool, ToolContextUnavailableError, validateJsonSchemaValue, valueSchemaSpecToJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { JsonSchemaNode, ToolExecution, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
 import {
-  presentDefineCall, presentInspectListCall, presentInspectQueryCall, presentInspectSelfCall, presentRunCall,
+  presentDefineCall, presentInspectCall, presentInspectListCall, presentInspectQueryCall, presentInspectSelfCall, presentRunCall,
   presentStopCall, presentUndefineCall,
 } from './present.ts'
 import { CORDIS_SYSTEM_PROMPT } from './prompt.ts'
@@ -29,7 +30,18 @@ declare module '@deepseek-ai/dsh-llm' {
 }
 
 export const name = 'tool-cordis'
-export const inject = ['tools', 'systemPrompt', 'cordisInspect']
+export const inject = ['tools', 'cordisInspect']
+
+/** Agent-scoped inspection and dynamic plugin configuration. */
+export interface Config {
+  /** Enable the earlier inspection tools and temporary dynamic lifecycle tools. */
+  dynamic: boolean
+}
+
+/** Schema for the agent-scoped Cordis tools. */
+export const Config: z<Config> = z.object({
+  dynamic: z.boolean().default(true).description('Enable the earlier inspection tools and temporary dynamic lifecycle tools.'),
+})
 
 const DEFINE_PLUGIN_OBJECT_SCHEMA = {
   oneOf: [
@@ -82,6 +94,11 @@ function requireAgent(exec: ToolExecution): Agent {
   return exec.agent
 }
 
+/** Convert the read-only provider directory into its JSON result. */
+function inspectDirectory(ctx: Context): JsonValue {
+  return JSON.parse(JSON.stringify({ providers: ctx.cordisInspect.list() })) as JsonValue
+}
+
 /** Recover one accidentally JSON-encoded structured Define field after exact schema validation. */
 function decodeDefineJsonText(value: string, schema: JsonSchemaNode, field: 'plugin' | 'code'): JsonValue {
   let decoded: JsonValue
@@ -115,8 +132,47 @@ function defineCode(value: DefineCode | string): DefineCode {
  * process-global provider registrations; this entry owns per-agent tools and
  * the optional dynamic runner integration.
  * @param ctx Agent-scoped registration context.
+ * @param config Whether to enable earlier inspection tools and temporary dynamic lifecycle tools.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config = { dynamic: true }): void {
+  ctx.tools.register(defineTool({
+    name: 'cordis_inspect',
+    description: 'Inspect runtime APIs before writing or configuring plugins. Omit query to discover providers, methods, and input schemas; '
+      + 'then query an exact entry from that directory. Read-only: cannot invoke business Service methods or modify the runtime. '
+      + 'Client queries require a connected page.',
+    parameters: {
+      query: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          platform: { type: 'string', required: true, enum: ['host', 'client'], description: 'Provider platform.' },
+          provider: { type: 'string', required: true, description: 'Provider ID from the directory.' },
+          method: { type: 'string', required: true, description: 'Method name from the directory.' },
+          input: { type: 'json', description: "Arguments matching the method's input schema." },
+        },
+      },
+    },
+    output: {
+      schema: { type: 'json' },
+      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }],
+    },
+    // Provider methods are read-only, and each Client query settles by its own request id.
+    isConcurrencySafe: () => true,
+    async execute({ query }, exec): Promise<JsonValue> {
+      if (query === undefined) return inspectDirectory(ctx)
+      const data = await ctx.cordisInspect.query(
+        query.platform,
+        query.provider,
+        query.method,
+        query.input,
+        requireAgent(exec),
+        exec.signal,
+      )
+      return { platform: query.platform, provider: query.provider, method: query.method, data }
+    },
+    presentCall: presentInspectCall,
+  }))
+
+  if (!config.dynamic) return
   ctx.tools.register(defineTool({
     name: 'cordis_inspect_list',
     description:
@@ -133,7 +189,7 @@ export function apply(ctx: Context): void {
     // Listing reads the Provider registry without mutating it.
     isConcurrencySafe: () => true,
     execute(_args, _exec): Promise<JsonValue> {
-      return Promise.resolve({ providers: ctx.cordisInspect.list() } as unknown as JsonValue)
+      return Promise.resolve(inspectDirectory(ctx))
     },
     presentCall: presentInspectListCall,
   }))
@@ -173,7 +229,7 @@ export function apply(ctx: Context): void {
     presentCall: presentInspectQueryCall,
   }))
 
-  ctx.inject(['dynamicCordisRunner'], (runnerCtx) => {
+  ctx.inject(['systemPrompt', 'dynamicCordisRunner'], (runnerCtx) => {
     runnerCtx.systemPrompt.section({ name: 'tool:cordis', order: runnerCtx.systemPrompt.getSectionOrder('TOOL_WORKFLOW') + 10, text: CORDIS_SYSTEM_PROMPT })
     runnerCtx.tools.register(defineTool({
       name: 'cordis_inspect_self',

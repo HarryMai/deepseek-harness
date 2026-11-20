@@ -15,10 +15,14 @@ function setup(): { ctx: Context; connection: HostConnectionService; authenticat
 }
 const request = { headers: { host: 'localhost' } }
 
-it('requires a WebServer for a physical RPC channel', () => {
+it('keeps a pending RPC channel reserved until it is disposed without a WebServer', async () => {
   const { connection } = setup()
+  const remove = connection.rpc.handle('/custom', async () => ({ ok: true, value: null }))
   expect(() => connection.rpc.handle('/custom', async () => ({ ok: true, value: null })))
-    .toThrow('RPC channels require a WebServer')
+    .toThrow('duplicate route')
+  await remove()
+  const replacement = connection.rpc.handle('/custom', async () => ({ ok: true, value: null }))
+  await replacement()
 })
 
 it('checks each request and takes the first live Peer returned by a provider', () => {

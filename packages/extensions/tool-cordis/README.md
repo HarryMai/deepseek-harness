@@ -1,5 +1,5 @@
 ---
-description: "Read-only runtime API discovery for agents developing and configuring installed Harness plugins."
+description: "Inspect runtime APIs and manage temporary plugins when developing Harness extensions."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Inspect Host and Client runtime APIs before writing plugin code, and use temporary dynamic lifecycle tools when the composition provides a runner. Creator mode provides these tools alongside Plugin Manager, which owns persistent profile changes. The inspection registry is supplied by the Cordis host runner; browser queries need a connected page.
+Inspect Host and Client runtime APIs before writing plugin code, and use temporary dynamic lifecycle tools when the composition enables them. Standard mode exposes inspection; Creator mode also provides the dynamic tools alongside Plugin Manager, which owns persistent profile changes. The inspection registry is supplied by the Cordis host runner; browser queries need a connected page.
 
 ## Table of Contents
 
@@ -25,13 +25,13 @@ Inspect Host and Client runtime APIs before writing plugin code, and use tempora
 <a id="use-this-package"></a>
 ## Use this package
 
-Creator mode includes this toolset. Other compositions mount `@deepseek-ai/dsh-tool-cordis/host` once in the host composition beside the host runner that provides `cordisInspect`, and mount `@deepseek-ai/dsh-tool-cordis` in each agent preset that exposes the tools; a preset row alone registers no Host providers. Use [Plugin Manager](../../boot/plugin-manager/README.md) to install bundles containing persistent plugin code or MCP configuration.
+Standard mode includes `cordis_inspect`; Creator mode also includes the dynamic toolset. Other compositions mount `@deepseek-ai/dsh-tool-cordis/host` once in the host composition beside the host runner that provides `cordisInspect`, and mount `@deepseek-ai/dsh-tool-cordis` in each agent preset that exposes the tools; a preset row alone registers no Host providers. Use [Plugin Manager](../../boot/plugin-manager/README.md) to install bundles containing persistent plugin code or MCP configuration.
 
-When a composition provides `dynamicCordisRunner`, this plugin also lets a session define and run a temporary model-written tool, service, or browser UI without making it a repository plugin; without that runner, its lifecycle tools do not activate.
+When `dynamic` is enabled, the earlier inspection tools remain available. If the composition also provides `dynamicCordisRunner` and `systemPrompt`, a session can define and run a temporary model-written tool, service, or browser UI without making it a repository plugin. `dynamic` defaults to `true`; the shipped Standard preset sets it to `false`.
 
-Structured arguments remain structured: callers send `cordis_inspect_query.input`, `cordis_define.plugin`, and `cordis_define.code` as JSON objects rather than JSON text. The runtime preserves a valid ordinary string unchanged. If a model accidentally sends JSON text where a Cordis method or Define field requires an object, the Cordis boundary accepts it only when decoding it produces a value that passes the exact declared schema; malformed or mismatched text reports the original validation failure or a field-specific Define error.
+Structured arguments remain structured: callers send `cordis_inspect.query.input`, `cordis_inspect_query.input`, `cordis_define.plugin`, and `cordis_define.code` as JSON objects rather than JSON text. The runtime preserves a valid ordinary string unchanged. If a model accidentally sends JSON text where a Cordis method or Define field requires an object, the Cordis boundary accepts it only when decoding it produces a value that passes the exact declared schema; malformed or mismatched text reports the original validation failure or a field-specific Define error.
 
-The Host `Config` provider lists live Loader entries in pages (`offset`, `limit` up to 100, optional exact plugin `name`; `total` and `nextOffset` bound the walk) with each entry's Loader id, the tree-local id patches address, and its Config status (`schema`, `absent`, `unsupported`, `tree` for group and include carriers, `inactive` for disabled, never imported, or disposed entries). It projects one entry's native Config into a self-contained JSON Schema document beside the entry's `packageDir`, the resolved directory holding the package README and built `lib/`, when the profile package lookup finds the package directory. A call without an Agent, or a `Config` query on a Host without a Loader, fails with `ToolContextUnavailableError`; a malformed `Config` paging field fails with `ToolArgsError`; and an unknown entry id fails with `InspectError` `INSPECT_TARGET_NOT_FOUND`.
+The Host `Config` provider lists live Loader entries in pages (`offset`, `limit` up to 100, optional exact plugin `name`; `total` and `nextOffset` bound the walk) with each entry's Loader id, the tree-local id patches address, and its Config status (`schema`, `absent`, `unsupported`, `tree` for group and include carriers, `inactive` for disabled, never imported, or disposed entries). It projects one entry's native Config into a self-contained JSON Schema document beside the entry's `packageDir`, the resolved directory holding the package README and built `lib/`, when the profile package lookup finds the package directory. A call without an Agent, or a `Config` query on a Host without a Loader, fails with `ToolContextUnavailableError`; a malformed `Config` paging field fails with `ToolArgsError`; and an unknown entry id fails with `InspectError` `INSPECT_TARGET_NOT_FOUND`. The Host `Runtime` provider's `getVersion` returns `{ version }`, the running DSH version used for plugin compatibility checks.
 
 ### Minimal composition
 
@@ -47,10 +47,11 @@ The [Web bundle patch](../../bundle/web-app/cordis.patch.yml) mounts the host ru
 
 ### What the tools do
 
-The three inspection tools are read-only; the four lifecycle tools define and manage temporary packages. All results are JSON rendered as text.
+The inspection tools are read-only; the four lifecycle tools define and manage temporary packages. All results are JSON rendered as text.
 
-- `cordis_inspect_list` — list the Inspect Providers (host and client) and their query methods.
-- `cordis_inspect_query` — run one provider query: exact service methods, event modes, plugin Config schemas, tool schemas, theme tokens, or live slot trees.
+- `cordis_inspect` — list providers when `query` is omitted, or run the exact provider query supplied in `query`.
+- `cordis_inspect_list` — list the Inspect Providers (host and client) and their query methods when dynamic tools are enabled.
+- `cordis_inspect_query` — run one provider query when dynamic tools are enabled: exact service methods, event modes, plugin Config schemas, tool schemas, theme tokens, or live slot trees.
 - `cordis_inspect_self` — list this session's dynamic plugins or inspect one package's source and runtime diagnostics.
 - `cordis_define` — record a package: a new plugin (`plugin.kind: "new"` with a 3–6-letter `idPrefix`) or a new version of an existing plugin (`plugin.kind: "existing"` with its `pluginId`). It validates parameters and syntax only; nothing runs and no approval is requested.
 - `cordis_run` — activate one package (`mode: "run"` for the first activation or restart, `mode: "update"` to switch versions). A package with a browser half may return `awaiting-approval` until a person allows it; the tool never waits for the final outcome.
@@ -73,7 +74,7 @@ Definitions are session-scoped and process-local: a package is visible and contr
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-Host providers combine generated Service/Event catalogs, the live Loader tree projected through the app-boot Config projector, and the requesting agent's tool registry. Client providers synchronize their manifests through the existing inspection registry and answer queries from a connected page. The `/host` entry owns process-global provider registrations, while each preset row owns inspection and optional lifecycle tools through Cordis effects; the registry rejects duplicate provider ids, so providers register once per process. No invariant companion is published because inspection reads its providers directly and maintains no independent runtime projection.
+Host providers combine generated Service/Event catalogs, the live Loader tree projected through the app-boot Config projector, the requesting agent's tool registry, and the running DSH version. Client providers synchronize their manifests through the existing inspection registry and answer queries from a connected page. The `/host` entry owns process-global provider registrations, while each preset row owns inspection and optional lifecycle tools through Cordis effects; the registry rejects duplicate provider ids, so providers register once per process. No invariant companion is published because inspection reads its providers directly and maintains no independent runtime projection.
 
 </details>
 
@@ -94,11 +95,11 @@ Instruction messages record producer attribution in `source`. Readers preserve t
 
 #### What the model sees
 
-The [tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-cordis) describes the inspection and lifecycle tools. The prompt section directs model calls to Inspect before writing and preserves the JSON-text compatibility rule for Define fields. In the `cordis` preset, the first-turn skill catalog carries the description of the shipped `dsh-doc` skill, which covers questions about DSH and requests to build or change DSH plugins, MCP connections, and agent presets; its references cover Plugin Manager, MCP setup, Client packaging, and slot registration. Query results contain the requested API declarations, live tool schemas, the live entry directory with Config status, or one entry's projected Config JSON Schema.
+The [tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-cordis) describes the inspection and lifecycle tools. The prompt section directs model calls to Inspect before writing and preserves the JSON-text compatibility rule for Define fields. In the `standard` and `cordis` presets, the first-turn skill catalog carries the description of the shipped `dsh-doc` skill, which covers questions about DSH and requests to build or change DSH plugins, MCP connections, and agent presets; its references cover Plugin Manager, MCP setup, Client packaging, and slot registration. Query results contain the requested API declarations, live tool schemas, the live entry directory with Config status, one entry's projected Config JSON Schema, or the running DSH version.
 
 #### Token effect
 
-The tool schemas and dynamic-plugin guidance enter model requests while this plugin is visible. Query results append to the transcript; exact queries avoid loading unrelated declarations.
+Inspection enters model requests in Standard and Creator modes; Creator also contributes dynamic-plugin tool schemas and guidance. Query results append to the transcript; exact queries avoid loading unrelated declarations.
 
 #### KV Cache effect
 

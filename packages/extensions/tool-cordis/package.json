@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-tool-cordis",
-  "description": "Read-only runtime API inspection for Harness plugin development",
-  "version": "0.2.2-rc.3",
+  "description": "Runtime API inspection and optional temporary dynamic plugins for Harness development",
+  "version": "0.2.2-rc.5",
   "publishConfig": {
     "access": "public"
   },
@@ -38,6 +38,9 @@
     "src"
   ],
   "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "workspace:~"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",

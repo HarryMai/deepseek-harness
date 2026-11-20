@@ -12,6 +12,17 @@ export function presentRuntimeInspectCall(args: { what?: string; name?: string }
 }
 
 /**
+ * Render a provider directory or one exact query.
+ * @param args - optional query target.
+ * @returns replay-safe generic call presentation.
+ */
+export function presentInspectCall(args: { query?: { platform: string; provider: string; method: string } }): GenericCallView {
+  return { card: 'generic', kind: 'read', title: args.query === undefined
+    ? 'List Cordis Inspect Providers'
+    : `Query Cordis ${args.query.platform} ${args.query.provider}.${args.query.method}` }
+}
+
+/**
  * Render provider-directory inspection.
  * @returns replay-safe generic call presentation.
  */
@@ -27,6 +38,7 @@ export function presentInspectListCall(): GenericCallView {
 export function presentInspectQueryCall(args: { platform: string; provider: string; method: string }): GenericCallView {
   return { card: 'generic', kind: 'read', title: `Query Cordis ${args.platform} ${args.provider}.${args.method}` }
 }
+
 /**
  * Render layered self-inspection.
  * @param args - optional Plugin and Package identity.

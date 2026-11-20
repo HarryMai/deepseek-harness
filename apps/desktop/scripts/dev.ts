@@ -12,6 +12,7 @@ import type { DesktopRelease } from '../src/release.ts'
 import { developmentRuntimeDirectory, resolveDesktopBuildTarget } from './desktop-build-paths.mjs'
 import { prepareDevelopmentProject } from './development-project.ts'
 import { prepareDevelopmentApp } from './development-app.ts'
+import { prepareDevelopmentState } from './development-state.ts'
 import { preparePrimaryRuntime } from './prepare-primary-runtime.ts'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
@@ -87,25 +88,26 @@ async function runPackageScript(script: string, cwd: string): Promise<void> {
 /**
  * Resolve the process settings used by an unpackaged Desktop launch.
  *
- * Isolated mode uses disposable Harness and Electron data directories with
+ * Isolated mode uses persistent development Harness and Electron data directories with
  * debug endpoints. Compatibility mode uses the resolved shared Harness home,
  * Electron's default user-data directory, and no debug endpoints.
+ * Isolated mode moves legacy development state when needed and refuses to move
+ * a browser profile in use.
  * @param mode - Isolated development mode or the root-command compatibility mode.
  * @param projectDir - Prepared development project passed to the main process.
  * @param environment - Environment to inherit and resolve launch overrides from.
+ * @param appRoot - Desktop directory containing development state.
  * @returns The resolved home, environment, and Electron arguments.
  */
 export function resolveDevelopmentLaunch(
   mode: DesktopDevelopmentLaunchMode,
   projectDir: string,
   environment: NodeJS.ProcessEnv = process.env,
+  appRoot: string = APP_ROOT,
 ): DesktopDevelopmentLaunch {
-  const compatibility = mode === 'compatibility'
-  const home = compatibility
-    ? resolveDshHome(undefined, environment)
-    : resolve(environment.DSH_HOME ?? join(DEVELOPMENT_ROOT, 'home'))
   const primaryRuntime = environment.DSH_DESKTOP_PRIMARY_RUNTIME_DIR ?? developmentRuntimeDirectory(environment)
-  if (compatibility) {
+  if (mode === 'compatibility') {
+    const home = resolveDshHome(undefined, environment)
     return {
       home,
       userData: undefined,
@@ -124,7 +126,7 @@ export function resolveDevelopmentLaunch(
   const mainPort = debugPort('DSH_DESKTOP_MAIN_INSPECT_PORT', 9229, environment)
   const rendererPort = debugPort('DSH_DESKTOP_RENDERER_DEBUG_PORT', 9222, environment)
   const hostPort = debugPort('DSH_DESKTOP_HOST_INSPECT_PORT', 9230, environment)
-  const userData = resolve(environment.DSH_DESKTOP_USER_DATA_DIR ?? join(DEVELOPMENT_ROOT, 'electron-user-data'))
+  const { home, userData } = prepareDevelopmentState(appRoot, environment)
   const launchArguments = [
     `--inspect=127.0.0.1:${String(mainPort)}`,
     `--remote-debugging-port=${String(rendererPort)}`,

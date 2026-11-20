@@ -3,7 +3,8 @@
  *
  * Connects a temporary client, reads server identity and tools, and closes the
  * transport without registering tools on `ctx.tools`, reserving a `serverName`,
- * persisting a record, or starting a reconnect loop.
+ * starting a reconnect loop, or changing the live instance set. OAuth probes
+ * can persist refreshed credentials.
  *
  * @module @deepseek-ai/dsh-mcp-client/probe
  */
@@ -16,7 +17,11 @@ import { MAX_TIMER_DELAY_MS, deadline, timeoutOf } from '@deepseek-ai/dsh-timeou
 import type {} from '@deepseek-ai/dsh-client-connection'
 import { McpTemplateBinding } from './credentials.ts'
 import { McpGeneration } from './generation.ts'
+import { StdioSchema, StreamableHttpSchema } from './config.ts'
 import { createTransport } from './transport.ts'
+import { oauthFailure } from './diagnostic.ts'
+import type { McpAuthorizationRequired } from './diagnostic.ts'
+import { McpOAuthCredentials } from './oauth-credentials.ts'
 import type { Config as McpClientConfig } from './index.ts'
 import type { McpServerSettings } from './settings.ts'
 import type { McpProbeFailure, McpProbeResult, McpProbeStage, McpProbeSuccess } from './types.ts'
@@ -83,6 +88,7 @@ export function apply(ctx: Context, config: McpConnectionProbeConfig): void {
         if (endpoint !== MCP_SETTINGS_TEST_ENDPOINT) return { ok: true, value: { ok: false, reason: 'unavailable' } }
         return { ok: true, value: await probeMcpConnection(payload, signal, timeoutMs) }
       },
+      { access: 'owner-loopback' },
     )
   })
 }
@@ -114,20 +120,21 @@ export async function probeMcpConnection(
     { capabilities: {} },
   )
   using testDeadline = deadline(upstream, timeoutMs, TEST_TIMEOUT_CODE)
+  let result: McpConnectionTestResult
   try {
     await awaitWithSignal(() => client.connect(createTransport(config)), testDeadline.signal)
-    return { ok: true, toolCount: await listToolCount(client, testDeadline.signal) }
+    result = { ok: true, toolCount: await listToolCount(client, testDeadline.signal) }
   } catch {
-    if (timeoutOf(testDeadline.signal, TEST_TIMEOUT_CODE) !== undefined) return { ok: false, reason: 'timed-out' }
-    if (testDeadline.signal.aborted) return { ok: false, reason: 'cancelled' }
-    return { ok: false, reason: 'connection-failed' }
-  } finally {
-    try {
-      await client.close()
-    } catch {
-      // A failed initialization can close the transport before the client owns it.
-    }
+    result = { ok: false, reason: timeoutOf(testDeadline.signal, TEST_TIMEOUT_CODE) !== undefined
+      ? 'timed-out' : testDeadline.signal.aborted ? 'cancelled' : 'connection-failed' }
   }
+  try {
+    await client.close()
+  } catch (_closeFailed) {
+    // A failed close leaves cleanup unconfirmed, so the probe cannot report success.
+    return { ok: false, reason: 'connection-failed' }
+  }
+  return result
 }
 
 /**
@@ -141,7 +148,7 @@ function testConfigFromPayload(payload: unknown, timeoutMs: number): McpClientCo
   const server = parseServer(payload.server)
   if (server === undefined) return undefined
   if (server.transport === 'stdio') {
-    return {
+    return StdioSchema({
       transport: 'stdio',
       serverName: server.serverName,
       command: server.command,
@@ -153,9 +160,9 @@ function testConfigFromPayload(payload: unknown, timeoutMs: number): McpClientCo
       expandTemplates: false,
       failOnStartupError: true,
       reconnect: { enabled: false },
-    }
+    })
   }
-  return {
+  return StreamableHttpSchema({
     transport: 'streamable-http',
     serverName: server.serverName,
     url: server.url,
@@ -165,7 +172,7 @@ function testConfigFromPayload(payload: unknown, timeoutMs: number): McpClientCo
     expandTemplates: false,
     failOnStartupError: true,
     reconnect: { enabled: false },
-  }
+  })
 }
 
 /** Decode one exact persisted-record representation at the Host trust boundary. */
@@ -268,7 +275,6 @@ function parseEnvironment(value: unknown): Record<string, string> | undefined {
   }
   return environment
 }
-
 /** Options for one {@link probeServer} call. */
 export interface McpProbeOptions {
   /** Budget for the whole probe (connect + listing) in milliseconds; default 10000. */
@@ -323,9 +329,25 @@ export async function probeServer(ctx: Context, config: McpClientConfig, options
   if (spec.signal?.aborted) abort()
   let stage: McpProbeStage = 'connect'
   let result: McpProbeSuccess | McpProbeFailure
+  let authorizationFailure: McpAuthorizationRequired | undefined
+  if (config.transport === 'streamable-http' && config.oauth !== undefined) client.onerror = (error) => {
+    const failure = oauthFailure(error)
+    if (failure !== undefined) { authorizationFailure = failure; abort() }
+  }
   try {
     const resolved = await generation.run(signal => binding.resolve(signal), remaining())
-    await generation.connect(resolved, remaining())
+    const oauthConfig = resolved.transport === 'streamable-http' ? resolved.oauth : undefined
+    const oauth = resolved.transport === 'streamable-http' && oauthConfig !== undefined
+      ? await generation.run(async (signal) => {
+        const credentials = new McpOAuthCredentials(ctx, oauthConfig)
+        const grant = await credentials.read(new URL(resolved.url).href, signal)
+        binding.remember(grant.tokens.access_token)
+        return credentials.transport(grant, signal, (url, init) => generation.run(() => globalThis.fetch(url, init)))
+      }, remaining()) : undefined
+    await generation.connect(resolved, remaining(), oauth?.fetch, oauth === undefined ? undefined : {
+      ...oauth.authProvider,
+      token: async () => binding.remember(await oauth.authProvider.token()),
+    })
     const identity = client.getServerVersion()
     const serverInfo = identity === undefined ? undefined : { name: identity.name, version: identity.version }
     stage = 'list'
@@ -346,9 +368,10 @@ export async function probeServer(ctx: Context, config: McpClientConfig, options
         if (page === spec.maxPages - 1) truncated = true
       }
     }
+    if (authorizationFailure !== undefined) throw authorizationFailure
     result = { ok: true, ...serverInfo === undefined ? {} : { serverInfo }, toolNames, truncated, durationMs: Date.now() - startedAt }
   } catch (error) {
-    result = { ok: false, stage, message: spec.signal?.aborted ? 'probe aborted' : binding.diagnostic(error, stage), durationMs: Date.now() - startedAt }
+    result = { ok: false, stage, message: spec.signal?.aborted ? 'probe aborted' : binding.diagnostic(authorizationFailure ?? error, stage), durationMs: Date.now() - startedAt }
   } finally {
     spec.signal?.removeEventListener('abort', abort)
   }

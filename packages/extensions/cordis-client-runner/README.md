@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-cordis-client-runner` runs the browser half of process-local dynamic packages for programmatic callers and existing browser controls. It loads a definition after an approved request or explicit user gesture, and removes it when the Host retracts the run. Page refresh does not restore definitions. Creator UI plugins use installed Client modules through Plugin Manager.
+`dsh-cordis-client-runner` runs the browser half of process-local dynamic packages for Creator, programmatic callers, and browser controls. It loads a definition after an approved request or explicit user gesture, and removes it when the Host retracts the run. Page refresh does not restore definitions. Plugin Manager installs persistent Client modules.
 
 ## Table of Contents
 
@@ -85,7 +85,7 @@ A `cordis/request-run` event asks this page whether to run a definition. Whoever
 Read these pages when the package-level contract is not enough. They move from the browser half to the host that asks it, the tools whose runs it answers, and the surface that renders it.
 
 - [Host runner](../cordis-host-runner/README.md) — the registry and run round trip this package answers.
-- [Tool package](../tool-cordis/README.md) — read-only runtime API discovery.
+- [Tool package](../tool-cordis/README.md) — runtime API inspection and temporary dynamic lifecycle tools.
 - [UI package](../ui-cordis/README.md) — the panel and cards that operate this face.
 - [Extensions subsystem](../../../docs/subsystems/extensions.md) — the generated `ctx.dynamicCordisRunner` API and `cordis/*` events.
 - [Client shells and dynamic packages Agent Note](../../../.agents/notes/implemented/architecture/2026-08-15-client-shells-and-dynamic-packages.md) — package placement and build faces for the client halves.

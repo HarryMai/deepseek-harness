@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-cordis-client-runner` 为程序调用方和现有浏览器控件运行进程内动态包的浏览器部分。它在请求获批或用户显式操作后加载定义，并在 Host 撤销运行时移除定义。页面刷新不会恢复定义。Creator UI 插件通过 Plugin Manager 使用已安装的 Client 模块。
+`dsh-cordis-client-runner` 为 Creator、程序调用方和浏览器控件运行进程内动态包的浏览器部分。它在请求获批或用户显式操作后加载定义，并在 Host 撤销运行时移除定义。页面刷新不会恢复定义。Plugin Manager 安装持久化 Client 模块。
 
 ## 目录
 
@@ -85,7 +85,7 @@ Slots provider 的精确 `listSubTree` 查询包含带说明的 owner 字段及�
 当包级约定不够用时阅读以下页面。它们从浏览器半逐步进入发问的 host、其运行被应答的工具，以及渲染它的界面。
 
 - [Host runner](../cordis-host-runner/README.zh.md)——本包应答的注册表与运行往返。
-- [工具包](../tool-cordis/README.zh.md)——只读运行时 API 发现。
+- [工具包](../tool-cordis/README.zh.md)——运行时 API 检查和临时动态生命周期工具。
 - [UI 包](../ui-cordis/README.zh.md)——操作这个面的面板与卡片。
 - [extensions 子系统](../../../docs/subsystems/extensions.zh.md)——生成的 `ctx.dynamicCordisRunner` API 与 `cordis/*` 事件。
 - [客户端外壳与动态包 Agent Note](../../../.agents/notes/implemented/architecture/2026-08-15-client-shells-and-dynamic-packages.zh.md)——浏览器半的包归属与构建面。

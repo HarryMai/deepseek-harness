@@ -167,7 +167,7 @@ describe('desktop macOS release signature', () => {
       expect(config.publish).toBeNull()
       expect(config.extraMetadata).not.toHaveProperty('dshMandatoryUpdatePolicy')
       await expect(config.afterSign!({ electronPlatformName: 'darwin' } as Parameters<NonNullable<typeof config.afterSign>>[0])).resolves.toBeUndefined()
-      expect(config.artifactBuildCompleted!({ file: '/tmp/local-unsigned.dmg' } as Parameters<NonNullable<typeof config.artifactBuildCompleted>>[0])).toBeUndefined()
+      expect(config.artifactBuildCompleted!({ file: '/tmp/local-unsigned.dmg' })).toBeUndefined()
     }
   })
 

@@ -6,6 +6,9 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../../credentials/authorization" },
+    { "path": "../../host/webserver" },
+    { "path": "../../util/brand" },
     {
       "path": "../../../vendor/cosmokit"
     },
@@ -58,7 +61,16 @@
       "path": "../../credentials/credentials"
     },
     {
-      "path": "../../util/values"
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../session/session-projection"
+    },
+    {
+      "path": "../../session/working-directory"
+    },
+    {
+      "path": "../../util/output-retention"
     }
   ]
 }

@@ -80,7 +80,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Registry and cross-page router behind the two model-facing inspect tools. */
+/** Registry and cross-page router behind the model-facing inspection tool. */
 export class CordisInspectRegistryService extends Service {
   private readonly providers = new Map<string, HostCordisInspectProviderRegistration>()
   private readonly pending = new Map<CordisInspectRequestId, PendingClientQuery>()
@@ -345,14 +345,20 @@ function validateInput(
   const violations = validateJsonSchemaValue(schema, input ?? {}, 'input')
   if (violations.length === 0) return input
   if (typeof input === 'string') {
+    let decoded: JsonValue | undefined
     try {
-      const decoded = JSON.parse(input) as JsonValue
-      if (validateJsonSchemaValue(schema, decoded, 'input').length === 0) return decoded
-    } catch {
-      // Preserve the regular schema error below when a model supplied non-JSON text.
+      decoded = recoverEncodedInput(schema, input)
+    } catch (_recoveryFailed) {
+      // The original input already failed validation and remains the reported error.
     }
+    if (decoded !== undefined) return decoded
   }
   throw new InspectError(`${platform} Cordis inspect ${provider}.${method.name} rejected input: ${violations.join('; ')}`, 'INSPECT_INVALID_INPUT')
+}
+
+function recoverEncodedInput(schema: JsonSchemaNode, input: string): JsonValue | undefined {
+  const decoded = JSON.parse(input) as JsonValue
+  return validateJsonSchemaValue(schema, decoded, 'input').length === 0 ? decoded : undefined
 }
 
 function validateOutput(

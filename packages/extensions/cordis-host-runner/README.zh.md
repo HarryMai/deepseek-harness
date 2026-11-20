@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-cordis-host-runner` 提供运行时检查，并为程序调用方和浏览器控件保留进程内动态定义。Host 部分在 `node:vm` 中运行；浏览器部分使用 Client runner 和审批 UI。定义在重启后消失。Agent 通过 `tool-cordis` 发现 API，通过 Plugin Manager 安装持久化 bundle；没有模型工具创建动态定义。
+`dsh-cordis-host-runner` 提供运行时检查，并为 agent、程序调用方和浏览器控件保留进程内动态定义。Host 部分在 `node:vm` 中运行；浏览器部分使用 Client runner 和审批 UI。定义在重启后消失。Creator 提供临时动态工具；Plugin Manager 安装持久化 bundle。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-需要检查注册表或程序侧动态包生命周期时挂载此插件。浏览器生命周期消费者还需要 Client runner 和 UI 包。内置 Creator 流程使用已安装 bundle，不使用此定义注册表。
+需要检查注册表或动态包生命周期时挂载此插件。浏览器生命周期消费者还需要 Client runner 和 UI 包。内置 Standard 模式提供检查；Creator 还提供临时动态包的模型工具。
 
 ### Inspect 输入路由
 
@@ -57,7 +57,7 @@ Client 查询在 `clientInspectTimeoutMs` 内接受首个有效页面响应。�
 
 ### run 会做什么
 
-程序调用方使用 `define`、`run`、`stop` 和 `undefine`；浏览器面板操作已有定义。仅含 Host 的包在本进程激活。带浏览器部分的包等待审批或取消，批准后先加载 Host 再加载 Client。`mode: "run"` 启动当前版本，`mode: "update"` 替换版本。Stop 释放运行中的 effect 并保留定义；undefine 还会移除定义。
+程序调用方使用 `define`、`run`、`stop` 和 `undefine`；Creator 提供对应的模型工具，浏览器面板操作已有定义。仅含 Host 的包在本进程激活。带浏览器部分的包等待审批或取消，批准后先加载 Host 再加载 Client。`mode: "run"` 启动当前版本，`mode: "update"` 替换版本。Stop 释放运行中的 effect 并保留定义；undefine 还会移除定义。
 
 ### 定义的去向
 
@@ -108,7 +108,7 @@ runner 基于两项职责划分。**注册表与沙箱是同一个服务。** `D
 
 当包级约定不够用时阅读以下页面。它们从 runner 逐步进入调用它的工具、应答它的浏览器半与生成的表面。
 
-- [工具包](../tool-cordis/README.zh.md)——使用其检查注册表的只读工具。
+- [工具包](../tool-cordis/README.zh.md)——检查工具和临时动态生命周期工具。
 - [Client runner](../cordis-client-runner/README.zh.md)——应答运行请求并装载浏览器半代码的浏览器半。
 - [UI 包](../ui-cordis/README.zh.md)——用户批准并操作运行的面板。
 - [生成的配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-cordis-host-runner)——每个受支持配置字段。
@@ -124,7 +124,7 @@ runner 基于两项职责划分。**注册表与沙箱是同一个服务。** `D
 
 #### 模型看到的内容
 
-本包不注册工具或提示。程序侧 `run` 调用和浏览器控件可向所属会话发送结果与诊断；停止和移除操作注入用户消息。内置模型工具无法创建或更新动态定义。
+本包不注册工具或提示。程序侧 `run` 调用和浏览器控件可向所属会话发送结果与诊断；停止和移除操作注入用户消息。Creator 通过 `tool-cordis` 提供动态定义和生命周期工具。
 
 #### Token 影响
 

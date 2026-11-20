@@ -31,8 +31,24 @@ export class DebugLog {
     if (this.path === undefined) return
     try {
       mkdirSync(dirname(this.path), { recursive: true })
-      if (statSync(this.path).size > DEBUG_LOG_MAX_BYTES) renameSync(this.path, `${this.path}.1`)
-    } catch { /* an absent log fails statSync; rotation is best-effort either way */ }
+    } catch (_directoryFailed) {
+      // An unavailable diagnostic directory must not prevent the runner from starting.
+      return
+    }
+    let size: number
+    try {
+      size = statSync(this.path).size
+    } catch (_statFailed) {
+      // A missing or inaccessible log cannot be rotated; later writes remain best-effort.
+      return
+    }
+    if (size > DEBUG_LOG_MAX_BYTES) {
+      try {
+        renameSync(this.path, `${this.path}.1`)
+      } catch (_rotationFailed) {
+        // Rotation failure must not prevent the runner from starting.
+      }
+    }
   }
 
   /** Whether records land anywhere (false keeps every record call a no-op). */
@@ -50,6 +66,8 @@ export class DebugLog {
     if (this.path === undefined) return
     try {
       appendFileSync(this.path, `${JSON.stringify({ t: new Date().toISOString(), pid: process.pid, event, ...fields })}\n`)
-    } catch { /* the log must never break the runner */ }
+    } catch (_recordFailed) {
+      // Diagnostic record failures must not affect the sandbox runner.
+    }
   }
 }

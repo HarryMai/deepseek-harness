@@ -174,11 +174,13 @@ export interface HostConnectionRpc {
    * Register one authenticated absolute channel prefix.
    * @param channel - absolute logical channel such as `/rpc`.
    * @param handler - decoded endpoint handler returning the existing RPC result shape.
+   * @param options - require an owner Peer on a loopback socket and Host authority; forwarded requests are refused.
    * @returns asynchronous disposer removing the channel and its physical route.
    */
   handle(
     channel: string,
     handler: ConnectionRpcHandler,
+    options?: { readonly access?: 'owner-loopback' },
   ): () => Promise<void>
 
   /**

@@ -3,16 +3,21 @@ import { downloadDesktopElectron, resolveElectronDownloadTimeout } from '../scri
 
 const target = { version: '44.0.0', platform: 'darwin', arch: 'x64', cacheRoot: '/tmp/electron-cache' }
 
-type Download = Parameters<typeof downloadDesktopElectron>[5]
-type DownloadOptions = NonNullable<Parameters<NonNullable<Download>>[0]['downloadOptions']>
 type Progress = { transferred: number; total: number | null; percent: number }
+type Download = NonNullable<Parameters<typeof downloadDesktopElectron>[5]>
+type DownloadOptions = {
+  signal: AbortSignal
+  quiet: boolean
+  getProgressCallback: (value: Progress) => Promise<void>
+}
 
-function stalledDownload(onOptions: (options: Parameters<NonNullable<Download>>[0]) => void): Download {
-  return vi.fn<NonNullable<Download>>(async options => {
+function stalledDownload(onOptions: (options: DownloadOptions) => void): Download {
+  return vi.fn<Download>(async (request) => {
+    const options = request.downloadOptions as DownloadOptions
     onOptions(options)
-    const { signal } = options.downloadOptions as DownloadOptions & { signal: AbortSignal }
+    const { signal } = options
     await new Promise<never>((_resolve, reject) => {
-      signal.addEventListener('abort', () => { reject(signal.reason) }, { once: true })
+      signal.addEventListener('abort', () => { reject(signal.reason as Error) }, { once: true })
     })
     return '/tmp/unreachable-electron.zip'
   })
@@ -27,11 +32,8 @@ describe('Electron archive download', () => {
   it('passes a quiet downloader, abort signal, and progress callback to the injected downloader', async () => {
     const progress: Progress[] = []
     let receivedSignal: AbortSignal | undefined
-    const download = vi.fn<NonNullable<Download>>(async options => {
-      const downloadOptions = options.downloadOptions as DownloadOptions & {
-        signal: AbortSignal
-        getProgressCallback: (value: Progress) => Promise<void>
-      }
+    const download = vi.fn<Download>(async (options) => {
+      const downloadOptions = options.downloadOptions as DownloadOptions
       receivedSignal = downloadOptions.signal
       expect(downloadOptions.quiet).toBe(true)
       await downloadOptions.getProgressCallback({ transferred: 1024, total: 2048, percent: 0.5 })
@@ -53,9 +55,8 @@ describe('Electron archive download', () => {
   it('aborts a stalled download, waits for downloader cleanup, and reports the target', async () => {
     vi.useFakeTimers()
     let cleanedUp = false
-    const download = stalledDownload(options => {
-      const signal = (options.downloadOptions as DownloadOptions & { signal: AbortSignal }).signal
-      signal.addEventListener('abort', () => { cleanedUp = true }, { once: true })
+    const download = stalledDownload((options) => {
+      options.signal.addEventListener('abort', () => { cleanedUp = true }, { once: true })
     })
     const operation = downloadDesktopElectron(target.version, target.platform, target.arch, target.cacheRoot,
       { DSH_DESKTOP_ELECTRON_DOWNLOAD_TIMEOUT_MS: '1000' }, download)
@@ -76,13 +77,9 @@ describe('Electron archive download', () => {
     vi.useFakeTimers()
     let progress!: (value: Progress) => Promise<void>
     let signal!: AbortSignal
-    const download = stalledDownload(options => {
-      const downloadOptions = options.downloadOptions as DownloadOptions & {
-        signal: AbortSignal
-        getProgressCallback: (value: Progress) => Promise<void>
-      }
-      signal = downloadOptions.signal
-      progress = downloadOptions.getProgressCallback
+    const download = stalledDownload((options) => {
+      signal = options.signal
+      progress = options.getProgressCallback
     })
     const operation = downloadDesktopElectron(target.version, target.platform, target.arch, target.cacheRoot,
       { DSH_DESKTOP_ELECTRON_DOWNLOAD_TIMEOUT_MS: '1000' }, download)

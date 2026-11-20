@@ -25,4 +25,10 @@ describe('web-app MCP settings roster', () => {
 
     expect(patch).toContain("- id: file-upload\n      name: '@deepseek-ai/dsh-client-file-upload'")
   })
+
+  it('keeps dynamic Cordis tools disabled in Standard mode', () => {
+    const root = fileURLToPath(new URL('..', import.meta.url))
+    const standard = readFileSync(resolve(root, 'presets/standard.patch.yml'), 'utf8')
+    expect(standard).toContain("- id: tool-cordis\n            name: '@deepseek-ai/dsh-tool-cordis'\n            config:\n              dynamic: false")
+  })
 })

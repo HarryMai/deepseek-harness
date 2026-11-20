@@ -1,6 +1,6 @@
 /** Dynamic user-owned MCP settings resolve into Loader child entries. */
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -8,6 +8,10 @@ import { Context } from '@deepseek-ai/cordis'
 import { boot, initProfile, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import ConfigEditor from '@deepseek-ai/dsh-config-editor'
 import Settings from '@deepseek-ai/dsh-settings'
+import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import type { Agent, Inbox } from '@deepseek-ai/dsh-agent'
 import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -47,13 +51,13 @@ const emptyInbox: Inbox = {
   splice: () => [],
 }
 
-function createMockAgent(ctx: Context, id: string, sessionCwd?: string): Agent {
+function createMockAgent(ctx: Context, id: string, sessionCwd?: string, seed?: ReturnType<Session['snapshotEvents']>): Agent {
   const holder: { ctx?: Context } = {}
   const sessionId = SessionId(id)
   const agent: Agent = {
     id: sessionId,
     options: {},
-    session: Session.create(sessionId, undefined, {
+    session: Session.create(sessionId, seed, {
       version: SESSION_FORMAT_VERSION,
       id: sessionId,
       createdAt: 0,
@@ -105,7 +109,7 @@ async function bootManager(directory: string, events: DynamicEvents): Promise<{ 
   const profile: ProfileContext = {
     name: 'test', startedBundles: ['test-bundle'], dir: profileDir,
     patchPath: join(profileDir, 'cordis.patch.yml'), installAnchor: join(home, 'package.json'),
-    cwd: home, home, overlays: [], telemetryDisabledEnv: undefined,
+    cwd: home, home, overlayPaths: [], telemetryDisabledEnv: undefined,
   }
   const ctx = await boot('test', configPath, readProfilePatches('test', profile), (root) => {
     root.provide('profileContext', profile)
@@ -301,6 +305,50 @@ describe('mcp-client settings configuration', () => {
     expect(MCP_SETTINGS_NAMESPACE).toBe('mcp-client')
     expect(name).toBe('mcp-client-settings')
     expect(inject).toEqual([])
+  })
+
+  it('uses the recorded workspace for new clients without moving an existing client', async () => {
+    const directory = await realpath(await mkdtemp(join(tmpdir(), 'dsh-mcp-workspace-')))
+    directories.push(directory)
+    const origin = join(directory, 'origin')
+    const moved = join(directory, 'moved')
+    await mkdir(origin)
+    await mkdir(moved)
+    const events: DynamicEvents = { started: [], stopped: [] }
+    const { ctx } = await bootManager(directory, events)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(SessionProjections)
+    await ctx.plugin(LocalFileSystem, { cwd: directory })
+    await ctx.plugin(WorkingDirectory, { defaultDirectory: directory })
+
+    const first = { enabled: true, transport: 'stdio' as const, serverName: 'first', command: 'first', args: [], cwd: '/fallback', url: '' }
+    const second = { enabled: true, transport: 'stdio' as const, serverName: 'second', command: 'second', args: [], cwd: '/fallback', url: '' }
+    await ctx.settings.update(MCP_SETTINGS_NAMESPACE, { enabled: true, servers: { first } })
+    const agent = createMockAgent(ctx, 'workspace-agent', origin)
+    await ctx.parallel('agent/created', { agent, source: 'startup' })
+    await vi.waitFor(() => { expect(events.started).toEqual([{ serverName: 'first', cwd: origin }]) })
+
+    await ctx.workingDirectory.set(agent, moved)
+    expect(events.stopped).toEqual([])
+    await ctx.settings.update(MCP_SETTINGS_NAMESPACE, { servers: { first, second } })
+    await vi.waitFor(() => {
+      expect(events.started).toEqual([{ serverName: 'first', cwd: origin }, { serverName: 'second', cwd: moved }])
+      expect(events.stopped).toEqual([])
+    })
+
+    await ctx.parallel('agent/disposed', { agent })
+    await vi.waitFor(() => { expect(events.stopped).toHaveLength(2) })
+    const restored = createMockAgent(ctx, 'workspace-restored', origin, agent.session.snapshotEvents())
+    await ctx.parallel('agent/created', { agent: restored, source: 'startup' })
+    await vi.waitFor(() => {
+      expect(events.started.slice(2)).toEqual([{ serverName: 'first', cwd: moved }, { serverName: 'second', cwd: moved }])
+    })
+
+    const withoutWorkspace = createMockAgent(ctx, 'workspace-absent')
+    await ctx.parallel('agent/created', { agent: withoutWorkspace, source: 'startup' })
+    await vi.waitFor(() => {
+      expect(events.started.slice(4)).toEqual([{ serverName: 'first', cwd: '/fallback' }, { serverName: 'second', cwd: '/fallback' }])
+    })
   })
 
   it('persists master and per-server switches, mounts independent clients per agent session with session cwds, and unloads on agent disposal', async () => {

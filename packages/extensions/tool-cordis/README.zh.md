@@ -1,5 +1,5 @@
 ---
-description: "为开发和配置已安装 Harness 插件的 agent 提供只读运行时 API 查询。"
+description: "为开发 Harness 扩展的 agent 查询运行时 API，并管理临时插件。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-编写插件代码前查询 Host 和 Client 的运行时 API；组合提供 runner 时，还可使用临时的动态生命周期工具。创造模式同时提供这些工具与 Plugin Manager，后者负责持久化 profile 变更。检查注册表由 Cordis host runner 提供；浏览器查询需要已连接的页面。
+编写插件代码前查询 Host 和 Client 的运行时 API；组合启用时，还可使用临时的动态生命周期工具。标准模式提供检查工具；创造模式还提供动态工具与负责持久化 profile 变更的 Plugin Manager。检查注册表由 Cordis host runner 提供；浏览器查询需要已连接的页面。
 
 ## 目录
 
@@ -25,13 +25,13 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-创造模式包含这组工具。其他组合需要在宿主组合里、提供 `cordisInspect` 的 host runner 旁挂载一次 `@deepseek-ai/dsh-tool-cordis/host`，并在每个要暴露工具的 agent preset 里挂载 `@deepseek-ai/dsh-tool-cordis`；仅有 preset 条目不会注册 Host provider。通过 [Plugin Manager](../../boot/plugin-manager/README.zh.md) 安装包含持久插件代码或 MCP 配置的组合包。
+标准模式包含 `cordis_inspect`；创造模式还包含动态工具。其他组合需要在宿主组合里、提供 `cordisInspect` 的 host runner 旁挂载一次 `@deepseek-ai/dsh-tool-cordis/host`，并在每个要暴露工具的 agent preset 里挂载 `@deepseek-ai/dsh-tool-cordis`；仅有 preset 条目不会注册 Host provider。通过 [Plugin Manager](../../boot/plugin-manager/README.zh.md) 安装包含持久插件代码或 MCP 配置的组合包。
 
-当组合还提供 `dynamicCordisRunner` 时，本插件也允许会话定义并运行临时的模型编写工具、服务或浏览器 UI，而无需将其变为仓库插件；没有该 runner 时，生命周期工具不会激活。
+启用 `dynamic` 时，旧版检查工具仍可使用。如果组合还提供 `dynamicCordisRunner` 和 `systemPrompt`，会话可以定义并运行临时的模型编写工具、服务或浏览器 UI，而无需将其变为仓库插件。`dynamic` 默认为 `true`；随发行版提供的标准 preset 将其设为 `false`。
 
-结构化参数仍应保持结构化：调用方将 `cordis_inspect_query.input`、`cordis_define.plugin` 和 `cordis_define.code` 作为 JSON 对象传入，而不是 JSON 文本。运行时不会改写本来就合法的普通字符串。若模型误把 Cordis 方法或 Define 字段所需的对象写成 JSON 文本，Cordis 边界只有在解码结果通过该字段精确声明的 schema 时才接受它；格式错误或不匹配的文本会报告原有校验失败，或报告该 Define 字段专属的错误。
+结构化参数仍应保持结构化：调用方将 `cordis_inspect.query.input`、`cordis_inspect_query.input`、`cordis_define.plugin` 和 `cordis_define.code` 作为 JSON 对象传入，而不是 JSON 文本。运行时不会改写本来就合法的普通字符串。若模型误把 Cordis 方法或 Define 字段所需的对象写成 JSON 文本，Cordis 边界只有在解码结果通过该字段精确声明的 schema 时才接受它；格式错误或不匹配的文本会报告原有校验失败，或报告该 Define 字段专属的错误。
 
-Host 的 `Config` provider 分页列出运行中的 Loader entry（`offset`、最多 100 的 `limit`、可选的精确插件 `name`；`total` 与 `nextOffset` 界定遍历），每个 entry 带 Loader id、patch 所寻址的树内 id 及其 Config 状态（`schema`、`absent`、`unsupported`、group 与 include 载体为 `tree`、禁用、未导入或已销毁的 entry 为 `inactive`）。它把单个 entry 的原生 Config 投影为自包含的 JSON Schema 文档，同时在 profile 包查找能解析时给出该 entry 的 `packageDir`，即包 README 与构建产物 `lib/` 所在目录。没有 Agent 的调用，或在没有 Loader 的 Host 上的 `Config` 查询，以 `ToolContextUnavailableError` 失败；`Config` 分页字段格式错误时以 `ToolArgsError` 失败；未知 entry id 以 `InspectError` `INSPECT_TARGET_NOT_FOUND` 失败。
+Host 的 `Config` provider 分页列出运行中的 Loader entry（`offset`、最多 100 的 `limit`、可选的精确插件 `name`；`total` 与 `nextOffset` 界定遍历），每个 entry 带 Loader id、patch 所寻址的树内 id 及其 Config 状态（`schema`、`absent`、`unsupported`、group 与 include 载体为 `tree`、禁用、未导入或已销毁的 entry 为 `inactive`）。它把单个 entry 的原生 Config 投影为自包含的 JSON Schema 文档，同时在 profile 包查找能解析时给出该 entry 的 `packageDir`，即包 README 与构建产物 `lib/` 所在目录。没有 Agent 的调用，或在没有 Loader 的 Host 上的 `Config` 查询，以 `ToolContextUnavailableError` 失败；`Config` 分页字段格式错误时以 `ToolArgsError` 失败；未知 entry id 以 `InspectError` `INSPECT_TARGET_NOT_FOUND` 失败。Host 的 `Runtime` provider 的 `getVersion` 返回 `{ version }`，即用于插件兼容性检查的当前运行 DSH 版本。
 
 ### 最小组合
 
@@ -47,10 +47,11 @@ Host 的 `Config` provider 分页列出运行中的 Loader entry（`offset`、�
 
 ### 工具能做什么
 
-三个检查工具只读；四个生命周期工具定义并管理临时包。所有结果都是渲染成文本的 JSON。
+检查工具只读；四个生命周期工具定义并管理临时包。所有结果都是渲染成文本的 JSON。
 
-- `cordis_inspect_list`——列出 Inspect Provider（host 与 client）及其查询方法。
-- `cordis_inspect_query`——执行一次提供方查询：精确的服务方法、事件模式、插件 Config schema、工具 schema、主题 token 或实时 slot 树。
+- `cordis_inspect`——省略 `query` 时列出 provider，传入 `query` 时执行对应的精确查询。
+- `cordis_inspect_list`——启用动态工具时列出 Inspect Provider（host 与 client）及其查询方法。
+- `cordis_inspect_query`——启用动态工具时执行一次提供方查询：精确的服务方法、事件模式、插件 Config schema、工具 schema、主题 token 或实时 slot 树。
 - `cordis_inspect_self`——列出本会话的动态插件，或检查一个包的源码与运行时诊断。
 - `cordis_define`——登记一个包：新插件（`plugin.kind: "new"`，配 3–6 个字母的 `idPrefix`），或既有插件的新版本（`plugin.kind: "existing"`，配其 `pluginId`）。它只校验参数与语法；不运行任何东西，也不请求审批。
 - `cordis_run`——激活一个包（首次激活或重启用 `mode: "run"`，切换版本用 `mode: "update"`）。带浏览器半的包可能先返回 `awaiting-approval`，直到有人允许；工具从不等待最终结果。
@@ -73,7 +74,7 @@ Host 的 `Config` provider 分页列出运行中的 Loader entry（`offset`、�
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-Host provider 结合生成的 Service/Event 目录、经 app-boot Config 投影器投影的运行中 Loader 树，以及请求 agent 的工具注册表。Client provider 通过现有检查注册表同步清单，并从已连接页面回答查询。`/host` 条目负责进程级 provider 注册，每个 preset 条目通过 Cordis effect 持有检查工具和可选的生命周期工具；注册表拒绝重复的 provider id，所以 provider 按进程注册一次。检查直接读取 provider，不维护独立运行时投影，因此不发布不变式配套插件。
+Host provider 结合生成的 Service/Event 目录、经 app-boot Config 投影器投影的运行中 Loader 树、请求 agent 的工具注册表及当前运行的 DSH 版本。Client provider 通过现有检查注册表同步清单，并从已连接页面回答查询。`/host` 条目负责进程级 provider 注册，每个 preset 条目通过 Cordis effect 持有检查工具和可选的生命周期工具；注册表拒绝重复的 provider id，所以 provider 按进程注册一次。检查直接读取 provider，不维护独立运行时投影，因此不发布不变式配套插件。
 
 </details>
 
@@ -94,11 +95,11 @@ Host provider 结合生成的 Service/Event 目录、经 app-boot Config 投影�
 
 #### 模型所见
 
-[工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-cordis) 描述检查工具和生命周期工具。prompt 段落指导模型先检查再编写，并保留 Define 字段的 JSON 文本兼容规则。在 `cordis` preset 中，首轮 skill catalog 携带随附的 `dsh-doc` 技能的描述，该技能覆盖关于 DSH 的问题，以及构建或修改 DSH 插件、MCP 连接和 agent preset 的请求；其参考资料覆盖 Plugin Manager、MCP 设置、Client 打包和 slot 注册。查询结果包含所请求的 API 声明、当前工具 schema、带 Config 状态的运行中 entry 目录，或单个 entry 投影后的 Config JSON Schema。
+[工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-cordis) 描述检查工具和生命周期工具。prompt 段落指导模型先检查再编写，并保留 Define 字段的 JSON 文本兼容规则。在 `standard` 和 `cordis` preset 中，首轮 skill catalog 携带随附的 `dsh-doc` 技能的描述，该技能覆盖关于 DSH 的问题，以及构建或修改 DSH 插件、MCP 连接和 agent preset 的请求；其参考资料覆盖 Plugin Manager、MCP 设置、Client 打包和 slot 注册。查询结果包含所请求的 API 声明、当前工具 schema、带 Config 状态的运行中 entry 目录，单个 entry 投影后的 Config JSON Schema，或当前运行的 DSH 版本。
 
 #### Token 影响
 
-插件可见时，工具 schema 和动态插件指南进入模型请求。查询结果追加到转录中；精确查询避免加载无关声明。
+标准模式和创造模式都向模型请求提供检查工具；创造模式还提供动态插件工具 schema 和指南。查询结果追加到转录中；精确查询避免加载无关声明。
 
 #### KV Cache 影响
 
