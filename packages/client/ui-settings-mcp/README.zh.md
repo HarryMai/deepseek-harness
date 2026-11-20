@@ -52,7 +52,7 @@ kind: "package-reference"
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [MCP 设置指南](../../../MCP_SETTINGS.md)——面向用户的配置示例与运行限制。
+- [MCP 设置指南](../../../customer/MCP_SETTINGS.md)——面向用户的配置示例与运行限制。
 - [mcp-client](../../mcp/mcp-client/README.zh.md)——从已保存记录加载的 Host 客户端实现。
 - [ui-settings](../ui-settings/README.zh.md)——共享浏览器 settings scope 与分区注册表。
 - [settings](../../settings/settings/README.zh.md)——持久化用户设置与 Host 侧存储。

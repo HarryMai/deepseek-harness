@@ -264,6 +264,7 @@ Desktop 在 Host 启动后、打开工作区前检查模型 API Key 引用是否
 <a id="windows-ev-signing"></a>
 <a id="desktop-runtime-preparation"></a>
 <a id="runtime-file-selection"></a>
+<a id="unsigned-local-packages"></a>
 <a id="unsigned-windows-test-installer"></a>
 <a id="local-macos-dmg-without-release-signing"></a>
 <a id="local-official-bundles-from-a-loopback-registry"></a>

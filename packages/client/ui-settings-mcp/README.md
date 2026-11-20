@@ -52,7 +52,7 @@ The browser controller derives its draft from the Host `mcp-client` profile entr
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [MCP settings guide](../../../MCP_SETTINGS.md) — user-facing configuration examples and operational limits.
+- [MCP settings guide](../../../customer/MCP_SETTINGS.md) — user-facing configuration examples and operational limits.
 - [mcp-client](../../mcp/mcp-client/README.md) — the Host client implementation loaded from saved records.
 - [ui-settings](../ui-settings/README.md) — the shared browser settings scope and section registry.
 - [settings](../../settings/settings/README.md) — durable user settings and Host-side persistence.
