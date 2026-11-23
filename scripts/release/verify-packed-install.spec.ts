@@ -52,6 +52,19 @@ fs.writeFileSync(process.env.CACHE_EVIDENCE, JSON.stringify({ consumer, files,
       expect(archive.error).toBeUndefined()
       expect(archive.signal).toBeNull()
       expect(archive.status, archive.stderr).toBe(0)
+      const desktopDirectory = join(directory, 'dsh-desktop', 'package')
+      mkdirSync(join(desktopDirectory, 'lib'), { recursive: true })
+      writeFileSync(join(desktopDirectory, 'lib/bin.js'), 'console.log("0.0.1")\n')
+      writeFileSync(join(desktopDirectory, 'package.json'), JSON.stringify({
+        name: '@deepseek-ai/dsh-desktop',
+        version: '0.0.1',
+      }))
+      const desktopArchive = spawnSync('tar', ['-czf', join(packed, 'dsh-desktop.tgz'), '-C', join(directory, 'dsh-desktop'), 'package'], {
+        encoding: 'utf8', timeout: 30_000,
+      })
+      expect(desktopArchive.error).toBeUndefined()
+      expect(desktopArchive.signal).toBeNull()
+      expect(desktopArchive.status, desktopArchive.stderr).toBe(0)
       for (const [name, platform] of [
         ['matching', { os: [process.platform], cpu: ['any'] }],
         ['wrong-os', { os: [`!${process.platform}`] }],

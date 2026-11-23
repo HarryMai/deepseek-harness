@@ -1,11 +1,22 @@
 import { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Fiber } from '@deepseek-ai/cordis'
+import TypertGateway from '@deepseek-ai/dsh-api-gateway'
+import RemoteAccessService from '@deepseek-ai/dsh-api-remote-access'
+import type { PeerId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
+import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import DynamicCordisRunnerService from '../src/index.ts'
 import { CordisInspectRegistryService, InspectError } from '../src/inspect-registry.ts'
-import type { CordisInspectMethodManifest } from '../src/types.ts'
+import type {
+  CordisInspectMethodManifest,
+  CordisInspectProviderManifest,
+  CordisInspectQueryRequest,
+  CordisInspectRequestId,
+} from '../src/types.ts'
+import { AGENT_A, AGENT_B } from './helpers.ts'
 
-const AGENT = { id: 'inspect-session' } as Agent
+const AGENT = AGENT_A
 const SIGNAL = new AbortController().signal
 const CLIENT_QUERY_TIMEOUT_MS = 100
 
@@ -51,7 +62,7 @@ describe('Cordis inspect nested JSON recovery', () => {
     let seen: JsonValue | undefined
     ctx.on('cordis/inspect-query', (request) => {
       seen = request.input
-      registry.resolveClientQuery(AGENT, request.requestId, {
+      registry.resolveClientQuery(AGENT.id, request.requestId, {
         ok: true,
         data: request.input ?? null,
       })
@@ -99,15 +110,6 @@ describe('Cordis inspect nested JSON recovery', () => {
       .rejects.toThrow('"input" must be an object')
   })
 })
-
-import type { Fiber } from '@deepseek-ai/cordis'
-import TypertGateway from '@deepseek-ai/dsh-api-gateway'
-import RemoteAccessService from '@deepseek-ai/dsh-api-remote-access'
-import type { PeerId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
-import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
-import DynamicCordisRunnerService from '../src/index.ts'
-import type { CordisInspectProviderManifest, CordisInspectQueryRequest, CordisInspectRequestId } from '../src/types.ts'
-import { AGENT_A, AGENT_B } from './helpers.ts'
 
 const manifest: CordisInspectProviderManifest = {
   id: 'Service',
@@ -177,7 +179,7 @@ function start() {
 }
 
 function answer(query: ReturnType<typeof start>) {
-  return registry.resolveClientQuery(AGENT_A, query.request.requestId, { ok: true, data: { name: 'theme' } })
+  return registry.resolveClientQuery(AGENT_A.id, query.request.requestId, { ok: true, data: { name: 'theme' } })
 }
 
 async function connectGatewayClient(): Promise<AbortController> {
@@ -241,7 +243,7 @@ describe('Client inspect completion', () => {
 
   it('returns the Client catalog failure at the deadline instead of losing it', async () => {
     const query = start()
-    expect(registry.resolveClientQuery(AGENT_A, query.request.requestId, {
+    expect(registry.resolveClientQuery(AGENT_A.id, query.request.requestId, {
       ok: false, reason: 'provider-error', message: 'no catalogued Service named "remote"',
     })).toEqual({ accepted: false })
     await vi.advanceTimersByTimeAsync(99)
@@ -255,7 +257,7 @@ describe('Client inspect completion', () => {
 
   it('allows a later successful page to win after another page fails', async () => {
     const query = start()
-    expect(registry.resolveClientQuery(AGENT_A, query.request.requestId, failure)).toEqual({ accepted: false })
+    expect(registry.resolveClientQuery(AGENT_A.id, query.request.requestId, failure)).toEqual({ accepted: false })
     await vi.advanceTimersByTimeAsync(99)
     expect(answer(query)).toEqual({ accepted: true })
     expect(await query.result).toEqual({ value: { name: 'theme' } })
@@ -266,22 +268,22 @@ describe('Client inspect completion', () => {
 
   it('keeps the first failure when several pages fail', async () => {
     const query = start()
-    registry.resolveClientQuery(AGENT_A, query.request.requestId, failure)
-    registry.resolveClientQuery(AGENT_A, query.request.requestId, { ...failure, message: 'second failure' })
+    registry.resolveClientQuery(AGENT_A.id, query.request.requestId, failure)
+    registry.resolveClientQuery(AGENT_A.id, query.request.requestId, { ...failure, message: 'second failure' })
     await vi.advanceTimersByTimeAsync(100)
     expect(await query.result).toEqual({ error: timeout + 'Client failure: provider-error: page failed', code: 'INSPECT_TIMEOUT' })
   })
 
   it('retains output validation errors for timeout diagnostics', async () => {
     const query = start()
-    expect(registry.resolveClientQuery(AGENT_A, query.request.requestId, { ok: true, data: {} })).toEqual({ accepted: false })
+    expect(registry.resolveClientQuery(AGENT_A.id, query.request.requestId, { ok: true, data: {} })).toEqual({ accepted: false })
     await vi.advanceTimersByTimeAsync(100)
     expect(await query.result).toHaveProperty('error', expect.stringContaining('Client Cordis inspect Service.listService returned invalid output'))
   })
 
   it('accepts valid output after an invalid response', async () => {
     const query = start()
-    registry.resolveClientQuery(AGENT_A, query.request.requestId, { ok: true, data: {} })
+    registry.resolveClientQuery(AGENT_A.id, query.request.requestId, { ok: true, data: {} })
     expect(answer(query)).toEqual({ accepted: true })
     expect(await query.result).toEqual({ value: { name: 'theme' } })
     expect(vi.getTimerCount()).toBe(0)
@@ -289,7 +291,7 @@ describe('Client inspect completion', () => {
 
   it('ignores responses from another Agent without retaining their error', async () => {
     const query = start()
-    expect(registry.resolveClientQuery(AGENT_B, query.request.requestId, failure)).toEqual({ accepted: false })
+    expect(registry.resolveClientQuery(AGENT_B.id, query.request.requestId, failure)).toEqual({ accepted: false })
     await vi.advanceTimersByTimeAsync(100)
     expect(await query.result).toEqual({ error: timeout + 'Open or reconnect the Harness page, then retry.', code: 'INSPECT_TIMEOUT' })
   })

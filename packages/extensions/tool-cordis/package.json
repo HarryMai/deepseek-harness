@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-tool-cordis",
   "description": "Runtime API inspection and optional temporary dynamic plugins for Harness development",
-  "version": "0.2.2-rc.5",
+  "version": "0.2.3-alpha.2",
   "publishConfig": {
     "access": "public"
   },
@@ -65,6 +65,7 @@
     "@deepseek-ai/schemastery": "workspace:~",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-projection": "workspace:*",
     "@deepseek-ai/dsh-util-values": "workspace:*"
   }
 }
