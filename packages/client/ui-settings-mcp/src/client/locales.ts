@@ -2,7 +2,7 @@
 
 /** Keys rendered by the MCP settings section. */
 export type McpSettingsKey =
-  | 'nav' | 'title' | 'intro' | 'masterLabel' | 'enabledDescription' | 'disabledDescription'
+  | 'nav' | 'title' | 'intro' | 'mcpTab' | 'tabsAria' | 'masterLabel' | 'enabledDescription' | 'disabledDescription'
   | 'loading' | 'unavailable' | 'readOnly' | 'servers' | 'empty' | 'addServer'
   | 'importJson' | 'importJsonLabel' | 'importJsonHint' | 'importConfirm' | 'importCancel'
   | 'importSucceeded' | 'importInvalidJson' | 'importInvalidRoot' | 'importInvalidServer' | 'importUnsupportedFields'
@@ -20,6 +20,8 @@ export const en: Record<McpSettingsKey, string> = {
   nav: 'Custom Configuration',
   title: 'Custom Configuration',
   intro: 'Add MCP servers that belong to you. No command or endpoint is built into the application.',
+  mcpTab: 'MCP servers',
+  tabsAria: 'Custom configuration categories',
   masterLabel: 'Enable saved MCP servers',
   enabledDescription: 'Only complete, individually enabled entries load and are restored when the application reopens.',
   disabledDescription: 'Saved entries remain stored but no MCP server is loaded.',
@@ -91,6 +93,8 @@ export const zh: Record<McpSettingsKey, string> = {
   nav: '自定义配置',
   title: '自定义配置',
   intro: '添加由你维护的 MCP 服务。应用不会内置任何命令或服务地址。',
+  mcpTab: 'MCP 服务',
+  tabsAria: '自定义配置分类',
   masterLabel: '启用已保存的 MCP 服务',
   enabledDescription: '只有完整且已单独启用的配置会加载；下次重新打开应用时会按已保存状态恢复。',
   disabledDescription: '配置会保留，但不会加载任何 MCP 服务。',

@@ -1,0 +1,215 @@
+.section {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.header {
+  display: grid;
+  gap: 4px;
+}
+
+.header h3,
+.groupHeader h4,
+.cardHeader h4 {
+  margin: 0;
+  font-weight: 500;
+}
+
+.header p,
+.masterDescription,
+.groupHint,
+.empty,
+.status,
+.readOnly,
+.recordStatus,
+.testStatus,
+.failed {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.875rem;
+}
+
+.master {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.masterDescription[data-enabled='true'],
+.recordStatus[data-ready='true'],
+.testStatus[data-status='success'] {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.testStatus[data-status='failure'],
+.failed {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.triggerList {
+  display: grid;
+  gap: 10px;
+}
+
+.triggerRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.triggerRow input {
+  margin-top: 3px;
+}
+
+.triggerText {
+  display: grid;
+  gap: 2px;
+}
+
+.triggerTitle {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
+.triggerDesc {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.8125rem;
+}
+
+.groupHeader,
+.cardHeader,
+.footer,
+.actions,
+.cardActions,
+.channelEnabled {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.groupHeader,
+.cardHeader,
+.footer {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.channels {
+  display: grid;
+  gap: 12px;
+}
+
+.card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.channelEnabled {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.875rem;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.875rem;
+}
+
+.fieldFull {
+  grid-column: 1 / -1;
+}
+
+.fields input,
+.fields select {
+  box-sizing: border-box;
+  width: 100%;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 8px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+  font: inherit;
+}
+
+.fields small {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.75rem;
+}
+
+.secretRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.add,
+.save,
+.discard,
+.remove,
+.test,
+.toggleSecret {
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 11px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.save {
+  color: var(--dsw-alias-bg-base);
+  background: var(--dsw-alias-brand-primary);
+}
+
+.remove {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.add:disabled,
+.save:disabled,
+.discard:disabled,
+.remove:disabled,
+.test:disabled,
+.toggleSecret:disabled,
+.channelEnabled input:disabled,
+.triggerRow input:disabled,
+.fields input:disabled,
+.fields select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.unsaved {
+  color: var(--dsw-alias-state-warn-primary);
+  font-size: 0.875rem;
+}

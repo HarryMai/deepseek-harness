@@ -1,6 +1,7 @@
 /** Browser entry for the Custom Configuration MCP settings section. */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only imports expose the slot, locale, remote, and configuration-form Context faces.
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -8,12 +9,21 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { McpSettingsSection } from './McpSettingsSection.tsx'
-import type { McpSettingsSectionInjected } from './McpSettingsSection.tsx'
+import type {
+  CustomConfigItemOwnerProps,
+  CustomConfigItemTab,
+  McpSettingsSectionInjected,
+} from './McpSettingsSection.tsx'
 import { MCP_SETTINGS_NAMESPACE, McpSettingsController } from './settings.ts'
 import type { McpConnectionTestResult, McpConnectionTester, McpServerSettings } from './settings.ts'
 import { en, zh, type McpSettingsKey } from './locales.ts'
 
-export type { McpSettingsSectionInjected, McpSettingsSectionProps } from './McpSettingsSection.tsx'
+export type {
+  CustomConfigItemOwnerProps,
+  CustomConfigItemTab,
+  McpSettingsSectionInjected,
+  McpSettingsSectionProps,
+} from './McpSettingsSection.tsx'
 export type {
   McpConnectionTestFailure, McpConnectionTestResult, McpConnectionTestState, McpConnectionTester,
   McpJsonImportFailure, McpJsonImportResult, McpJsonParseResult, McpSettingsFace, McpSettingsState,
@@ -30,6 +40,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Custom Configuration MCP settings page. */
     'settings.mcp': McpSettingsKey
+  }
+
+  interface SlotMap {
+    /** Extensible sub-tab contributed into Settings -> Custom Configuration. */
+    'settings.custom-config.item': { kind: 'list'; scope: 'root'; owner: CustomConfigItemOwnerProps }
   }
 }
 
@@ -67,7 +82,46 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-mcp: dictionaries')
   ctx.effect(() => () => { controller.dispose() }, 'ui-settings-mcp: settings controller')
   const t = ctx.locale.bind(NS)
-  const injected = (): McpSettingsSectionInjected => controller.inject()
+  let itemsVersion = -1
+  let itemsRevision = -1
+  let items: readonly CustomConfigItemTab[] = []
+  const customConfigItems = {
+    getSnapshot: (): readonly CustomConfigItemTab[] => {
+      const version = ctx.slots.getVersion('settings.custom-config.item')
+      const revision = ctx.locale.getSnapshot().revision
+      if (version !== itemsVersion || revision !== itemsRevision) {
+        itemsVersion = version
+        itemsRevision = revision
+        items = ctx.slots.entries('settings.custom-config.item')
+          .map(entry => ({
+            /* v8 ignore next -- list-slot registration requires id */
+            id: entry.options.id ?? '',
+            order: entry.options.order ?? 0,
+            label: resolveSlotLabel(entry.options.label) ?? entry.options.id ?? '',
+          }))
+          .sort((left, right) => left.order - right.order)
+      }
+      return items
+    },
+    subscribe: (listener: () => void): (() => void) => {
+      const offLedger = ctx.slots.subscribe('settings.custom-config.item', listener)
+      const offLocale = ctx.locale.subscribe(listener)
+      return () => {
+        offLedger()
+        offLocale()
+      }
+    },
+  }
+  const injected = (): McpSettingsSectionInjected => {
+    const face = controller.inject()
+    return {
+      ...face,
+      hooks: {
+        ...face.hooks,
+        customConfigItems,
+      },
+    }
+  }
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
@@ -75,6 +129,7 @@ export function apply(ctx: ClientContext): void {
     order: 30,
     label: () => t('nav'),
     locale: NS,
+    children: { 'settings.custom-config.item': { kind: 'list', scope: 'root' } },
     inject: injected,
   }, McpSettingsSection))
 }

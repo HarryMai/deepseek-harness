@@ -1,17 +1,36 @@
 /** Custom Configuration settings section for user-managed MCP servers. */
 
 import { useState, type ReactNode } from 'react'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import { serverIssue, type McpSettingsFace } from './settings.ts'
 import type { McpConnectionTestState, McpJsonImportResult, McpServerIssue } from './settings.ts'
 import css from './McpSettingsSection.module.css'
 
+/** Owner share of a Custom Configuration sub-tab item. */
+export interface CustomConfigItemOwnerProps {
+  /** Marker field: item owner props are intentionally empty. */
+  children?: never
+}
+
+/** One registered custom configuration sub-tab projected from `settings.custom-config.item`. */
+export interface CustomConfigItemTab {
+  readonly id: string
+  readonly order: number
+  readonly label: string
+}
+
 /** Dependencies supplied by the `settings.section` slot registration. */
-export interface McpSettingsSectionInjected extends McpSettingsFace {}
+export interface McpSettingsSectionInjected extends McpSettingsFace {
+  readonly hooks: McpSettingsFace['hooks'] & {
+    readonly customConfigItems: ObservableSnapshot<readonly CustomConfigItemTab[]>
+  }
+}
 
 /** Full slot component props. */
 export type McpSettingsSectionProps =
   PropsRuntime<'settings.section'>
+  & PropsRenderSlots<'settings.custom-config.item'>
   & PropsLocale<'settings.mcp'>
   & InjectFace<McpSettingsSectionInjected>
 
@@ -79,16 +98,79 @@ function environmentFromRows(rows: EnvironmentRow[]): Record<string, string> {
  * @param props - slot runtime, localized copy, saved snapshot, and staged-edit actions.
  * @returns the section element or an availability state.
  */
+const MCP_TAB_ID = 'mcp'
+
 export function McpSettingsSection(props: McpSettingsSectionProps): ReactNode {
   const state = props.useMcpSettings(snapshot => snapshot)
+  const customItems = props.useCustomConfigItems(items => items)
   const { t } = props
+  const [selectedTab, setSelectedTab] = useState(MCP_TAB_ID)
   const [showImporter, setShowImporter] = useState(false)
   const [importValue, setImportValue] = useState('')
   const [importResult, setImportResult] = useState<McpJsonImportResult | undefined>()
   const [argumentDrafts, setArgumentDrafts] = useState<Record<string, string[]>>({})
   const [environmentDrafts, setEnvironmentDrafts] = useState<Record<string, EnvironmentRow[]>>({})
-  if (state.status === 'loading') return <p className={css.status}>{t('loading')}</p>
-  if (state.status === 'unavailable') return <p className={css.status}>{t('unavailable')}</p>
+
+  const activeTab = selectedTab === MCP_TAB_ID || customItems.some(item => item.id === selectedTab)
+    ? selectedTab
+    : MCP_TAB_ID
+
+  const tabBar = customItems.length > 0 ? (
+    <div className={css.tabList} role="tablist" aria-label={t('tabsAria')}>
+      <button
+        type="button"
+        role="tab"
+        className={css.tab}
+        aria-selected={activeTab === MCP_TAB_ID}
+        onClick={() => { setSelectedTab(MCP_TAB_ID) }}
+      >
+        {t('mcpTab')}
+      </button>
+      {customItems.map(item => (
+        <button
+          type="button"
+          role="tab"
+          key={item.id}
+          className={css.tab}
+          aria-selected={activeTab === item.id}
+          onClick={() => { setSelectedTab(item.id) }}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  ) : null
+
+  if (activeTab !== MCP_TAB_ID) {
+    return (
+      <section className={css.section}>
+        <header className={css.header}>
+          <h2>{t('title')}</h2>
+        </header>
+        {tabBar}
+        <div role="tabpanel">
+          {props.renderSlot('settings.custom-config.item', {}, { only: activeTab })}
+        </div>
+      </section>
+    )
+  }
+
+  if (state.status === 'loading') {
+    return (
+      <section className={css.section}>
+        {tabBar}
+        <p className={css.status}>{t('loading')}</p>
+      </section>
+    )
+  }
+  if (state.status === 'unavailable') {
+    return (
+      <section className={css.section}>
+        {tabBar}
+        <p className={css.status}>{t('unavailable')}</p>
+      </section>
+    )
+  }
 
   const disabled = !state.writable || state.saving
   const records = Object.entries(state.settings.servers)
@@ -104,6 +186,7 @@ export function McpSettingsSection(props: McpSettingsSectionProps): ReactNode {
         <h2>{t('title')}</h2>
         <p>{t('intro')}</p>
       </header>
+      {tabBar}
       {!state.writable ? <p className={css.readOnly} role="status">{t('readOnly')}</p> : null}
       <label className={css.master}>
         <input

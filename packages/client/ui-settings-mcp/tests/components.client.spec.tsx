@@ -6,8 +6,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { McpSettingsSection } from '../src/client/McpSettingsSection.tsx'
-import type { McpSettingsSectionProps } from '../src/client/McpSettingsSection.tsx'
+import type { CustomConfigItemTab, McpSettingsSectionProps } from '../src/client/McpSettingsSection.tsx'
 import { DEFAULT_MCP_SETTINGS, McpSettingsController } from '../src/client/settings.ts'
 import type { McpConnectionTester, McpSettings } from '../src/client/settings.ts'
 import { zh, type McpSettingsKey } from '../src/client/locales.ts'
@@ -55,12 +56,20 @@ class MemoryConfigForm implements ConfigForm<McpSettings> {
   async unset(_field: string): Promise<boolean> { return true }
 }
 
-function renderSection(form = new MemoryConfigForm(), tester?: McpConnectionTester) {
+function renderSection(
+  form = new MemoryConfigForm(),
+  tester?: McpConnectionTester,
+  customItems: readonly CustomConfigItemTab[] = [],
+) {
   const controller = new McpSettingsController(form, tester)
+  const itemsStore = createSnapshotStore<readonly CustomConfigItemTab[]>(customItems)
   const unusedHook = (() => { throw new Error('unused standard hook') }) as never
+  const { hooks: _hooks, ...actions } = controller.inject()
   const props: McpSettingsSectionProps = {
-    ...controller.inject(),
+    ...actions,
     useMcpSettings: bindSnapshotSelector(controller.store),
+    useCustomConfigItems: bindSnapshotSelector(itemsStore),
+    renderSlot: (_name, _owner, filter) => <div data-testid={`slot-${filter?.only ?? 'all'}`}>custom-tab-body</div>,
     useContextMenu: unusedHook,
     useRemoteAccess: unusedHook,
     useSessionAccess: unusedHook,
@@ -172,5 +181,24 @@ describe('McpSettingsSection', () => {
     expect(controller.store.getSnapshot().settings.servers['server-1']?.args).toEqual(['serve'])
     fireEvent.click(screen.getByRole('button', { name: '删除环境变量 1' }))
     expect(controller.store.getSnapshot().settings.servers['server-1']?.env).toEqual({ CODEGRAPH_HOME: '/work' })
+  })
+
+  it('switches between MCP and contributed custom-config sub-tabs', () => {
+    renderSection(new MemoryConfigForm(), undefined, [
+      { id: 'notifications', order: 20, label: '消息通知' },
+    ])
+
+    const mcpTab = screen.getByRole('tab', { name: 'MCP 服务' })
+    const notifyTab = screen.getByRole('tab', { name: '消息通知' })
+    expect(mcpTab.getAttribute('aria-selected')).toBe('true')
+    expect(notifyTab.getAttribute('aria-selected')).toBe('false')
+
+    fireEvent.click(notifyTab)
+    expect(notifyTab.getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByTestId('slot-notifications')).toBeTruthy()
+
+    fireEvent.click(mcpTab)
+    expect(mcpTab.getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('button', { name: '添加 MCP 服务' })).toBeTruthy()
   })
 })

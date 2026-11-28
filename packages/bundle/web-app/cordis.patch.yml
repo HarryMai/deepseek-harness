@@ -373,6 +373,20 @@
     - id: ui-settings-mcp
       name: '@deepseek-ai/dsh-client-ui-settings-mcp'
 
+    # Personal custom mobile push notifications (Stage 1: Bark Server) inside
+    # Settings -> Custom Configuration.
+    - id: customer-notifications
+      name: '@deepseek-ai/dsh-client-ui-settings-notifications'
+      config:
+        enabled: false
+        timeoutMs: 10000
+        events:
+          approvalRequired: true
+          manualActionRequired: true
+          passiveInterruption: true
+          taskCompleted: true
+        channels: {}
+
     # Connector account sections on the Plugins page; CLI app plugins and MCP
     # connectors register their accounts with `ctx.connectorAccounts`.
     - id: ui-connector-account

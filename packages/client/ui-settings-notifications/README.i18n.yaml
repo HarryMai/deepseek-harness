@@ -1,0 +1,40 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/client/ui-settings-notifications/README.md
+/:
+  en: 5b01db7967981e5e
+  zh: b67ac8dcab859803
+/deepseek-ai-dsh-client-ui-settings-notifications:
+  en: c42bd78eedc13f5d
+  zh: 58bb367b62e47534
+/deepseek-ai-dsh-client-ui-settings-notifications/summary:
+  en: 20b89bf77c054ffc
+  zh: daeb3828080a35fa
+/deepseek-ai-dsh-client-ui-settings-notifications/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-client-ui-settings-notifications/use-this-package:
+  en: c799cb4011c666d9
+  zh: 4371b2e791f0f876
+/deepseek-ai-dsh-client-ui-settings-notifications/use-this-package/configure-channels-and-triggers:
+  en: 455b2c360359671e
+  zh: 3e168fc27fc3f756
+/deepseek-ai-dsh-client-ui-settings-notifications/understand-the-implementation:
+  en: ce66a735f7ab8214
+  zh: 961b283fbff9f21d
+/deepseek-ai-dsh-client-ui-settings-notifications/further-exploration:
+  en: dbf65e98f7801563
+  zh: b5d6d0d238adf917
+/deepseek-ai-dsh-client-ui-settings-notifications/model-experience:
+  en: 61b353030458a374
+  zh: 8a6f8dd8448eae2e
+/deepseek-ai-dsh-client-ui-settings-notifications/model-experience/kv-cache-effect:
+  en: 03204c4f1fc77ddf
+  zh: ed9de5974c588bd0
+/deepseek-ai-dsh-client-ui-settings-notifications/known-limitations-and-deferred-work:
+  en: 3ab58b2a32f2f172
+  zh: 5901a63ec2c21f26
+/deepseek-ai-dsh-client-ui-settings-notifications/known-limitations-and-deferred-work/dev-note:
+  en: ed913de7d9c2718e
+  zh: 48759ab322d51070

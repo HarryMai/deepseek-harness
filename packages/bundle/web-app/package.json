@@ -119,6 +119,7 @@
     "@deepseek-ai/dsh-client-ui-settings-agent-loop": "workspace:*",
     "@deepseek-ai/dsh-client-ui-settings-general": "workspace:*",
     "@deepseek-ai/dsh-client-ui-settings-mcp": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-settings-notifications": "workspace:*",
     "@deepseek-ai/dsh-client-ui-settings-models": "workspace:*",
     "@deepseek-ai/dsh-client-ui-settings-session-log": "workspace:*",
     "@deepseek-ai/dsh-client-ui-settings-shell": "workspace:*",

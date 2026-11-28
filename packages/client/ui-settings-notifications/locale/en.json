@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Mobile notifications",
+    "description": "Configure mobile push notification channels (Bark first, extensible to Android, HarmonyOS, and Xiaomi)."
+  }
+}

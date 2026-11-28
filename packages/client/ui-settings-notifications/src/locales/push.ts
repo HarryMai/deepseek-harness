@@ -1,0 +1,32 @@
+/** Push notification copy templates owned by the notifications locale module. */
+
+/** Concise Chinese push copy constants and formatters (no verbose transcript or command body). */
+export const PUSH_COPY = {
+  fallbackTask: '当前任务',
+  fallbackChannel: 'Bark 通知通道',
+  sessionPrefix: '会话',
+  reasonLabel: '原因：',
+  contentLabel: '内容：',
+  approvalTitle: 'DSH：需人工提权',
+  approvalReasonGeneric: '任务执行过程中需人工提权审批',
+  approvalReasonWithTarget: (target: string): string => `任务执行过程中需人工提权审批（${target}）`,
+  manualActionTitle: 'DSH：需人工操作',
+  manualActionReasonPlan: '计划方案等待人工确认',
+  manualActionReasonGeneral: '任务执行过程中需人工操作或回复',
+  passiveInterruptionTitle: 'DSH：任务被动中断',
+  interruptionError: '任务执行异常中断',
+  interruptionErrorWithCode: (code: string): string => `任务执行异常中断（${code}）`,
+  interruptionMaxTokens: '达到模型输出上限，任务中断',
+  interruptionBlocked: '任务被策略或钩子拦截中断',
+  interruptionUnexpected: '任务意外中断',
+  interruptionHook: '任务被钩子中止',
+  interruptionParent: '任务被上级中止',
+  interruptionLegacy: '任务被动中止',
+  taskCompletedTitle: 'DSH：任务已完成',
+  taskCompletedReason: '任务已正常完成',
+  testTitle: 'DSH：通知测试',
+  testReason: '验证消息通知配置',
+  testContent: (label: string): string => `${label}连接正常`,
+  formatBody: (reason: string, content: string): string => `原因：${reason}\n内容：${content}`,
+  formatSessionFallback: (shortId: string): string => `会话 ${shortId}`,
+} as const

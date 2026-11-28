@@ -11,6 +11,37 @@
   margin: 0;
 }
 
+.tabList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+.tab {
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  padding: 6px 12px;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.tab[aria-selected='true'] {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  border-color: var(--dsw-alias-border-l1);
+}
+
 .header p,
 .masterDescription,
 .empty,

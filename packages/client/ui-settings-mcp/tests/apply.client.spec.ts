@@ -104,4 +104,36 @@ describe('ui-settings-mcp apply', () => {
     expect(slots.entries('settings.section')).toEqual([])
     await ctx.fiber.dispose()
   })
+
+  it('declares settings.custom-config.item child slot and projects registered custom tabs', async () => {
+    const { ctx, locale, slots } = await bench()
+    declareRoot(slots)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
+    const entry = slots.entries('settings.section')[0]!
+    const face = (entry.inject as never as () => McpSettingsSectionInjected)()
+    expect(face.hooks.customConfigItems.getSnapshot()).toEqual([])
+
+    const changes = vi.fn()
+    const off = face.hooks.customConfigItems.subscribe(changes)
+    const disposeItem = slots.register({
+      name: 'settings.custom-config.item',
+      id: 'notifications',
+      order: 20,
+      label: () => locale.getSnapshot().active === 'en' ? 'Notifications' : '消息通知',
+    }, () => null)
+
+    await vi.waitFor(() => { expect(changes).toHaveBeenCalled() })
+    expect(face.hooks.customConfigItems.getSnapshot()).toEqual([
+      { id: 'notifications', order: 20, label: '消息通知' },
+    ])
+    locale.setLocale('en')
+    expect(face.hooks.customConfigItems.getSnapshot()).toEqual([
+      { id: 'notifications', order: 20, label: 'Notifications' },
+    ])
+    disposeItem()
+    expect(face.hooks.customConfigItems.getSnapshot()).toEqual([])
+    off()
+    await ctx.fiber.dispose()
+  })
 })

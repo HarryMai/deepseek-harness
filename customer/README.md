@@ -9,6 +9,7 @@ This directory records the features the personal branch retains relative to `ups
 | Feature | Description | Relationship to upstream |
 | --- | --- | --- |
 | [MCP settings](MCP_SETTINGS.md) | Manage, import, and test MCP servers in Settings. | Upstream manages global servers; this branch retains separate session-scoped settings. |
+| [Mobile push notifications](MOBILE_NOTIFICATIONS.md) | Extend Settings -> Custom Configuration with mobile push notifications (Bark Stage 1, extensible to Android/HarmonyOS/Xiaomi) across four task triggers. | Personal-branch extension hosted under Custom Configuration and wired to Host lifecycle events. |
 | [MCP test route troubleshooting](MCP_SETTINGS_ROUTE_INCIDENT.md) | Diagnose connection tests, route mounting, and local program working directories. | A troubleshooting record for MCP settings. |
 | [Certificate-free Desktop packaging](UNSIGNED_DESKTOP_PACKAGING.md) | Local builds without certificates, signing mode selection, and artifact directories. | Upstream already has explicit unsigned builds; this branch extends mode selection and output locations. |
 | [Desktop startup and compatibility](DESKTOP_COMPATIBILITY.md) | Launch Desktop from existing workspace artifacts and maintain related compatibility fixes. | Upstream already has Desktop; this note records this branch's differences. |
